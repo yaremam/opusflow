@@ -1,0 +1,28 @@
+# Node / pnpm
+node_modules/
+dist/
+.pnpm-store/
+
+# Expo / React Native
+.expo/
+.expo-shared/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Go
+backend/bin/
+backend/tmp/
+*.test
+
+# Env
+.env
+.env.local
+!.env.example
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
