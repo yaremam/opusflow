@@ -1,15 +1,20 @@
 # opusflow
 
-_Feature description to be filled in as features land — see
-[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and [`docs/backlog/`](docs/backlog/)
-for what's planned and built so far._
+A private, self-hosted music platform — an alternative to Roon that avoids
+proprietary protocols wherever that promise is achievable. Unifies a local
+music library with connected streaming accounts (Spotify, Apple Music) into
+one library, plays music anywhere in the house, and helps you discover and
+keep up with the artists you care about. See [`docs/vision.md`](docs/vision.md)
+for the full product vision, and [`docs/backlog/`](docs/backlog/) for what's
+actually built so far (nothing yet, beyond scaffolding).
 
 ## Repository layout
 
 - `backend/` — Go backend (`cmd/server`, `internal/httpserver`)
 - `web/` — React web app (Vite + TypeScript)
 - `mobile/` — React Native mobile app, Android + eventually iOS (Expo + TypeScript)
-- `docs/ARCHITECTURE.md` — living system architecture. Start here.
+- `docs/vision.md` — product vision. Start here.
+- `docs/ARCHITECTURE.md` — living system architecture.
 - `docs/backlog/` — user stories and acceptance criteria, one per feature.
 - `docs/tdr/` — Technical Design Records, one per feature.
 

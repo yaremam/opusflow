@@ -1,5 +1,7 @@
 # Docs
 
+- [`vision.md`](vision.md) — product vision: what opusflow is, its
+  capabilities, and its scope boundaries. Read this first.
 - [`ARCHITECTURE.md`](ARCHITECTURE.md) — living system architecture:
   components, interfaces, data model, and a decision-log index. Start here.
 - [`backlog/`](backlog/) — one user story per feature: user value statement
