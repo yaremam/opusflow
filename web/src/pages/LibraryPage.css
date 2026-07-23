@@ -1,0 +1,60 @@
+.library-shell {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+}
+
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin: 0 0 0.5rem;
+}
+
+.library-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+  flex-wrap: wrap;
+}
+
+.library-topbar h1 {
+  font-size: 2rem;
+  line-height: 1.1;
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.sub {
+  color: var(--mist-400);
+  font-size: 0.9rem;
+  margin: 0.4rem 0 0;
+}
+
+.library-load-error {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.5rem;
+}
+
+.library-empty {
+  text-align: center;
+  padding: 3.5rem 1rem;
+  color: var(--mist-400);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+}
+
+.library-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
