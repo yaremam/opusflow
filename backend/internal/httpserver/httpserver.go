@@ -6,15 +6,22 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/yaremam/opusflow/backend/internal/library"
 )
 
 // New returns the application's root HTTP handler. When staticDir is
 // non-empty, it also serves the built web app from that directory, falling
 // back to its index.html for any unmatched GET so client-side routing keeps
-// working after a refresh.
-func New(staticDir string) http.Handler {
+// working after a refresh. svc backs the library endpoints.
+func New(staticDir string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("GET /api/library/roots", handleLibraryRoots(svc))
+	mux.HandleFunc("GET /api/library/browse", handleLibraryBrowse(svc))
+	mux.HandleFunc("GET /api/library/directories", handleListDirectories(svc))
+	mux.HandleFunc("POST /api/library/directories", handleAddDirectory(svc))
+	mux.HandleFunc("DELETE /api/library/directories/{id}", handleRemoveDirectory(svc))
 
 	if staticDir != "" {
 		mux.Handle("GET /", spaHandler(staticDir))
