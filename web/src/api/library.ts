@@ -27,6 +27,80 @@ export interface Entry {
   path: string
 }
 
+export interface Artist {
+  id: number
+  name: string
+  albumCount: number
+  trackCount: number
+  createdAt: string
+}
+
+export interface Album {
+  id: number
+  title: string
+  artistId: number
+  artistName: string
+  year: number
+  trackCount: number
+  createdAt: string
+}
+
+export interface Song {
+  id: number
+  title: string
+  artistId: number
+  artistName: string
+  albumId: number
+  albumTitle: string
+  trackNumber: number
+  year: number
+  genre: string
+  durationSeconds: number
+  createdAt: string
+}
+
+export interface AlbumTrack {
+  id: number
+  title: string
+  trackNumber: number
+  durationSeconds: number
+}
+
+export interface ArtistDetail extends Artist {
+  albums: Album[]
+}
+
+export interface AlbumDetail extends Album {
+  tracks: AlbumTrack[]
+}
+
+export interface Page<T> {
+  items: T[]
+  page: number
+  pageSize: number
+  totalCount: number
+}
+
+export interface ListParams {
+  page?: number
+  pageSize?: number
+  sort?: 'recent' | 'name'
+  genre?: string
+  year?: number
+  q?: string
+}
+
+// formatDuration renders a track length as "m:ss" (or "h:mm:ss" past an
+// hour), the convention used throughout the catalog UI.
+export function formatDuration(totalSeconds: number): string {
+  const h = Math.floor(totalSeconds / 3600)
+  const m = Math.floor((totalSeconds % 3600) / 60)
+  const s = totalSeconds % 60
+  const mm = h > 0 ? String(m).padStart(2, '0') : String(m)
+  const ss = String(s).padStart(2, '0')
+  return h > 0 ? `${h}:${mm}:${ss}` : `${mm}:${ss}`
+}
+
 export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
@@ -71,4 +145,36 @@ export function addDirectory(path: string): Promise<LibraryDirectory> {
 
 export function removeDirectory(id: number): Promise<void> {
   return request(`/api/library/directories/${id}`, { method: 'DELETE' })
+}
+
+function listParams(params: ListParams): string {
+  const q = new URLSearchParams()
+  if (params.page) q.set('page', String(params.page))
+  if (params.pageSize) q.set('pageSize', String(params.pageSize))
+  if (params.sort) q.set('sort', params.sort)
+  if (params.genre) q.set('genre', params.genre)
+  if (params.year) q.set('year', String(params.year))
+  if (params.q) q.set('q', params.q)
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
+export function listArtists(params: ListParams = {}): Promise<Page<Artist>> {
+  return request(`/api/library/artists${listParams(params)}`)
+}
+
+export function getArtist(id: number): Promise<ArtistDetail> {
+  return request(`/api/library/artists/${id}`)
+}
+
+export function listAlbums(params: ListParams = {}): Promise<Page<Album>> {
+  return request(`/api/library/albums${listParams(params)}`)
+}
+
+export function getAlbum(id: number): Promise<AlbumDetail> {
+  return request(`/api/library/albums/${id}`)
+}
+
+export function listSongs(params: ListParams = {}): Promise<Page<Song>> {
+  return request(`/api/library/songs${listParams(params)}`)
 }

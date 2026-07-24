@@ -85,7 +85,7 @@ export default function LibraryPage() {
   }
 
   return (
-    <div className="library-shell">
+    <div className="page-shell">
       <div className="library-topbar">
         <div>
           <p className="eyebrow">Media library</p>

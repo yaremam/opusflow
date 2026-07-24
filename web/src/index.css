@@ -8,6 +8,7 @@
   --paper-50: #e9edf1;
   --accent: #49b3a6;
   --accent-strong: #6fd1c4;
+  --accent-wash: rgba(73, 179, 166, 0.12);
   --good: #5db56a;
   --good-bg: rgba(93, 181, 106, 0.14);
   --warn: #dba53f;
@@ -30,6 +31,7 @@
     --paper-50: #1a1f27;
     --accent: #2f8f84;
     --accent-strong: #1f6f66;
+    --accent-wash: rgba(47, 143, 132, 0.08);
     --good: #2f8a3d;
     --good-bg: rgba(47, 138, 61, 0.1);
     --warn: #a8761f;
@@ -181,4 +183,53 @@ button {
   50% {
     opacity: 0.35;
   }
+}
+
+/* Shared page scaffold: every routed page (Home, Artists, Albums, Songs,
+   Library, and their detail pages) uses this shell + heading pattern. */
+.page-shell {
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 2.5rem 1.5rem 5rem;
+}
+.page-shell.wide {
+  max-width: 1080px;
+}
+
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin: 0 0 0.6rem;
+}
+
+.page-head h1 {
+  font-size: 2rem;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  margin: 0;
+  text-wrap: balance;
+}
+
+.sub {
+  color: var(--mist-400);
+  font-size: 0.95rem;
+  margin: 0.4rem 0 0;
+  max-width: 50ch;
+}
+
+.crumb {
+  font-size: 0.8rem;
+  color: var(--mist-400);
+  margin: 0 0 0.9rem;
+}
+.crumb a {
+  color: var(--mist-400);
+  text-decoration: none;
+}
+.crumb a:hover {
+  color: var(--accent-strong);
 }

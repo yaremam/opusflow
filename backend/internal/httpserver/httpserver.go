@@ -22,6 +22,11 @@ func New(staticDir string, svc *library.Service) http.Handler {
 	mux.HandleFunc("GET /api/library/directories", handleListDirectories(svc))
 	mux.HandleFunc("POST /api/library/directories", handleAddDirectory(svc))
 	mux.HandleFunc("DELETE /api/library/directories/{id}", handleRemoveDirectory(svc))
+	mux.HandleFunc("GET /api/library/artists", handleListArtists(svc))
+	mux.HandleFunc("GET /api/library/artists/{id}", handleGetArtist(svc))
+	mux.HandleFunc("GET /api/library/albums", handleListAlbums(svc))
+	mux.HandleFunc("GET /api/library/albums/{id}", handleGetAlbum(svc))
+	mux.HandleFunc("GET /api/library/songs", handleListSongs(svc))
 
 	if staticDir != "" {
 		mux.Handle("GET /", spaHandler(staticDir))

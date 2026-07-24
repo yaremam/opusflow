@@ -158,9 +158,16 @@ func orEmpty(errs []FileError) []FileError {
 }
 
 // RemoveDirectory deletes a directory and, via ON DELETE CASCADE, all of
-// its tracks and recorded file errors.
+// its tracks and recorded file errors — then, in the same transaction,
+// deletes any artist/album left with zero tracks as a result (AC-12).
 func (s *Store) RemoveDirectory(ctx context.Context, id int64) error {
-	res, err := s.db.ExecContext(ctx, `DELETE FROM library_directories WHERE id = $1`, id)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM library_directories WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("deleting directory: %w", err)
 	}
@@ -171,7 +178,12 @@ func (s *Store) RemoveDirectory(ctx context.Context, id int64) error {
 	if n == 0 {
 		return ErrDirectoryNotFound
 	}
-	return nil
+
+	if err := deleteOrphanedCatalogEntries(ctx, tx); err != nil {
+		return err
+	}
+
+	return tx.Commit()
 }
 
 // UpdateProgress records how many of the total matching audio files have

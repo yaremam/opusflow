@@ -1,0 +1,390 @@
+/* Shared visual vocabulary for the artist/album/song browsing pages (Home,
+   Artists/Albums/Songs index + detail) — one stylesheet since these pages
+   all render the same handful of patterns (stat cards, album-card grids,
+   song rows, index toolbars, pagers, detail headers, track tables). */
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.85rem;
+  margin: 2rem 0 0;
+}
+.stat-card {
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+}
+.stat-card .n {
+  font-size: 1.9rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  line-height: 1;
+}
+.stat-card .label {
+  color: var(--mist-400);
+  font-size: 0.8rem;
+  margin-top: 0.4rem;
+}
+
+.scan-banner {
+  margin-top: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--warn-bg);
+  color: var(--warn);
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin: 2.25rem 0 0.85rem;
+}
+.section-head h2 {
+  font-size: 1rem;
+  margin: 0;
+}
+.section-head a {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--accent-strong);
+  text-decoration: none;
+}
+.section-head a:hover {
+  color: var(--accent);
+}
+
+.chip-row {
+  display: flex;
+  gap: 0.6rem;
+  overflow-x: auto;
+  padding-bottom: 0.2rem;
+}
+.artist-chip {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  width: 5.6rem;
+  text-decoration: none;
+  color: inherit;
+}
+.artist-chip .avatar {
+  width: 3.6rem;
+  height: 3.6rem;
+  border-radius: 50%;
+  background: var(--ink-800);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent-strong);
+}
+.artist-chip .name {
+  font-size: 0.76rem;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.25;
+}
+
+.artist-card {
+  text-decoration: none;
+  color: inherit;
+  text-align: center;
+  padding: 1.1rem 0.6rem;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.artist-card .avatar {
+  width: 3.6rem;
+  height: 3.6rem;
+  margin: 0 auto 0.65rem;
+  border-radius: 50%;
+  background: var(--ink-800);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent-strong);
+}
+.artist-card .name {
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.artist-card .meta {
+  font-size: 0.76rem;
+  color: var(--mist-400);
+  margin-top: 0.25rem;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+}
+.album-card {
+  text-decoration: none;
+  color: inherit;
+}
+.album-card .art {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 0.55rem;
+}
+.album-card .art svg {
+  width: 1.6rem;
+  height: 1.6rem;
+  color: var(--mist-400);
+  opacity: 0.6;
+}
+.album-card .title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.album-card .artist {
+  font-size: 0.78rem;
+  color: var(--mist-400);
+  margin-top: 0.15rem;
+}
+
+.song-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.65rem 0.15rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.86rem;
+  text-decoration: none;
+  color: inherit;
+}
+.song-row:hover {
+  background: var(--ink-900);
+}
+.song-row .t {
+  font-weight: 600;
+}
+.song-row .a {
+  color: var(--mist-400);
+  font-size: 0.78rem;
+  margin-top: 0.1rem;
+}
+.song-row .dur {
+  color: var(--mist-400);
+  font-variant-numeric: tabular-nums;
+  font-size: 0.82rem;
+}
+
+.empty-hero {
+  margin-top: 2.5rem;
+  border: 1px dashed var(--border);
+  border-radius: 16px;
+  padding: 3.25rem 2rem;
+  text-align: center;
+  background: radial-gradient(120% 140% at 50% 0%, var(--accent-wash), transparent 60%);
+}
+.empty-hero .glyph {
+  width: 3.25rem;
+  height: 3.25rem;
+  margin: 0 auto 1.25rem;
+  border-radius: 12px;
+  background: var(--ink-800);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.empty-hero .glyph svg {
+  width: 1.5rem;
+  height: 1.5rem;
+  color: var(--accent-strong);
+}
+.empty-hero h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+}
+.empty-hero p {
+  color: var(--mist-400);
+  font-size: 0.92rem;
+  max-width: 40ch;
+  margin: 0 auto 1.6rem;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  margin: 1.75rem 0 1.5rem;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem;
+}
+.toolbar input[type='search'],
+.toolbar select {
+  font: inherit;
+  font-size: 0.82rem;
+  background: var(--ink-800);
+  color: var(--paper-50);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.45rem 0.65rem;
+}
+.toolbar label {
+  font-size: 0.72rem;
+  color: var(--mist-400);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.toolbar .search-wrap {
+  flex: 1 1 220px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pager {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  margin-top: 2.25rem;
+}
+.pager button {
+  font: 700 0.8rem/1 inherit;
+  min-width: 2.1rem;
+  height: 2.1rem;
+  border-radius: 7px;
+  border: 1px solid var(--border);
+  background: var(--ink-900);
+  color: var(--paper-50);
+}
+.pager button.current {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0c1613;
+}
+.pager button:hover:not(.current):not(:disabled) {
+  border-color: var(--mist-400);
+}
+.pager button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.pager .gap {
+  color: var(--mist-400);
+  padding: 0 0.15rem;
+}
+
+.detail-head {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.detail-art {
+  width: 10rem;
+  height: 10rem;
+  flex-shrink: 0;
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.detail-art.round {
+  border-radius: 50%;
+}
+.detail-art svg {
+  width: 2.4rem;
+  height: 2.4rem;
+  color: var(--mist-400);
+  opacity: 0.6;
+}
+.detail-meta .kind {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin-bottom: 0.4rem;
+}
+.detail-meta h1 {
+  margin-bottom: 0.3rem;
+}
+.detail-meta .by {
+  font-size: 1rem;
+  color: var(--mist-400);
+}
+.detail-meta .by a {
+  color: var(--paper-50);
+  font-weight: 700;
+  text-decoration: none;
+}
+.detail-meta .by a:hover {
+  color: var(--accent-strong);
+}
+.detail-meta .facts {
+  font-size: 0.82rem;
+  color: var(--mist-400);
+  margin-top: 0.5rem;
+}
+
+table.track-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 2rem;
+  font-size: 0.86rem;
+}
+table.track-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mist-400);
+  padding: 0 0.6rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+table.track-table th.num,
+table.track-table td.num {
+  text-align: right;
+}
+table.track-table td {
+  padding: 0.65rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+table.track-table td.dur {
+  font-variant-numeric: tabular-nums;
+  color: var(--mist-400);
+  text-align: right;
+}
+table.track-table td.trk {
+  color: var(--mist-400);
+  font-variant-numeric: tabular-nums;
+  width: 2.5rem;
+}

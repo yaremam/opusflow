@@ -78,6 +78,25 @@ func (f *fakeDirectoryStore) RemoveDirectory(_ context.Context, id int64) error 
 	return nil
 }
 
+// Catalog methods aren't exercised by directory-management tests — stubbed
+// just to satisfy DirectoryStore. catalogCapturingStore (service_catalog_test.go)
+// overrides these with real recording behavior for tests that do exercise them.
+func (f *fakeDirectoryStore) ListArtists(context.Context, ListOptions) (Page[Artist], error) {
+	return Page[Artist]{Items: []Artist{}}, nil
+}
+func (f *fakeDirectoryStore) GetArtist(context.Context, int64) (ArtistDetail, error) {
+	return ArtistDetail{}, ErrArtistNotFound
+}
+func (f *fakeDirectoryStore) ListAlbums(context.Context, ListOptions) (Page[Album], error) {
+	return Page[Album]{Items: []Album{}}, nil
+}
+func (f *fakeDirectoryStore) GetAlbum(context.Context, int64) (AlbumDetail, error) {
+	return AlbumDetail{}, ErrAlbumNotFound
+}
+func (f *fakeDirectoryStore) ListSongs(context.Context, ListOptions) (Page[Song], error) {
+	return Page[Song]{Items: []Song{}}, nil
+}
+
 type scanCall struct {
 	directoryID int64
 	path        string
