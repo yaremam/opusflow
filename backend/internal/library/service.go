@@ -12,16 +12,52 @@ type Scanner interface {
 	Scan(ctx context.Context, directoryID int64, path string)
 }
 
-// DirectoryStore is the persistence Service needs for directory management
-// — the subset of Store's methods it actually calls. *Store satisfies this
-// as its one production adapter; tests substitute an in-memory fake so
-// orchestration logic (validation ordering, scan-goroutine timing,
-// cancellation) can be tested without a database.
+// DirectoryStore is the persistence Service needs — directory management
+// plus browsing the artist/album/song catalog those directories' scans
+// populate — the subset of Store's methods it actually calls. *Store
+// satisfies this as its one production adapter; tests substitute an
+// in-memory fake so orchestration logic (validation ordering, scan-goroutine
+// timing, cancellation, list-options normalization) can be tested without a
+// database.
 type DirectoryStore interface {
 	AddDirectory(ctx context.Context, root, path string) (Directory, error)
 	GetDirectory(ctx context.Context, id int64) (Directory, error)
 	ListDirectories(ctx context.Context) ([]Directory, error)
 	RemoveDirectory(ctx context.Context, id int64) error
+
+	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
+	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
+	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
+	GetAlbum(ctx context.Context, id int64) (AlbumDetail, error)
+	ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error)
+}
+
+// defaultPageSize/maxPageSize bound ListOptions.PageSize once normalized by
+// normalizeListOptions — every List* endpoint shares the same pagination
+// defaults and ceiling.
+const (
+	defaultPageSize = 30
+	maxPageSize     = 100
+)
+
+// normalizeListOptions clamps Page/PageSize into range and defaults Sort to
+// "recent" for anything other than the one other recognized value, "name" —
+// so a request built from unvalidated query params can't hand the store a
+// negative offset, an unbounded page size, or an unrecognized sort value.
+func normalizeListOptions(opts ListOptions) ListOptions {
+	if opts.Page < 1 {
+		opts.Page = 1
+	}
+	if opts.PageSize <= 0 {
+		opts.PageSize = defaultPageSize
+	}
+	if opts.PageSize > maxPageSize {
+		opts.PageSize = maxPageSize
+	}
+	if opts.Sort != "name" {
+		opts.Sort = "recent"
+	}
+	return opts
 }
 
 // Service orchestrates library directory management: browsing configured
@@ -58,6 +94,31 @@ func (s *Service) ListDirectories(ctx context.Context) ([]Directory, error) {
 // GetDirectory fetches a single registered directory.
 func (s *Service) GetDirectory(ctx context.Context, id int64) (Directory, error) {
 	return s.store.GetDirectory(ctx, id)
+}
+
+// ListArtists returns a page of artists matching opts.
+func (s *Service) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error) {
+	return s.store.ListArtists(ctx, normalizeListOptions(opts))
+}
+
+// GetArtist fetches a single artist by ID, with their albums.
+func (s *Service) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
+	return s.store.GetArtist(ctx, id)
+}
+
+// ListAlbums returns a page of albums matching opts.
+func (s *Service) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error) {
+	return s.store.ListAlbums(ctx, normalizeListOptions(opts))
+}
+
+// GetAlbum fetches a single album by ID, with its track listing.
+func (s *Service) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
+	return s.store.GetAlbum(ctx, id)
+}
+
+// ListSongs returns a page of songs (tracks) matching opts.
+func (s *Service) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error) {
+	return s.store.ListSongs(ctx, normalizeListOptions(opts))
 }
 
 // AddDirectory registers path as a new library directory and starts

@@ -8,9 +8,10 @@ feature changes a component boundary, adds a table, or reverses an earlier
 decision — it should always describe the system as it is today, not as it was
 designed.
 
-**Status**: first product feature shipped — adding a local directory to the
-music library (browse, add, async scan, remove); see
-[TDR 001](tdr/001_add_local_directory_design.md). Mobile is still an
+**Status**: two product features shipped — adding a local directory to the
+music library (browse, add, async scan, remove; [TDR 001](tdr/001_add_local_directory_design.md))
+and a Home screen plus Artist/Album/Song browsing
+([TDR 002](tdr/002_home_and_browsing_design.md)). Mobile is still an
 untouched Expo starter.
 
 ## 1. System context
@@ -47,7 +48,7 @@ Android/iOS build (via Expo), not part of this image.
 | Concern | Choice | Notes |
 |---|---|---|
 | Backend | Go 1.24, stdlib `net/http` | `backend/cmd/server` + `backend/internal/httpserver`; no router library yet — Go 1.22+'s `ServeMux` method+path patterns cover current needs |
-| Web frontend | React 19 + Vite + TypeScript | `web/`; no router/state library yet — still only one real screen (see §6) |
+| Web frontend | React 19 + Vite + TypeScript + `react-router` | `web/`; router added by [TDR 002](tdr/002_home_and_browsing_design.md) — no separate state-management library yet |
 | Mobile | Expo (React Native) + TypeScript | `mobile/`, default `create-expo-app blank-typescript` template, not yet customized |
 | Database | PostgreSQL 17 | `backend/internal/db` (`lib/pq` driver, hand-rolled embed-based migration runner — no ORM/migration-library dependency); wired up by [TDR 001](tdr/001_add_local_directory_design.md) |
 | Audio tag/duration parsing | `github.com/dhowden/tag` (tags) + hand-rolled per-format duration parsers | `backend/internal/library/scan`; see TDR 001 |
@@ -67,21 +68,29 @@ Android/iOS build (via Expo), not part of this image.
   `GET /health`; the library endpoints (below); and, when `STATIC_DIR` is
   set, a static file server for the built web app with SPA fallback
   (unmatched GETs serve `index.html` rather than 404, so client-side routing
-  survives a refresh once the web app adds a router).
+  survives a refresh).
   - `GET /api/library/roots` — list configured roots
   - `GET /api/library/browse?path=` — list a path's immediate subdirectories
   - `GET /api/library/directories` — list registered directories (status,
     progress, track count, file errors)
   - `POST /api/library/directories` `{"path": "..."}` — register + async-scan
-  - `DELETE /api/library/directories/{id}` — remove (cascades tracks)
+  - `DELETE /api/library/directories/{id}` — remove (cascades tracks, then
+    orphaned artists/albums)
+  - `GET /api/library/artists` / `GET /api/library/albums` /
+    `GET /api/library/songs` — paginated, sorted (`recent`/`name`), filtered
+    (`genre`, `year`, free-text `q`) listings; see
+    [TDR 002](tdr/002_home_and_browsing_design.md)
+  - `GET /api/library/artists/{id}` — artist detail (with their albums)
+  - `GET /api/library/albums/{id}` — album detail (with its track listing)
 - **`backend/internal/db`** — Postgres connection (`Open`) and schema
   migrations (`Migrate`, embedding `internal/db/migrations/*.sql`, tracked in
   a `schema_migrations` table).
 - **`backend/internal/library`** — the library domain: `Roots` (filesystem
   containment/browsing scoped to `LIBRARY_ROOTS`), `Store` (Postgres
-  persistence for directories/tracks/file errors), `Service` (orchestrates
-  add/remove/list/browse, starts each scan as a background goroutine so
-  `POST /api/library/directories` returns before the scan finishes).
+  persistence for directories/tracks/file errors/artists/albums), `Service`
+  (orchestrates add/remove/list/browse and artist/album/song listing/detail,
+  starts each scan as a background goroutine so `POST /api/library/directories`
+  returns before the scan finishes).
 - **`backend/internal/library/scan`** — the scanning engine: recursive
   directory walk, audio format detection by extension (mp3/flac/m4a/aac/
   ogg/wav), tag extraction (`dhowden/tag`, filename fallback when a file
@@ -90,11 +99,17 @@ Android/iOS build (via Expo), not part of this image.
 - **`backend/internal/library/scan/duration`** — per-format audio duration:
   exact for WAV/FLAC/MP4, best-effort for OGG (last page granule position)
   and MP3 (Xing/Info VBR header if present, else a bitrate/filesize estimate).
-- **`web/`** — first real screen: `src/pages/LibraryPage.tsx` (directory
-  list with live scan progress, polled while any directory is `scanning`)
-  and `src/components/DirectoryPicker.tsx` (root selector + breadcrumb
-  folder browser, opened as an in-page modal — not a separate route, so no
-  router was added; see §6). `src/api/library.ts` is the typed fetch client.
+- **`web/`** — `react-router` routes wrapped in `src/components/AppLayout.tsx`
+  (persistent Home/Artists/Albums/Songs/Library header nav):
+  `src/pages/HomePage.tsx` (library snapshot + recently-added previews),
+  `src/pages/ArtistsPage.tsx` / `AlbumsPage.tsx` / `SongsPage.tsx` (paginated,
+  sortable, filterable index pages, sharing fetch/pagination logic via
+  `src/hooks/useListPage.ts`), `src/pages/ArtistDetailPage.tsx` /
+  `AlbumDetailPage.tsx`, and `src/pages/LibraryPage.tsx` (directory list with
+  live scan progress, polled while any directory is `scanning`, plus
+  `src/components/DirectoryPicker.tsx` — root selector + breadcrumb folder
+  browser, opened as an in-page modal). `src/api/library.ts` is the typed
+  fetch client.
 - **`mobile/`** — untouched Expo starter. No navigation or API client added
   yet.
 
@@ -108,12 +123,20 @@ Postgres, migrated via `backend/internal/db` (see §3):
   `error`, `created_at`.
 - **`tracks`** — one row per imported audio file: `directory_id` (FK,
   `ON DELETE CASCADE`), `path`, `title`, `artist`, `album`, `track_number`,
-  `year`, `genre`, `duration_seconds`.
+  `year`, `genre`, `duration_seconds`, plus `artist_id`/`album_id` (FKs, see
+  below).
 - **`library_scan_errors`** — one row per file a scan couldn't process:
   `directory_id` (FK, `ON DELETE CASCADE`), `path`, `error`. Isolated file
   errors don't change the directory's `status` away from `complete` — only
   a job-level failure (the registered directory itself becoming unreadable)
   sets `status = 'failed'`.
+- **`artists`** — one row per distinct artist name (including a real,
+  empty-name "Unknown Artist" row for untagged tracks), `name` unique. Added
+  by [TDR 002](tdr/002_home_and_browsing_design.md); upserted as tracks are
+  imported, deleted once its last track is gone (see `tracks.InsertTrack` /
+  `Store.RemoveDirectory`'s orphan cleanup).
+- **`albums`** — one row per `(title, artist_id)` pair, `year`. Same
+  upsert/orphan-cleanup lifecycle as `artists`.
 
 ## 5. Feature-by-feature decision log
 
@@ -122,15 +145,16 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan time, orphan-cleaned on directory removal); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
 | Add local directory to library | [001](tdr/001_add_local_directory_design.md) | Async goroutine-based scan; server-side directory picker scoped to multiple `LIBRARY_ROOTS`; skip-and-continue per-file error handling | Matches real multi-volume households and real-world tagging inconsistency without over-building (no job queue, no router) |
 
 ## 6. Deferred / future work
 
 - **API contract between backend and mobile app** — not designed yet; the
   mobile app has no networking code.
-- **Router/state library choice for the web app** — still deferred: the
-  library feature's picker is an in-page modal, not a second route, so only
-  one screen exists yet. Revisit when a feature actually needs a second page.
+- **Full artist/album/song browsing beyond the current index+detail pages** —
+  no playback, no artwork/cover-art pipeline, no artist-following (per
+  `docs/vision.md`); a song's only navigation target today is its album.
 - **VBRI-only MP3 duration** — the duration parser supports the Xing/Info
   VBR header (the common case); an MP3 with only a VBRI header falls back to
   the bitrate/filesize estimate, which is less accurate for that rare case.

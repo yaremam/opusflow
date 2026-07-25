@@ -117,6 +117,10 @@ func libraryErrorStatus(err error) int {
 		return http.StatusConflict
 	case errors.Is(err, library.ErrDirectoryNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, library.ErrArtistNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, library.ErrAlbumNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, fs.ErrNotExist):
 		return http.StatusNotFound
 	default:
