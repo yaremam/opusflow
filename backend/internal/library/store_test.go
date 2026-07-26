@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/db"
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
 func randomSuffix() string {
@@ -56,123 +56,110 @@ func testStore(t *testing.T) *Store {
 
 func ctx() context.Context { return context.Background() }
 
-func TestAddDirectory(t *testing.T) {
+// mustCreateImport creates an import with a throwaway source description,
+// for tests that just need a valid import_id to attribute tracks to.
+func mustCreateImport(t *testing.T, s *Store) int64 {
+	t.Helper()
+	imp, err := s.CreateImport(ctx(), "/music/"+randomSuffix())
+	if err != nil {
+		t.Fatalf("CreateImport: %v", err)
+	}
+	return imp.ID
+}
+
+func TestCreateImport(t *testing.T) {
 	s := testStore(t)
 
-	dir, err := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	imp, err := s.CreateImport(ctx(), "/music/Rock")
 	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+		t.Fatalf("CreateImport: %v", err)
 	}
-	if dir.ID == 0 {
+	if imp.ID == 0 {
 		t.Fatal("expected non-zero ID")
 	}
-	if dir.Root != "/music" || dir.Path != "/music/Rock" {
-		t.Fatalf("dir = %+v", dir)
+	if imp.SourceDescription != "/music/Rock" {
+		t.Fatalf("SourceDescription = %q", imp.SourceDescription)
 	}
-	if dir.Status != StatusScanning {
-		t.Fatalf("Status = %q, want %q", dir.Status, StatusScanning)
+	if imp.Status != ImportStatusCopying {
+		t.Fatalf("Status = %q, want %q", imp.Status, ImportStatusCopying)
 	}
-	if dir.FilesProcessed != 0 || dir.FilesTotal != 0 {
-		t.Fatalf("expected zeroed counters, got %+v", dir)
-	}
-}
-
-func TestAddDirectoryRejectsExactDuplicate(t *testing.T) {
-	s := testStore(t)
-
-	if _, err := s.AddDirectory(ctx(), "/music", "/music/Rock"); err != nil {
-		t.Fatalf("first AddDirectory: %v", err)
-	}
-	_, err := s.AddDirectory(ctx(), "/music", "/music/Rock")
-	if !errors.Is(err, ErrDuplicateDirectory) {
-		t.Fatalf("second AddDirectory error = %v, want ErrDuplicateDirectory", err)
+	if imp.FilesProcessed != 0 || imp.FilesTotal != 0 {
+		t.Fatalf("expected zeroed counters, got %+v", imp)
 	}
 }
 
-func TestAddDirectoryAllowsOverlappingPaths(t *testing.T) {
+func TestGetImportNotFound(t *testing.T) {
 	s := testStore(t)
 
-	if _, err := s.AddDirectory(ctx(), "/music", "/music/Rock"); err != nil {
-		t.Fatalf("AddDirectory(Rock): %v", err)
-	}
-	// A parent of an existing entry is allowed per AC-2.
-	if _, err := s.AddDirectory(ctx(), "/music", "/music"); err != nil {
-		t.Fatalf("AddDirectory(parent): %v", err)
+	_, err := s.GetImport(ctx(), 999999)
+	if !errors.Is(err, ErrImportNotFound) {
+		t.Fatalf("GetImport error = %v, want ErrImportNotFound", err)
 	}
 }
 
-func TestGetDirectoryNotFound(t *testing.T) {
+func TestUpdateImportProgress(t *testing.T) {
 	s := testStore(t)
+	imp, _ := s.CreateImport(ctx(), "/music/Rock")
 
-	_, err := s.GetDirectory(ctx(), 999999)
-	if !errors.Is(err, ErrDirectoryNotFound) {
-		t.Fatalf("GetDirectory error = %v, want ErrDirectoryNotFound", err)
-	}
-}
-
-func TestUpdateProgress(t *testing.T) {
-	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
-
-	if err := s.UpdateProgress(ctx(), dir.ID, 42, 100); err != nil {
-		t.Fatalf("UpdateProgress: %v", err)
+	if err := s.UpdateImportProgress(ctx(), imp.ID, 42, 100); err != nil {
+		t.Fatalf("UpdateImportProgress: %v", err)
 	}
 
-	got, err := s.GetDirectory(ctx(), dir.ID)
+	got, err := s.GetImport(ctx(), imp.ID)
 	if err != nil {
-		t.Fatalf("GetDirectory: %v", err)
+		t.Fatalf("GetImport: %v", err)
 	}
 	if got.FilesProcessed != 42 || got.FilesTotal != 100 {
 		t.Fatalf("got = %+v, want FilesProcessed=42 FilesTotal=100", got)
 	}
-	if got.Status != StatusScanning {
-		t.Fatalf("Status = %q, want %q (progress update shouldn't change status)", got.Status, StatusScanning)
+	if got.Status != ImportStatusCopying {
+		t.Fatalf("Status = %q, want %q (progress update shouldn't change status)", got.Status, ImportStatusCopying)
 	}
 }
 
-func TestMarkComplete(t *testing.T) {
+func TestMarkImportComplete(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	imp, _ := s.CreateImport(ctx(), "/music/Rock")
 
-	if err := s.MarkComplete(ctx(), dir.ID); err != nil {
-		t.Fatalf("MarkComplete: %v", err)
+	if err := s.MarkImportComplete(ctx(), imp.ID); err != nil {
+		t.Fatalf("MarkImportComplete: %v", err)
 	}
 
-	got, err := s.GetDirectory(ctx(), dir.ID)
+	got, err := s.GetImport(ctx(), imp.ID)
 	if err != nil {
-		t.Fatalf("GetDirectory: %v", err)
+		t.Fatalf("GetImport: %v", err)
 	}
-	if got.Status != StatusComplete {
-		t.Fatalf("Status = %q, want %q", got.Status, StatusComplete)
+	if got.Status != ImportStatusComplete {
+		t.Fatalf("Status = %q, want %q", got.Status, ImportStatusComplete)
 	}
 }
 
-func TestMarkFailed(t *testing.T) {
+func TestMarkImportFailed(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	imp, _ := s.CreateImport(ctx(), "/music/Rock")
 
-	if err := s.MarkFailed(ctx(), dir.ID, "directory became unreadable"); err != nil {
-		t.Fatalf("MarkFailed: %v", err)
+	if err := s.MarkImportFailed(ctx(), imp.ID, "every file failed to copy"); err != nil {
+		t.Fatalf("MarkImportFailed: %v", err)
 	}
 
-	got, err := s.GetDirectory(ctx(), dir.ID)
+	got, err := s.GetImport(ctx(), imp.ID)
 	if err != nil {
-		t.Fatalf("GetDirectory: %v", err)
+		t.Fatalf("GetImport: %v", err)
 	}
-	if got.Status != StatusFailed {
-		t.Fatalf("Status = %q, want %q", got.Status, StatusFailed)
+	if got.Status != ImportStatusFailed {
+		t.Fatalf("Status = %q, want %q", got.Status, ImportStatusFailed)
 	}
-	if got.Error != "directory became unreadable" {
+	if got.Error != "every file failed to copy" {
 		t.Fatalf("Error = %q", got.Error)
 	}
 }
 
 func TestInsertTrackAndTrackCount(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	importID := mustCreateImport(t, s)
 
-	track := scan.Track{
-		DirectoryID:     dir.ID,
+	track := organize.CopiedTrack{
+		ImportID:        importID,
 		Path:            "/music/Rock/song.mp3",
 		Title:           "Song",
 		Artist:          "Artist",
@@ -186,75 +173,45 @@ func TestInsertTrackAndTrackCount(t *testing.T) {
 		t.Fatalf("InsertTrack: %v", err)
 	}
 
-	got, err := s.GetDirectory(ctx(), dir.ID)
+	got, err := s.GetImport(ctx(), importID)
 	if err != nil {
-		t.Fatalf("GetDirectory: %v", err)
+		t.Fatalf("GetImport: %v", err)
 	}
 	if got.TrackCount != 1 {
 		t.Fatalf("TrackCount = %d, want 1", got.TrackCount)
 	}
+}
 
-	dirs, err := s.ListDirectories(ctx())
+func TestListImportsNewestFirst(t *testing.T) {
+	s := testStore(t)
+	first, _ := s.CreateImport(ctx(), "/music/first")
+	second, _ := s.CreateImport(ctx(), "/music/second")
+
+	imports, err := s.ListImports(ctx())
 	if err != nil {
-		t.Fatalf("ListDirectories: %v", err)
+		t.Fatalf("ListImports: %v", err)
 	}
-	if len(dirs) != 1 || dirs[0].TrackCount != 1 {
-		t.Fatalf("ListDirectories = %+v, want one dir with TrackCount=1", dirs)
+	if len(imports) != 2 || imports[0].ID != second.ID || imports[1].ID != first.ID {
+		t.Fatalf("imports = %+v, want [second, first]", imports)
 	}
 }
 
-func TestRecordFileErrorSurfacesOnDirectory(t *testing.T) {
+func TestRecordImportErrorSurfacesOnImport(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	importID := mustCreateImport(t, s)
 
-	if err := s.RecordFileError(ctx(), dir.ID, "/music/Rock/bad.mp3", "corrupt tag"); err != nil {
-		t.Fatalf("RecordFileError: %v", err)
+	if err := s.RecordImportError(ctx(), importID, "/music/Rock/bad.mp3", "corrupt tag"); err != nil {
+		t.Fatalf("RecordImportError: %v", err)
 	}
 
-	got, err := s.GetDirectory(ctx(), dir.ID)
+	got, err := s.GetImport(ctx(), importID)
 	if err != nil {
-		t.Fatalf("GetDirectory: %v", err)
+		t.Fatalf("GetImport: %v", err)
 	}
 	if len(got.FileErrors) != 1 {
 		t.Fatalf("FileErrors = %+v, want 1 entry", got.FileErrors)
 	}
 	if got.FileErrors[0].Path != "/music/Rock/bad.mp3" || got.FileErrors[0].Error != "corrupt tag" {
 		t.Fatalf("FileErrors[0] = %+v", got.FileErrors[0])
-	}
-}
-
-func TestRemoveDirectoryCascadesTracksAndErrors(t *testing.T) {
-	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
-	if err := s.InsertTrack(ctx(), scan.Track{DirectoryID: dir.ID, Path: "/music/Rock/song.mp3", Title: "Song"}); err != nil {
-		t.Fatalf("InsertTrack: %v", err)
-	}
-	if err := s.RecordFileError(ctx(), dir.ID, "/music/Rock/bad.mp3", "corrupt"); err != nil {
-		t.Fatalf("RecordFileError: %v", err)
-	}
-
-	if err := s.RemoveDirectory(ctx(), dir.ID); err != nil {
-		t.Fatalf("RemoveDirectory: %v", err)
-	}
-
-	if _, err := s.GetDirectory(ctx(), dir.ID); !errors.Is(err, ErrDirectoryNotFound) {
-		t.Fatalf("GetDirectory after remove = %v, want ErrDirectoryNotFound", err)
-	}
-
-	var trackCount int
-	if err := s.db.QueryRow(`SELECT COUNT(*) FROM tracks WHERE directory_id = $1`, dir.ID).Scan(&trackCount); err != nil {
-		t.Fatalf("counting tracks: %v", err)
-	}
-	if trackCount != 0 {
-		t.Fatalf("tracks remaining after cascade delete = %d, want 0", trackCount)
-	}
-}
-
-func TestRemoveDirectoryNotFound(t *testing.T) {
-	s := testStore(t)
-
-	err := s.RemoveDirectory(ctx(), 999999)
-	if !errors.Is(err, ErrDirectoryNotFound) {
-		t.Fatalf("RemoveDirectory error = %v, want ErrDirectoryNotFound", err)
 	}
 }

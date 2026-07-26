@@ -2,15 +2,17 @@ package library
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
-func insertTrack(t *testing.T, s *Store, dirID int64, artist, album, title string, trackNumber, year int, genre string) {
+func insertTrack(t *testing.T, s *Store, importID int64, artist, album, title string, trackNumber, year int, genre string) {
 	t.Helper()
-	if err := s.InsertTrack(ctx(), scan.Track{
-		DirectoryID: dirID,
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID:    importID,
 		Path:        "/music/" + artist + "/" + album + "/" + title + ".mp3",
 		Title:       title,
 		Artist:      artist,
@@ -25,10 +27,10 @@ func insertTrack(t *testing.T, s *Store, dirID int64, artist, album, title strin
 
 func TestInsertTrackDedupesArtistAndAlbum(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Rock")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007, "Alternative Rock")
 
 	artists, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 10})
 	if err != nil {
@@ -55,10 +57,10 @@ func TestInsertTrackDedupesArtistAndAlbum(t *testing.T) {
 
 func TestInsertTrackUntaggedGroupsUnderUnknown(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Misc")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "", "", "track1", 0, 0, "")
-	insertTrack(t, s, dir.ID, "", "", "track2", 0, 0, "")
+	insertTrack(t, s, importID, "", "", "track1", 0, 0, "")
+	insertTrack(t, s, importID, "", "", "track2", 0, 0, "")
 
 	artists, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 10})
 	if err != nil {
@@ -71,11 +73,11 @@ func TestInsertTrackUntaggedGroupsUnderUnknown(t *testing.T) {
 
 func TestListArtistsPagination(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Various")
+	importID := mustCreateImport(t, s)
 
 	names := []string{"Artist A", "Artist B", "Artist C", "Artist D", "Artist E"}
 	for _, name := range names {
-		insertTrack(t, s, dir.ID, name, "Album", "Song", 1, 2020, "Pop")
+		insertTrack(t, s, importID, name, "Album", "Song", 1, 2020, "Pop")
 	}
 
 	page1, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 2, Sort: "name"})
@@ -100,10 +102,10 @@ func TestListArtistsPagination(t *testing.T) {
 
 func TestListAlbumsFiltersByGenreAndYear(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Mixed")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Fleetwood Mac", "Rumours", "Dreams", 1, 1977, "Rock")
-	insertTrack(t, s, dir.ID, "Tycho", "Weather", "Dye", 1, 2019, "Electronic")
+	insertTrack(t, s, importID, "Fleetwood Mac", "Rumours", "Dreams", 1, 1977, "Rock")
+	insertTrack(t, s, importID, "Tycho", "Weather", "Dye", 1, 2019, "Electronic")
 
 	byGenre, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10, Genre: "Electronic"})
 	if err != nil {
@@ -124,11 +126,11 @@ func TestListAlbumsFiltersByGenreAndYear(t *testing.T) {
 
 func TestListAlbumsGenreFilterMatchesSubstring(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/GenreSubstring")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
-	insertTrack(t, s, dir.ID, "boygenius", "the record", "Cool About It", 1, 2023, "Indie Rock")
-	insertTrack(t, s, dir.ID, "Tycho", "Weather", "Dye", 1, 2019, "Electronic")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "boygenius", "the record", "Cool About It", 1, 2023, "Indie Rock")
+	insertTrack(t, s, importID, "Tycho", "Weather", "Dye", 1, 2019, "Electronic")
 
 	got, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10, Genre: "rock"})
 	if err != nil {
@@ -141,10 +143,10 @@ func TestListAlbumsGenreFilterMatchesSubstring(t *testing.T) {
 
 func TestListSongsSearchMatchesTitleArtistOrAlbum(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Search")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Nina Simone", "Pastel Blues", "Sinnerman", 1, 1965, "Jazz")
-	insertTrack(t, s, dir.ID, "Kendrick Lamar", "Mr. Morale", "Rich Spirit", 1, 2022, "Hip Hop")
+	insertTrack(t, s, importID, "Nina Simone", "Pastel Blues", "Sinnerman", 1, 1965, "Jazz")
+	insertTrack(t, s, importID, "Kendrick Lamar", "Mr. Morale", "Rich Spirit", 1, 2022, "Hip Hop")
 
 	byTitle, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "sinner"})
 	if err != nil {
@@ -174,10 +176,10 @@ func TestGetArtistNotFound(t *testing.T) {
 
 func TestGetArtistReturnsAlbumsNewestFirst(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/Radiohead")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Radiohead", "The Bends", "Fake Plastic Trees", 1, 1995, "Alternative Rock")
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "Reckoner", 1, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "The Bends", "Fake Plastic Trees", 1, 1995, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "Reckoner", 1, 2007, "Alternative Rock")
 
 	artists, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 10})
 	if err != nil {
@@ -210,11 +212,11 @@ func TestGetAlbumNotFound(t *testing.T) {
 
 func TestGetAlbumReturnsTracksOrderedByTrackNumber(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/InRainbows")
+	importID := mustCreateImport(t, s)
 
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "Reckoner", 7, 2007, "Alternative Rock")
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
-	insertTrack(t, s, dir.ID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "Reckoner", 7, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "15 Step", 1, 2007, "Alternative Rock")
+	insertTrack(t, s, importID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007, "Alternative Rock")
 
 	albums, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10})
 	if err != nil {
@@ -240,42 +242,90 @@ func TestGetAlbumReturnsTracksOrderedByTrackNumber(t *testing.T) {
 	}
 }
 
-func TestRemoveDirectoryDeletesOrphanedArtistAndAlbum(t *testing.T) {
+func TestDeleteArtistRemovesAlbumsAndTracks(t *testing.T) {
 	s := testStore(t)
-	dir, _ := s.AddDirectory(ctx(), "/music", "/music/OnlyHere")
-	insertTrack(t, s, dir.ID, "Solo Artist", "Solo Album", "Only Song", 1, 2020, "Pop")
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "Solo Artist", "Solo Album", "Only Song", 1, 2020, "Pop")
 
-	if err := s.RemoveDirectory(ctx(), dir.ID); err != nil {
-		t.Fatalf("RemoveDirectory: %v", err)
+	artist := findArtistByName(t, s, "Solo Artist")
+	if err := s.DeleteArtist(ctx(), artist.ID, false); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
 	}
 
-	artists, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Solo Artist"})
-	if err != nil {
-		t.Fatalf("ListArtists: %v", err)
+	if _, err := s.GetArtist(ctx(), artist.ID); !errors.Is(err, ErrArtistNotFound) {
+		t.Fatalf("GetArtist after delete = %v, want ErrArtistNotFound", err)
 	}
-	if len(artists.Items) != 0 {
-		t.Fatalf("artists after removal = %+v, want none (orphan should be deleted)", artists.Items)
-	}
-
 	albums, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Solo Album"})
 	if err != nil {
 		t.Fatalf("ListAlbums: %v", err)
 	}
 	if len(albums.Items) != 0 {
-		t.Fatalf("albums after removal = %+v, want none (orphan should be deleted)", albums.Items)
+		t.Fatalf("albums after artist delete = %+v, want none", albums.Items)
 	}
 }
 
-func TestRemoveDirectoryKeepsArtistStillReferencedElsewhere(t *testing.T) {
+func TestDeleteArtistNotFound(t *testing.T) {
 	s := testStore(t)
-	dirA, _ := s.AddDirectory(ctx(), "/music", "/music/DirA")
-	dirB, _ := s.AddDirectory(ctx(), "/music", "/music/DirB")
 
-	insertTrack(t, s, dirA.ID, "Shared Artist", "Album One", "Song One", 1, 2020, "Pop")
-	insertTrack(t, s, dirB.ID, "Shared Artist", "Album Two", "Song Two", 1, 2021, "Pop")
+	err := s.DeleteArtist(ctx(), 999999, false)
+	if !errors.Is(err, ErrArtistNotFound) {
+		t.Fatalf("DeleteArtist error = %v, want ErrArtistNotFound", err)
+	}
+}
 
-	if err := s.RemoveDirectory(ctx(), dirA.ID); err != nil {
-		t.Fatalf("RemoveDirectory: %v", err)
+func TestDeleteArtistKeepsFilesWhenNotRequested(t *testing.T) {
+	s := testStore(t)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "song.mp3")
+	if err := os.WriteFile(file, []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{ImportID: importID, Path: file, Title: "Song", Artist: "File Artist", Album: "File Album"}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	artist := findArtistByName(t, s, "File Artist")
+	if err := s.DeleteArtist(ctx(), artist.ID, false); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
+	}
+
+	if _, err := os.Stat(file); err != nil {
+		t.Fatalf("expected file to remain on disk, stat error: %v", err)
+	}
+}
+
+func TestDeleteArtistDeletesFilesWhenRequested(t *testing.T) {
+	s := testStore(t)
+	dir := t.TempDir()
+	file := filepath.Join(dir, "song.mp3")
+	if err := os.WriteFile(file, []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{ImportID: importID, Path: file, Title: "Song", Artist: "File Artist 2", Album: "File Album 2"}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	artist := findArtistByName(t, s, "File Artist 2")
+	if err := s.DeleteArtist(ctx(), artist.ID, true); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
+	}
+
+	if _, err := os.Stat(file); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected file to be removed from disk, stat error: %v", err)
+	}
+}
+
+func TestDeleteAlbumKeepsArtistAndOtherAlbums(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "Shared Artist", "Album One", "Song One", 1, 2020, "Pop")
+	insertTrack(t, s, importID, "Shared Artist", "Album Two", "Song Two", 1, 2021, "Pop")
+
+	albumTwo := findAlbumByTitle(t, s, "Album Two")
+	if err := s.DeleteAlbum(ctx(), albumTwo.ID, false); err != nil {
+		t.Fatalf("DeleteAlbum: %v", err)
 	}
 
 	artists, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Shared Artist"})
@@ -283,6 +333,15 @@ func TestRemoveDirectoryKeepsArtistStillReferencedElsewhere(t *testing.T) {
 		t.Fatalf("ListArtists: %v", err)
 	}
 	if len(artists.Items) != 1 || artists.Items[0].TrackCount != 1 || artists.Items[0].AlbumCount != 1 {
-		t.Fatalf("artists after partial removal = %+v, want 1 artist with 1 remaining track/album", artists.Items)
+		t.Fatalf("artists after album delete = %+v, want 1 artist with 1 remaining track/album", artists.Items)
+	}
+}
+
+func TestDeleteAlbumNotFound(t *testing.T) {
+	s := testStore(t)
+
+	err := s.DeleteAlbum(ctx(), 999999, false)
+	if !errors.Is(err, ErrAlbumNotFound) {
+		t.Fatalf("DeleteAlbum error = %v, want ErrAlbumNotFound", err)
 	}
 }

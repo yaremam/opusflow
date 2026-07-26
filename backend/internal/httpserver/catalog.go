@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -54,6 +55,43 @@ func handleGetArtist(svc *library.Service) http.HandlerFunc {
 	}
 }
 
+func handleDeleteArtist(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			return
+		}
+		deleteFiles, err := parseDeleteFiles(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := svc.DeleteArtist(r.Context(), id, deleteFiles); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// parseDeleteFiles requires an explicit deleteFiles=true|false query
+// parameter on every removal request — AC-13 rules out a silent default
+// either way, so a missing or malformed value is a client error, not a
+// fallback to "keep" or "delete".
+func parseDeleteFiles(r *http.Request) (bool, error) {
+	v := r.URL.Query().Get("deleteFiles")
+	switch v {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, errors.New(`deleteFiles query parameter must be "true" or "false"`)
+	}
+}
+
 func handleListAlbums(svc *library.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, err := svc.ListAlbums(r.Context(), parseListOptions(r))
@@ -78,6 +116,27 @@ func handleGetAlbum(svc *library.Service) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, album)
+	}
+}
+
+func handleDeleteAlbum(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid album id", http.StatusBadRequest)
+			return
+		}
+		deleteFiles, err := parseDeleteFiles(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if err := svc.DeleteAlbum(r.Context(), id, deleteFiles); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	}
 }
 

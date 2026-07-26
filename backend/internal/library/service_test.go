@@ -10,139 +10,179 @@ import (
 	"time"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
-// fakeDirectoryStore is an in-memory DirectoryStore for testing Service's
-// orchestration without a real database — mirrors fakeProgressStore in
-// scan/scanner_test.go.
-type fakeDirectoryStore struct {
-	mu     sync.Mutex
-	nextID int64
-	dirs   map[int64]Directory
-	byPath map[string]int64
+// fakeImportStore is an in-memory ImportStore for testing Service's
+// orchestration without a real database.
+type fakeImportStore struct {
+	mu             sync.Mutex
+	nextID         int64
+	imports        map[int64]Import
+	tracks         []organize.CopiedTrack
+	errors         []string
+	deletedArtists []int64
+	deletedAlbums  []int64
 }
 
-func newFakeDirectoryStore() *fakeDirectoryStore {
-	return &fakeDirectoryStore{dirs: make(map[int64]Directory), byPath: make(map[string]int64)}
+func newFakeImportStore() *fakeImportStore {
+	return &fakeImportStore{imports: make(map[int64]Import)}
 }
 
-func (f *fakeDirectoryStore) AddDirectory(_ context.Context, root, path string) (Directory, error) {
+func (f *fakeImportStore) CreateImport(_ context.Context, sourceDescription string) (Import, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if _, exists := f.byPath[path]; exists {
-		return Directory{}, ErrDuplicateDirectory
-	}
 	f.nextID++
-	dir := Directory{
-		ID:         f.nextID,
-		Root:       root,
-		Path:       path,
-		Status:     StatusScanning,
-		FileErrors: []FileError{},
-		CreatedAt:  time.Now(),
-	}
-	f.dirs[dir.ID] = dir
-	f.byPath[path] = dir.ID
-	return dir, nil
+	imp := Import{ID: f.nextID, SourceDescription: sourceDescription, Status: ImportStatusCopying, FileErrors: []FileError{}, CreatedAt: time.Now()}
+	f.imports[imp.ID] = imp
+	return imp, nil
 }
 
-func (f *fakeDirectoryStore) GetDirectory(_ context.Context, id int64) (Directory, error) {
+func (f *fakeImportStore) GetImport(_ context.Context, id int64) (Import, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	dir, ok := f.dirs[id]
+	imp, ok := f.imports[id]
 	if !ok {
-		return Directory{}, ErrDirectoryNotFound
+		return Import{}, ErrImportNotFound
 	}
-	return dir, nil
+	return imp, nil
 }
 
-func (f *fakeDirectoryStore) ListDirectories(_ context.Context) ([]Directory, error) {
+func (f *fakeImportStore) ListImports(_ context.Context) ([]Import, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	dirs := make([]Directory, 0, len(f.dirs))
+	imports := make([]Import, 0, len(f.imports))
 	for id := int64(1); id <= f.nextID; id++ {
-		if dir, ok := f.dirs[id]; ok {
-			dirs = append(dirs, dir)
+		if imp, ok := f.imports[id]; ok {
+			imports = append(imports, imp)
 		}
 	}
-	return dirs, nil
+	return imports, nil
 }
 
-func (f *fakeDirectoryStore) RemoveDirectory(_ context.Context, id int64) error {
+func (f *fakeImportStore) MarkImportComplete(_ context.Context, id int64) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	dir, ok := f.dirs[id]
-	if !ok {
-		return ErrDirectoryNotFound
-	}
-	delete(f.dirs, id)
-	delete(f.byPath, dir.Path)
+	imp := f.imports[id]
+	imp.Status = ImportStatusComplete
+	f.imports[id] = imp
 	return nil
 }
 
-// Catalog methods aren't exercised by directory-management tests — stubbed
-// just to satisfy DirectoryStore. catalogCapturingStore (service_catalog_test.go)
+func (f *fakeImportStore) MarkImportFailed(_ context.Context, id int64, errMsg string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	imp := f.imports[id]
+	imp.Status = ImportStatusFailed
+	imp.Error = errMsg
+	f.imports[id] = imp
+	return nil
+}
+
+func (f *fakeImportStore) InsertTrack(_ context.Context, t organize.CopiedTrack) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.tracks = append(f.tracks, t)
+	return nil
+}
+
+func (f *fakeImportStore) RecordImportError(_ context.Context, importID int64, path, message string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.errors = append(f.errors, path+": "+message)
+	return nil
+}
+
+func (f *fakeImportStore) UpdateImportProgress(_ context.Context, id int64, processed, total int) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	imp := f.imports[id]
+	imp.FilesProcessed = processed
+	imp.FilesTotal = total
+	f.imports[id] = imp
+	return nil
+}
+
+func (f *fakeImportStore) DeleteArtist(_ context.Context, id int64, deleteFiles bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedArtists = append(f.deletedArtists, id)
+	return nil
+}
+
+func (f *fakeImportStore) DeleteAlbum(_ context.Context, id int64, deleteFiles bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedAlbums = append(f.deletedAlbums, id)
+	return nil
+}
+
+// Catalog methods aren't exercised by import-orchestration tests — stubbed
+// just to satisfy ImportStore. catalogCapturingStore (service_catalog_test.go)
 // overrides these with real recording behavior for tests that do exercise them.
-func (f *fakeDirectoryStore) ListArtists(context.Context, ListOptions) (Page[Artist], error) {
+func (f *fakeImportStore) ListArtists(context.Context, ListOptions) (Page[Artist], error) {
 	return Page[Artist]{Items: []Artist{}}, nil
 }
-func (f *fakeDirectoryStore) GetArtist(context.Context, int64) (ArtistDetail, error) {
+func (f *fakeImportStore) GetArtist(context.Context, int64) (ArtistDetail, error) {
 	return ArtistDetail{}, ErrArtistNotFound
 }
-func (f *fakeDirectoryStore) ListAlbums(context.Context, ListOptions) (Page[Album], error) {
+func (f *fakeImportStore) ListAlbums(context.Context, ListOptions) (Page[Album], error) {
 	return Page[Album]{Items: []Album{}}, nil
 }
-func (f *fakeDirectoryStore) GetAlbum(context.Context, int64) (AlbumDetail, error) {
+func (f *fakeImportStore) GetAlbum(context.Context, int64) (AlbumDetail, error) {
 	return AlbumDetail{}, ErrAlbumNotFound
 }
-func (f *fakeDirectoryStore) ListSongs(context.Context, ListOptions) (Page[Song], error) {
+func (f *fakeImportStore) ListSongs(context.Context, ListOptions) (Page[Song], error) {
 	return Page[Song]{Items: []Song{}}, nil
 }
 
-type scanCall struct {
-	directoryID int64
-	path        string
+type copyCall struct {
+	importID int64
+	plan     organize.Plan
 }
 
-// recordingScanner is a non-blocking fake Scanner: it records the call and
+// recordingCopier is a non-blocking fake Copier: it records the call and
 // signals doneCh so tests can deterministically wait for the goroutine
-// AddDirectory spawns, without sleeping.
-type recordingScanner struct {
-	mu     sync.Mutex
-	calls  []scanCall
-	doneCh chan struct{}
+// ConfirmImport spawns, without sleeping.
+type recordingCopier struct {
+	mu      sync.Mutex
+	calls   []copyCall
+	doneCh  chan struct{}
+	summary organize.RunSummary
 }
 
-func newRecordingScanner() *recordingScanner {
-	return &recordingScanner{doneCh: make(chan struct{}, 10)}
+func newRecordingCopier() *recordingCopier {
+	return &recordingCopier{doneCh: make(chan struct{}, 10), summary: organize.RunSummary{FilesProcessed: 1}}
 }
 
-func (r *recordingScanner) Scan(_ context.Context, directoryID int64, path string) {
+func (r *recordingCopier) Copy(_ context.Context, _ organize.Store, importID int64, plan organize.Plan) organize.RunSummary {
 	r.mu.Lock()
-	r.calls = append(r.calls, scanCall{directoryID, path})
+	r.calls = append(r.calls, copyCall{importID, plan})
 	r.mu.Unlock()
 	r.doneCh <- struct{}{}
+	return r.summary
 }
 
-func (r *recordingScanner) waitForCall(t *testing.T) {
+func (r *recordingCopier) waitForCall(t *testing.T) {
 	t.Helper()
 	select {
 	case <-r.doneCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for Scan to be called")
+		t.Fatal("timed out waiting for Copy to be called")
 	}
 }
 
-// blockingScanner never returns from Scan until the test closes block,
-// used to prove AddDirectory doesn't wait for the scan to finish (AC-3).
-type blockingScanner struct{ block chan struct{} }
+// blockingCopier never returns from Copy until the test closes block, used
+// to prove ConfirmImport doesn't wait for the copy to finish.
+type blockingCopier struct{ block chan struct{} }
 
-func (b *blockingScanner) Scan(_ context.Context, _ int64, _ string) {
+func (b *blockingCopier) Copy(_ context.Context, _ organize.Store, _ int64, _ organize.Plan) organize.RunSummary {
 	<-b.block
+	return organize.RunSummary{}
 }
 
 // recordingEnricher is a non-blocking fake Enricher: it records the call
-// and signals doneCh, the same pattern recordingScanner uses.
+// and signals doneCh, the same pattern recordingCopier uses.
 type recordingEnricher struct {
 	mu     sync.Mutex
 	calls  int
@@ -170,71 +210,141 @@ func (r *recordingEnricher) waitForCall(t *testing.T) {
 	}
 }
 
-func TestAddDirectoryReturnsBeforeScanCompletes(t *testing.T) {
-	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	scanner := &blockingScanner{block: make(chan struct{})}
-	svc := NewService(Roots{root}, store, scanner)
+func validPlan() organize.Plan {
+	return organize.Plan{Albums: []organize.Album{{
+		Artist: "Artist", Album: "Album", Year: 2000,
+		Tracks: []organize.Track{{SourcePath: "/src/one.mp3", TrackNumber: 1, Title: "Title"}},
+	}}}
+}
+
+func TestConfirmImportReturnsBeforeCopyCompletes(t *testing.T) {
+	store := newFakeImportStore()
+	copier := &blockingCopier{block: make(chan struct{})}
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := svc.AddDirectory(ctx(), root)
+		_, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
 		done <- err
 	}()
 
 	select {
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("AddDirectory: %v", err)
+			t.Fatalf("ConfirmImport: %v", err)
 		}
 	case <-time.After(2 * time.Second):
-		t.Fatal("AddDirectory did not return promptly — looks like it's waiting on the scan")
+		t.Fatal("ConfirmImport did not return promptly — looks like it's waiting on the copy")
 	}
 
-	close(scanner.block) // let the background goroutine finish, avoid leaking it
+	close(copier.block) // let the background goroutine finish, avoid leaking it
 }
 
-func TestAddDirectorySuccess(t *testing.T) {
-	root := t.TempDir()
-	sub := filepath.Join(root, "Jazz")
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	store := newFakeDirectoryStore()
-	scanner := newRecordingScanner()
-	svc := NewService(Roots{root}, store, scanner)
+func TestConfirmImportSuccess(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
 
-	dir, err := svc.AddDirectory(ctx(), sub)
+	imp, errs, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
 	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+		t.Fatalf("ConfirmImport: %v", err)
 	}
-	if dir.Root != root || dir.Path != sub {
-		t.Fatalf("dir = %+v, want Root=%q Path=%q", dir, root, sub)
+	if len(errs) != 0 {
+		t.Fatalf("errs = %+v, want none", errs)
 	}
-	if dir.Status != StatusScanning {
-		t.Fatalf("Status = %q, want %q", dir.Status, StatusScanning)
+	if imp.SourceDescription != "/music/src" {
+		t.Fatalf("SourceDescription = %q", imp.SourceDescription)
 	}
 
-	scanner.waitForCall(t)
-	if len(scanner.calls) != 1 || scanner.calls[0].directoryID != dir.ID || scanner.calls[0].path != sub {
-		t.Fatalf("scanner.calls = %+v, want one call for directory %d at %q", scanner.calls, dir.ID, sub)
+	copier.waitForCall(t)
+	if len(copier.calls) != 1 || copier.calls[0].importID != imp.ID {
+		t.Fatalf("copier.calls = %+v, want one call for import %d", copier.calls, imp.ID)
 	}
 }
 
-func TestAddDirectoryRunsEnrichmentAfterScanCompletes(t *testing.T) {
-	root := t.TempDir()
-	sub := filepath.Join(root, "Jazz")
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
+func TestConfirmImportRejectsInvalidPlan(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+
+	incomplete := organize.Plan{Albums: []organize.Album{{
+		Artist: "", Album: "Album", Year: 2000,
+		Tracks: []organize.Track{{SourcePath: "/src/one.mp3"}},
+	}}}
+
+	imp, errs, err := svc.ConfirmImport(ctx(), "/music/src", incomplete)
+	if err != nil {
+		t.Fatalf("ConfirmImport: %v", err)
 	}
-	store := newFakeDirectoryStore()
-	scanner := newRecordingScanner()
+	if len(errs) == 0 {
+		t.Fatal("expected validation errors for an incomplete plan")
+	}
+	if imp.ID != 0 {
+		t.Fatalf("expected no import to be created, got %+v", imp)
+	}
+	if len(copier.calls) != 0 {
+		t.Fatalf("expected no copy to be started, got %+v", copier.calls)
+	}
+}
+
+func TestConfirmImportMarksCompleteAfterCopySucceeds(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
+	copier.summary = organize.RunSummary{FilesProcessed: 1, FilesFailed: 1}
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+
+	imp, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+	if err != nil {
+		t.Fatalf("ConfirmImport: %v", err)
+	}
+	copier.waitForCall(t)
+
+	waitForImportStatus(t, svc, imp.ID, ImportStatusComplete)
+}
+
+func TestConfirmImportMarksFailedWhenEveryFileFails(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
+	copier.summary = organize.RunSummary{FilesProcessed: 0, FilesFailed: 1}
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+
+	imp, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+	if err != nil {
+		t.Fatalf("ConfirmImport: %v", err)
+	}
+	copier.waitForCall(t)
+
+	waitForImportStatus(t, svc, imp.ID, ImportStatusFailed)
+}
+
+func waitForImportStatus(t *testing.T, svc *Service, id int64, want ImportStatus) {
+	t.Helper()
+	deadline := time.After(2 * time.Second)
+	for {
+		imp, err := svc.GetImport(ctx(), id)
+		if err != nil {
+			t.Fatalf("GetImport: %v", err)
+		}
+		if imp.Status == want {
+			return
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("Status = %q after timeout, want %q", imp.Status, want)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+func TestConfirmImportRunsEnrichmentAfterCopyCompletes(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
 	enricher := newRecordingEnricher()
-	svc := NewService(Roots{root}, store, scanner)
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
 	svc.SetEnricher(enricher)
 
-	if _, err := svc.AddDirectory(ctx(), sub); err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+	if _, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan()); err != nil {
+		t.Fatalf("ConfirmImport: %v", err)
 	}
 
 	enricher.waitForCall(t)
@@ -243,148 +353,65 @@ func TestAddDirectoryRunsEnrichmentAfterScanCompletes(t *testing.T) {
 	}
 }
 
-func TestAddDirectoryWithoutEnricherDoesNotPanic(t *testing.T) {
-	// SetEnricher is never called — AC-4's post-scan trigger must be a
-	// no-op, not a nil-pointer panic, for any Service that hasn't wired
-	// one up (e.g. every test that doesn't care about enrichment).
-	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	scanner := newRecordingScanner()
-	svc := NewService(Roots{root}, store, scanner)
+func TestConfirmImportWithoutEnricherDoesNotPanic(t *testing.T) {
+	store := newFakeImportStore()
+	copier := newRecordingCopier()
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
 
-	if _, err := svc.AddDirectory(ctx(), root); err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+	if _, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan()); err != nil {
+		t.Fatalf("ConfirmImport: %v", err)
 	}
-	scanner.waitForCall(t)
+	copier.waitForCall(t)
 }
 
-func TestAddDirectoryRejectsPathOutsideRoots(t *testing.T) {
+func TestBuildPlanRejectsPathOutsideRoots(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
-	store := newFakeDirectoryStore()
-	scanner := newRecordingScanner()
-	svc := NewService(Roots{root}, store, scanner)
+	svc := NewService(Roots{root}, t.TempDir(), newFakeImportStore(), newRecordingCopier())
 
-	_, err := svc.AddDirectory(ctx(), outside)
+	_, err := svc.BuildPlan(outside)
 	if !errors.Is(err, ErrOutsideRoots) {
-		t.Fatalf("AddDirectory error = %v, want ErrOutsideRoots", err)
-	}
-	if len(scanner.calls) != 0 {
-		t.Fatalf("expected no scan to be started, got %+v", scanner.calls)
+		t.Fatalf("BuildPlan error = %v, want ErrOutsideRoots", err)
 	}
 }
 
-func TestAddDirectoryRejectsNonexistentPath(t *testing.T) {
+func TestBuildPlanReadsTagsFromSourceDirectory(t *testing.T) {
 	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	svc := NewService(Roots{root}, store, newRecordingScanner())
-
-	_, err := svc.AddDirectory(ctx(), filepath.Join(root, "nope"))
-	if err == nil {
-		t.Fatal("AddDirectory(nonexistent path) error = nil, want error")
-	}
-}
-
-func TestAddDirectoryRejectsFilePath(t *testing.T) {
-	root := t.TempDir()
-	file := filepath.Join(root, "not-a-dir.txt")
-	if err := os.WriteFile(file, []byte("x"), 0o644); err != nil {
+	sub := filepath.Join(root, "Jazz")
+	if err := os.Mkdir(sub, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store := newFakeDirectoryStore()
-	svc := NewService(Roots{root}, store, newRecordingScanner())
+	svc := NewService(Roots{root}, t.TempDir(), newFakeImportStore(), newRecordingCopier())
 
-	_, err := svc.AddDirectory(ctx(), file)
-	if err == nil {
-		t.Fatal("AddDirectory(file path) error = nil, want error")
-	}
-}
-
-func TestAddDirectoryRejectsDuplicate(t *testing.T) {
-	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	svc := NewService(Roots{root}, store, newRecordingScanner())
-
-	if _, err := svc.AddDirectory(ctx(), root); err != nil {
-		t.Fatalf("first AddDirectory: %v", err)
-	}
-	_, err := svc.AddDirectory(ctx(), root)
-	if !errors.Is(err, ErrDuplicateDirectory) {
-		t.Fatalf("second AddDirectory error = %v, want ErrDuplicateDirectory", err)
-	}
-}
-
-// ctxCapturingScanner records the context Scan was called with and blocks
-// until the test releases it, so a test can inspect whether
-// RemoveDirectory cancelled that context while the scan was still running.
-type ctxCapturingScanner struct {
-	started chan struct{}
-	block   chan struct{}
-	ctx     context.Context
-}
-
-func newCtxCapturingScanner() *ctxCapturingScanner {
-	return &ctxCapturingScanner{started: make(chan struct{}), block: make(chan struct{})}
-}
-
-func (c *ctxCapturingScanner) Scan(ctx context.Context, _ int64, _ string) {
-	c.ctx = ctx
-	close(c.started)
-	<-c.block
-}
-
-func TestRemoveDirectoryCancelsInFlightScan(t *testing.T) {
-	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	scanner := newCtxCapturingScanner()
-	svc := NewService(Roots{root}, store, scanner)
-
-	dir, err := svc.AddDirectory(ctx(), root)
+	plan, err := svc.BuildPlan(sub)
 	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+		t.Fatalf("BuildPlan: %v", err)
 	}
-
-	select {
-	case <-scanner.started:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for Scan to start")
+	if len(plan.Albums) != 0 {
+		t.Fatalf("plan = %+v, want no albums for an empty directory", plan)
 	}
-
-	if err := svc.RemoveDirectory(ctx(), dir.ID); err != nil {
-		t.Fatalf("RemoveDirectory: %v", err)
-	}
-
-	select {
-	case <-scanner.ctx.Done():
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected the scan's context to be cancelled once its directory was removed")
-	}
-
-	close(scanner.block) // let the goroutine finish, avoid leaking it
 }
 
-func TestServiceRemoveAndListDelegateToStore(t *testing.T) {
-	root := t.TempDir()
-	store := newFakeDirectoryStore()
-	svc := NewService(Roots{root}, store, newRecordingScanner())
+func TestDeleteArtistDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
-	dir, err := svc.AddDirectory(ctx(), root)
-	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
+	if err := svc.DeleteArtist(ctx(), 42, true); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
 	}
+	if len(store.deletedArtists) != 1 || store.deletedArtists[0] != 42 {
+		t.Fatalf("deletedArtists = %+v, want [42]", store.deletedArtists)
+	}
+}
 
-	dirs, err := svc.ListDirectories(ctx())
-	if err != nil {
-		t.Fatalf("ListDirectories: %v", err)
-	}
-	if len(dirs) != 1 || dirs[0].ID != dir.ID {
-		t.Fatalf("ListDirectories = %+v, want one entry with ID %d", dirs, dir.ID)
-	}
+func TestDeleteAlbumDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
-	if err := svc.RemoveDirectory(ctx(), dir.ID); err != nil {
-		t.Fatalf("RemoveDirectory: %v", err)
+	if err := svc.DeleteAlbum(ctx(), 7, false); err != nil {
+		t.Fatalf("DeleteAlbum: %v", err)
 	}
-	if _, err := svc.store.GetDirectory(ctx(), dir.ID); !errors.Is(err, ErrDirectoryNotFound) {
-		t.Fatalf("GetDirectory after remove = %v, want ErrDirectoryNotFound", err)
+	if len(store.deletedAlbums) != 1 || store.deletedAlbums[0] != 7 {
+		t.Fatalf("deletedAlbums = %+v, want [7]", store.deletedAlbums)
 	}
 }

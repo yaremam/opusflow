@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
 // testPNG returns minimal-but-decodable PNG bytes, matching the enrich
@@ -26,8 +26,8 @@ func testPNG(t *testing.T) []byte {
 
 func insertTrackWithArtwork(t *testing.T, s *Store, artist, album string, artwork []byte) {
 	t.Helper()
-	if err := s.InsertTrack(ctx(), scan.Track{
-		DirectoryID: mustAddDirectory(t, s),
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID:    mustCreateImport(t, s),
 		Path:        "/music/" + artist + "/" + album + "/track.mp3",
 		Title:       "Track",
 		Artist:      artist,
@@ -64,8 +64,8 @@ func TestInsertTrackKeepsFirstEmbeddedArtworkAcrossTracks(t *testing.T) {
 	// A second track for the *same* album, also carrying artwork, must not
 	// overwrite what the first track already set (AC-1: first image found
 	// wins).
-	if err := s.InsertTrack(ctx(), scan.Track{
-		DirectoryID: mustAddDirectory(t, s),
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID:    mustCreateImport(t, s),
 		Path:        "/music/Multi Track Artist/Multi Track Album/track2.mp3",
 		Title:       "Track 2",
 		Artist:      "Multi Track Artist",

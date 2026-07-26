@@ -1,14 +1,32 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router'
-import { errorMessage, formatDuration, getAlbum, type AlbumDetail } from '../api/library'
+import { Link, useNavigate, useParams } from 'react-router'
+import { deleteAlbum, errorMessage, formatDuration, getAlbum, type AlbumDetail } from '../api/library'
 import ArtTile from '../components/ArtTile'
 import InfoBlock from '../components/InfoBlock'
+import RemoveModal from '../components/RemoveModal'
 import '../styles/catalog.css'
 
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const [album, setAlbum] = useState<AlbumDetail | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [removing, setRemoving] = useState(false)
+  const [removeSubmitting, setRemoveSubmitting] = useState(false)
+  const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function handleRemove(deleteFiles: boolean) {
+    if (!album) return
+    setRemoveSubmitting(true)
+    setRemoveError(null)
+    try {
+      await deleteAlbum(album.id, deleteFiles)
+      navigate('/albums')
+    } catch (err) {
+      setRemoveError(errorMessage(err))
+      setRemoveSubmitting(false)
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -58,8 +76,25 @@ export default function AlbumDetailPage() {
             {album.year > 0 ? `${album.year} · ` : ''}
             {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
           </div>
+          <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
+            Remove album…
+          </button>
         </div>
       </div>
+
+      {removing && (
+        <RemoveModal
+          name={album.title || 'Unknown Album'}
+          submitting={removeSubmitting}
+          submitError={removeError}
+          onDeleteFiles={() => handleRemove(true)}
+          onKeepFiles={() => handleRemove(false)}
+          onCancel={() => {
+            setRemoving(false)
+            setRemoveError(null)
+          }}
+        />
+      )}
 
       <InfoBlock
         facts={[

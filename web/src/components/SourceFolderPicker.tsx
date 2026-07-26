@@ -1,9 +1,14 @@
 import { useEffect, useState } from 'react'
 import { browse, errorMessage, rootLabel, type Entry, type RootInfo } from '../api/library'
-import './DirectoryPicker.css'
+import './SourceFolderPicker.css'
 
-interface DirectoryPickerProps {
+interface SourceFolderPickerProps {
   roots: RootInfo[]
+  title: string
+  description: string
+  confirmLabel: string
+  confirmingLabel: string
+  cancelLabel?: string
   onCancel: () => void
   onConfirm: (path: string) => void
   submitting: boolean
@@ -33,13 +38,23 @@ function toBreadcrumb(root: string, currentPath: string): BreadcrumbSegment[] {
   return segments
 }
 
-export default function DirectoryPicker({
+// SourceFolderPicker browses the server-visible folders configured via
+// IMPORT_SOURCE_ROOTS, so the reviewer can pick a folder to import from.
+// Generalized (title/description/labels as props) so the same breadcrumb
+// browser serves both the standalone "browse a server folder" step and any
+// other place a folder needs picking, without duplicating the browse logic.
+export default function SourceFolderPicker({
   roots,
+  title,
+  description,
+  confirmLabel,
+  confirmingLabel,
+  cancelLabel = 'Cancel',
   onCancel,
   onConfirm,
   submitting,
   submitError,
-}: DirectoryPickerProps) {
+}: SourceFolderPickerProps) {
   const [activeRoot, setActiveRoot] = useState(roots[0]?.path ?? '')
   const [currentPath, setCurrentPath] = useState(activeRoot)
   const [entries, setEntries] = useState<Entry[]>([])
@@ -47,10 +62,10 @@ export default function DirectoryPicker({
   const [browseError, setBrowseError] = useState<string | null>(null)
 
   // roots often arrives after this component has already mounted (the
-  // picker opens as soon as the user clicks "Add directory," regardless of
-  // whether LibraryPage's root fetch has resolved yet) — the useState
-  // initializers above only run once, at mount, so back-fill activeRoot
-  // once real roots show up if nothing has selected one yet.
+  // picker opens as soon as the user picks this source, regardless of
+  // whether the roots fetch has resolved yet) — the useState initializers
+  // above only run once, at mount, so back-fill activeRoot once real roots
+  // show up if nothing has selected one yet.
   useEffect(() => {
     if (activeRoot || roots.length === 0) return
     setActiveRoot(roots[0].path)
@@ -86,9 +101,10 @@ export default function DirectoryPicker({
 
   return (
     <div className="picker-scrim" onClick={(e) => e.target === e.currentTarget && onCancel()}>
-      <div className="picker-panel" role="dialog" aria-modal="true" aria-label="Add a directory">
+      <div className="picker-panel" role="dialog" aria-modal="true" aria-label={title}>
         <div className="picker-head">
-          <h2>Add a directory</h2>
+          <h2>{title}</h2>
+          <p>{description}</p>
           {roots.length > 1 && (
             <div className="picker-roots">
               {roots.map((r) => (
@@ -144,7 +160,7 @@ export default function DirectoryPicker({
           <div className="foot-actions">
             {submitError && <span className="picker-status error">{submitError}</span>}
             <button type="button" className="btn-ghost" onClick={onCancel}>
-              Cancel
+              {cancelLabel}
             </button>
             <button
               type="button"
@@ -152,7 +168,7 @@ export default function DirectoryPicker({
               disabled={submitting || !currentPath}
               onClick={() => onConfirm(currentPath)}
             >
-              {submitting ? 'Adding…' : 'Add this folder'}
+              {submitting ? confirmingLabel : confirmLabel}
             </button>
           </div>
         </div>

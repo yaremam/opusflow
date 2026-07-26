@@ -52,7 +52,7 @@ func TestMigrateCreatesSchema(t *testing.T) {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	for _, table := range []string{"library_directories", "tracks", "library_scan_errors", "schema_migrations"} {
+	for _, table := range []string{"imports", "tracks", "import_errors", "schema_migrations"} {
 		var exists bool
 		err := conn.QueryRow(
 			"SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1)",

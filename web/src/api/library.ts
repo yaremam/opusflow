@@ -1,15 +1,14 @@
-export type DirectoryStatus = 'scanning' | 'complete' | 'failed'
+export type ImportStatus = 'copying' | 'complete' | 'failed'
 
 export interface FileError {
   path: string
   error: string
 }
 
-export interface LibraryDirectory {
+export interface Import {
   id: number
-  root: string
-  path: string
-  status: DirectoryStatus
+  sourceDescription: string
+  status: ImportStatus
   filesProcessed: number
   filesTotal: number
   error?: string
@@ -25,6 +24,46 @@ export interface RootInfo {
 export interface Entry {
   name: string
   path: string
+}
+
+// PlanTrack/PlanAlbum/Plan mirror the backend's organize.Track/Album/Plan —
+// the review-plan shape a source directory or upload resolves into. Named
+// distinctly from the catalog's Album/Song types below since a plan track
+// isn't a catalog row yet (nothing has been copied).
+export interface PlanTrack {
+  sourcePath: string
+  trackNumber: number
+  title: string
+  destPath: string
+  conflict: boolean
+  overwrite: boolean
+}
+
+export interface PlanAlbum {
+  artist: string
+  album: string
+  year: number
+  tracks: PlanTrack[]
+}
+
+export interface Plan {
+  albums: PlanAlbum[]
+}
+
+// ValidationError reports one track that isn't ready to copy — missing (a
+// list of required field names) and/or conflict (an unresolved destination
+// clash). Indexes into the Plan the server was handed, so a caller can map
+// an error straight back to the row it came from.
+export interface ValidationError {
+  albumIndex: number
+  trackIndex: number
+  missing?: string[]
+  conflict?: boolean
+}
+
+export interface PlanResponse {
+  plan: Plan
+  errors: ValidationError[]
 }
 
 export interface Artist {
@@ -144,28 +183,116 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await res.json()) as T
 }
 
-export function listRoots(): Promise<RootInfo[]> {
-  return request('/api/library/roots')
-}
-
-export function browse(path: string): Promise<Entry[]> {
-  return request(`/api/library/browse?path=${encodeURIComponent(path)}`)
-}
-
-export function listDirectories(): Promise<LibraryDirectory[]> {
-  return request('/api/library/directories')
-}
-
-export function addDirectory(path: string): Promise<LibraryDirectory> {
-  return request('/api/library/directories', {
+function postJSON<T>(path: string, body: unknown): Promise<T> {
+  return request(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path }),
+    body: JSON.stringify(body),
   })
 }
 
-export function removeDirectory(id: number): Promise<void> {
-  return request(`/api/library/directories/${id}`, { method: 'DELETE' })
+export function listImportRoots(): Promise<RootInfo[]> {
+  return request('/api/imports/roots')
+}
+
+export function browse(path: string): Promise<Entry[]> {
+  return request(`/api/imports/browse?path=${encodeURIComponent(path)}`)
+}
+
+export function buildPlan(sourceDir: string): Promise<PlanResponse> {
+  return postJSON('/api/imports/plan', { sourceDir })
+}
+
+export function validatePlan(plan: Plan): Promise<PlanResponse> {
+  return postJSON('/api/imports/plan/validate', plan)
+}
+
+export interface UploadFile {
+  file: File
+  relativePath: string
+}
+
+export interface UploadProgress {
+  loadedBytes: number
+  totalBytes: number
+}
+
+// uploadImport POSTs every file as one multipart request, preserving each
+// file's relative folder path (webkitRelativePath, for a folder picked via
+// <input webkitdirectory>) as the multipart part's filename, so the backend
+// stages them into the same directory shape a browsed server folder would
+// have had. Uses XMLHttpRequest rather than fetch because progress events
+// on a request body aren't otherwise observable — onProgress reports
+// combined bytes across the whole upload, not per file; the caller derives
+// individual file progress from each file's byte offset within the request.
+export function uploadImport(files: UploadFile[], onProgress: (progress: UploadProgress) => void): Promise<PlanResponse> {
+  return new Promise((resolve, reject) => {
+    const form = new FormData()
+    for (const f of files) {
+      form.append('files', f.file, f.relativePath)
+    }
+
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/api/imports/upload')
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress({ loadedBytes: e.loaded, totalBytes: e.total })
+    }
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          resolve(JSON.parse(xhr.responseText) as PlanResponse)
+        } catch {
+          reject(new Error('Server returned an invalid response'))
+        }
+      } else {
+        reject(new Error(xhr.responseText.trim() || `Request failed with status ${xhr.status}`))
+      }
+    }
+    xhr.onerror = () => reject(new Error('Upload failed'))
+    xhr.send(form)
+  })
+}
+
+export interface ConfirmResult {
+  import?: Import
+  errors?: ValidationError[]
+}
+
+// confirmImport handles its own response status rather than going through
+// request(): a 422 (plan still isn't ready) is an expected outcome the
+// review screen redraws around, not an exception — only an actual
+// network/server failure should throw.
+export async function confirmImport(sourceDescription: string, plan: Plan): Promise<ConfirmResult> {
+  const res = await fetch('/api/imports', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sourceDescription, plan }),
+  })
+  if (res.status === 422) {
+    const body = (await res.json()) as { errors: ValidationError[] }
+    return { errors: body.errors }
+  }
+  if (!res.ok) {
+    const text = (await res.text()).trim()
+    throw new Error(text || `Request failed with status ${res.status}`)
+  }
+  return { import: (await res.json()) as Import }
+}
+
+export function listImports(): Promise<Import[]> {
+  return request('/api/imports')
+}
+
+export function getImport(id: number): Promise<Import> {
+  return request(`/api/imports/${id}`)
+}
+
+export function deleteArtist(id: number, deleteFiles: boolean): Promise<void> {
+  return request(`/api/library/artists/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' })
+}
+
+export function deleteAlbum(id: number, deleteFiles: boolean): Promise<void> {
+  return request(`/api/library/albums/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' })
 }
 
 function listParams(params: ListParams): string {

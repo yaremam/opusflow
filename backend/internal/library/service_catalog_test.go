@@ -5,19 +5,19 @@ import (
 	"testing"
 )
 
-// catalogCapturingStore extends fakeDirectoryStore's directory behavior
-// with catalog methods that just record the ListOptions they were called
-// with, so tests can assert on what Service normalized before delegating —
+// catalogCapturingStore extends fakeImportStore's import behavior with
+// catalog methods that just record the ListOptions they were called with,
+// so tests can assert on what Service normalized before delegating —
 // without needing a real database.
 type catalogCapturingStore struct {
-	*fakeDirectoryStore
+	*fakeImportStore
 	lastArtistOpts ListOptions
 	lastAlbumOpts  ListOptions
 	lastSongOpts   ListOptions
 }
 
 func newCatalogCapturingStore() *catalogCapturingStore {
-	return &catalogCapturingStore{fakeDirectoryStore: newFakeDirectoryStore()}
+	return &catalogCapturingStore{fakeImportStore: newFakeImportStore()}
 }
 
 func (c *catalogCapturingStore) ListArtists(_ context.Context, opts ListOptions) (Page[Artist], error) {
@@ -51,7 +51,7 @@ func (c *catalogCapturingStore) ListSongs(_ context.Context, opts ListOptions) (
 
 func TestListArtistsNormalizesDefaults(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, store, newRecordingScanner())
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
 	if _, err := svc.ListArtists(ctx(), ListOptions{}); err != nil {
 		t.Fatalf("ListArtists: %v", err)
@@ -70,7 +70,7 @@ func TestListArtistsNormalizesDefaults(t *testing.T) {
 
 func TestListAlbumsClampsPageAndPageSize(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, store, newRecordingScanner())
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
 	if _, err := svc.ListAlbums(ctx(), ListOptions{Page: -5, PageSize: 9000}); err != nil {
 		t.Fatalf("ListAlbums: %v", err)
@@ -86,7 +86,7 @@ func TestListAlbumsClampsPageAndPageSize(t *testing.T) {
 
 func TestListSongsRejectsUnknownSort(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, store, newRecordingScanner())
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
 	if _, err := svc.ListSongs(ctx(), ListOptions{Sort: "banana"}); err != nil {
 		t.Fatalf("ListSongs: %v", err)
@@ -98,7 +98,7 @@ func TestListSongsRejectsUnknownSort(t *testing.T) {
 
 func TestListOptionsPreservesGenreYearQuery(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, store, newRecordingScanner())
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
 	opts := ListOptions{Genre: "Jazz", Year: 1965, Query: "sinner", Sort: "name"}
 	if _, err := svc.ListArtists(ctx(), opts); err != nil {
@@ -112,7 +112,7 @@ func TestListOptionsPreservesGenreYearQuery(t *testing.T) {
 
 func TestServiceGetArtistAndAlbumDelegate(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, store, newRecordingScanner())
+	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
 
 	artist, err := svc.GetArtist(ctx(), 42)
 	if err != nil {
