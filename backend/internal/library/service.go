@@ -12,6 +12,14 @@ type Scanner interface {
 	Scan(ctx context.Context, directoryID int64, path string)
 }
 
+// Enricher runs one pass of the background artwork/info enrichment job
+// (TDR 003) — processing every artist/album still owed art, facts, or
+// bio/description, not just ones touched by the scan that triggered it.
+// The real implementation is enrich.Job; tests substitute a fake.
+type Enricher interface {
+	Run(ctx context.Context)
+}
+
 // DirectoryStore is the persistence Service needs — directory management
 // plus browsing the artist/album/song catalog those directories' scans
 // populate — the subset of Store's methods it actually calls. *Store
@@ -63,9 +71,10 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 // Service orchestrates library directory management: browsing configured
 // roots, registering and scanning new directories, and removing them.
 type Service struct {
-	roots   Roots
-	store   DirectoryStore
-	scanner Scanner
+	roots    Roots
+	store    DirectoryStore
+	scanner  Scanner
+	enricher Enricher
 
 	mu          sync.Mutex
 	activeScans map[int64]context.CancelFunc
@@ -74,6 +83,15 @@ type Service struct {
 // NewService builds a Service.
 func NewService(roots Roots, store DirectoryStore, scanner Scanner) *Service {
 	return &Service{roots: roots, store: store, scanner: scanner, activeScans: make(map[int64]context.CancelFunc)}
+}
+
+// SetEnricher wires up the background artwork/info job, run after every
+// scan completes (AC-4). Kept as a setter rather than a NewService
+// parameter so existing callers (tests included) that don't need
+// enrichment aren't forced to construct one; nil (the default) just means
+// AddDirectory's scan-completion hook is a no-op.
+func (s *Service) SetEnricher(enricher Enricher) {
+	s.enricher = enricher
 }
 
 // ListRoots returns the configured library roots.
@@ -148,6 +166,13 @@ func (s *Service) AddDirectory(ctx context.Context, path string) (Directory, err
 	go func() {
 		defer s.endScan(dir.ID)
 		s.scanner.Scan(scanCtx, dir.ID, dir.Path)
+		// A fresh, independent context rather than scanCtx: enrichment
+		// covers the whole library (AC-4), not just this directory, so a
+		// scan that got cancelled (e.g. RemoveDirectory) shouldn't also
+		// cut short every other artist/album's enrichment pass.
+		if s.enricher != nil {
+			s.enricher.Run(context.Background())
+		}
 	}()
 
 	return dir, nil

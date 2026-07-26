@@ -18,6 +18,9 @@ services:
     environment:
       PORT: ${PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:-postgres://opusflow:opusflow@postgres:5432/opusflow?sslmode=disable}
+      ARTWORK_DIR: /data/artwork
+    volumes:
+      - artwork:/data/artwork
     ports:
       - "8090:8080"
     depends_on:
@@ -26,3 +29,4 @@ services:
 
 volumes:
   pgdata:
+  artwork:

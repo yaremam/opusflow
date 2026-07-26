@@ -62,7 +62,7 @@ func TestLibraryArtistsListsAndPaginates(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists", nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -96,7 +96,7 @@ func TestLibraryArtistDetailReturnsAlbums(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists/"+strconv.FormatInt(artists.Items[0].ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -115,7 +115,7 @@ func TestLibraryArtistDetailNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists/999999", nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -132,7 +132,7 @@ func TestLibraryAlbumsFiltersByYear(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums?year=1977", nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -161,7 +161,7 @@ func TestLibraryAlbumDetailReturnsTracks(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums/"+strconv.FormatInt(albums.Items[0].ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -180,7 +180,7 @@ func TestLibraryAlbumDetailNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums/999999", nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -197,7 +197,7 @@ func TestLibrarySongsSearchesByQuery(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs?q=sinner", nil)
 	rec := httptest.NewRecorder()
-	New("", svc).ServeHTTP(rec, req)
+	New("", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())

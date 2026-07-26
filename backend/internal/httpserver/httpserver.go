@@ -13,8 +13,10 @@ import (
 // New returns the application's root HTTP handler. When staticDir is
 // non-empty, it also serves the built web app from that directory, falling
 // back to its index.html for any unmatched GET so client-side routing keeps
-// working after a refresh. svc backs the library endpoints.
-func New(staticDir string, svc *library.Service) http.Handler {
+// working after a refresh. When artworkDir is non-empty, fetched/extracted
+// artist photos and album covers (TDR 003) are served from it under
+// /artwork/. svc backs the library endpoints.
+func New(staticDir, artworkDir string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth)
 	mux.HandleFunc("GET /api/library/roots", handleLibraryRoots(svc))
@@ -27,6 +29,10 @@ func New(staticDir string, svc *library.Service) http.Handler {
 	mux.HandleFunc("GET /api/library/albums", handleListAlbums(svc))
 	mux.HandleFunc("GET /api/library/albums/{id}", handleGetAlbum(svc))
 	mux.HandleFunc("GET /api/library/songs", handleListSongs(svc))
+
+	if artworkDir != "" {
+		mux.Handle("GET /artwork/", http.StripPrefix("/artwork/", http.FileServer(http.Dir(artworkDir))))
+	}
 
 	if staticDir != "" {
 		mux.Handle("GET /", spaHandler(staticDir))
