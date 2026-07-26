@@ -11,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/yaremam/opusflow/backend/internal/library"
 	"github.com/yaremam/opusflow/backend/internal/library/organize"
@@ -42,6 +43,31 @@ func mustCreateLibraryForTest(t *testing.T, store *library.Store, rootPath strin
 		t.Fatalf("CreateLibrary: %v", err)
 	}
 	return lib.ID
+}
+
+// waitForImportDone blocks until ConfirmImport's background copy goroutine
+// has marked the import complete or failed. ConfirmImport intentionally
+// returns before that goroutine finishes (see its doc comment), so tests
+// that exercise a real store/copier must wait here before returning —
+// otherwise the goroutine races the test's own cleanup (t.TempDir removal,
+// the test DB closing), which fails intermittently rather than cleanly.
+func waitForImportDone(t *testing.T, svc *library.Service, id int64) library.Import {
+	t.Helper()
+	deadline := time.After(5 * time.Second)
+	for {
+		imp, err := svc.GetImport(t.Context(), id)
+		if err != nil {
+			t.Fatalf("GetImport: %v", err)
+		}
+		if imp.Status != library.ImportStatusCopying {
+			return imp
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("import %d still %q after timeout", id, imp.Status)
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
 }
 
 func TestBuildPlanReturnsAlbumsFromSourceDirectory(t *testing.T) {
@@ -259,6 +285,13 @@ func TestConfirmImportAcceptsValidPlan(t *testing.T) {
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
 	}
+	var imp struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &imp); err != nil {
+		t.Fatalf("unmarshal import: %v", err)
+	}
+	waitForImportDone(t, svc, imp.ID)
 }
 
 func TestConfirmImportRejectsIncompletePlan(t *testing.T) {
@@ -364,6 +397,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 	if err := json.Unmarshal(confirmRec.Body.Bytes(), &imp); err != nil {
 		t.Fatalf("unmarshal import: %v", err)
 	}
+	waitForImportDone(t, svc, imp.ID)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/"+strconv.FormatInt(imp.ID, 10), nil)
 	rec := httptest.NewRecorder()
