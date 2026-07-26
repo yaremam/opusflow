@@ -81,14 +81,8 @@
   width: 3.6rem;
   height: 3.6rem;
   border-radius: 50%;
-  background: var(--ink-800);
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 1.1rem;
-  color: var(--accent-strong);
+  overflow: hidden;
 }
 .artist-chip .name {
   font-size: 0.76rem;
@@ -107,18 +101,12 @@
   border-radius: 12px;
 }
 .artist-card .avatar {
-  width: 3.6rem;
-  height: 3.6rem;
+  width: 4.2rem;
+  height: 4.2rem;
   margin: 0 auto 0.65rem;
   border-radius: 50%;
-  background: var(--ink-800);
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 800;
-  font-size: 1.1rem;
-  color: var(--accent-strong);
+  overflow: hidden;
 }
 .artist-card .name {
   font-size: 0.86rem;
@@ -143,18 +131,25 @@
 .album-card .art {
   aspect-ratio: 1;
   border-radius: 10px;
-  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
   margin-bottom: 0.55rem;
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  transition:
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
 }
-.album-card .art svg {
-  width: 1.6rem;
-  height: 1.6rem;
-  color: var(--mist-400);
-  opacity: 0.6;
+.album-card:hover .art {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow);
+}
+@media (prefers-reduced-motion: reduce) {
+  .album-card .art {
+    transition: none;
+  }
+  .album-card:hover .art {
+    transform: none;
+  }
 }
 .album-card .title {
   font-size: 0.86rem;
@@ -167,12 +162,58 @@
   margin-top: 0.15rem;
 }
 
+/* Shared artwork-tile rules (ArtTile component): apply to every art slot —
+   album-card .art, artist-card/chip .avatar, detail-art, song-row .thumb.
+   Each is either a real <img> or a "placeholder" variant showing a
+   refined glyph on the app's existing ink-gradient tile. */
+.art img,
+.avatar img,
+.detail-art img,
+.thumb img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+/* .placeholder is applied to the same element as .art/.avatar/.detail-art/
+   .thumb (ArtTile renders one div, not a nested pair) — it must only add
+   the gradient fill and centering, never touch sizing, or it fights the
+   base class's width/height and the tile collapses/stretches. */
+.art.placeholder,
+.avatar.placeholder,
+.detail-art.placeholder,
+.thumb.placeholder {
+  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.art.placeholder svg {
+  width: 42%;
+  height: 42%;
+  color: var(--mist-400);
+  opacity: 0.75;
+}
+.avatar.placeholder svg,
+.thumb.placeholder svg {
+  width: 46%;
+  height: 46%;
+  color: var(--mist-400);
+  opacity: 0.75;
+}
+.detail-art.placeholder svg {
+  width: 36%;
+  height: 36%;
+  color: var(--mist-400);
+  opacity: 0.75;
+}
+
 .song-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr auto;
   align-items: center;
-  gap: 1rem;
-  padding: 0.65rem 0.15rem;
+  gap: 0.85rem;
+  padding: 0.5rem 0.15rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.86rem;
   text-decoration: none;
@@ -180,6 +221,14 @@
 }
 .song-row:hover {
   background: var(--ink-900);
+}
+.song-row .thumb {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+  flex-shrink: 0;
 }
 .song-row .t {
   font-weight: 600;
@@ -305,25 +354,16 @@
   flex-wrap: wrap;
 }
 .detail-art {
-  width: 10rem;
-  height: 10rem;
+  width: 11rem;
+  height: 11rem;
   flex-shrink: 0;
   border-radius: 12px;
   box-shadow: var(--shadow);
-  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
   border: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
 }
 .detail-art.round {
   border-radius: 50%;
-}
-.detail-art svg {
-  width: 2.4rem;
-  height: 2.4rem;
-  color: var(--mist-400);
-  opacity: 0.6;
 }
 .detail-meta .kind {
   font-size: 0.72rem;
@@ -387,4 +427,51 @@ table.track-table td.trk {
   color: var(--mist-400);
   font-variant-numeric: tabular-nums;
   width: 2.5rem;
+}
+
+/* Info block — MusicBrainz facts + optional Wikipedia bio/description on
+   the Artist/Album detail pages. Facts and text track independent
+   enrichment statuses, so InfoBlock renders whichever it's given. */
+.info-block {
+  margin-top: 1.5rem;
+  max-width: 62ch;
+}
+.fact-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.fact-chip {
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--mist-400);
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 0.32rem 0.75rem;
+}
+.fact-chip b {
+  color: var(--paper-50);
+  font-weight: 700;
+}
+.bio {
+  font-size: 0.92rem;
+  line-height: 1.6;
+  color: var(--paper-50);
+  margin: 0.9rem 0 0;
+}
+.bio-source {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.74rem;
+  color: var(--mist-400);
+}
+.bio-source a {
+  color: var(--mist-400);
+  text-decoration: none;
+  border-bottom: 1px dotted var(--border);
+}
+.bio-source a:hover {
+  color: var(--accent-strong);
+  border-color: var(--accent-strong);
 }

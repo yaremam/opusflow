@@ -157,6 +157,7 @@ func (s *Scanner) importFile(ctx context.Context, directoryID int64, path string
 		Year:            tags.Year,
 		Genre:           tags.Genre,
 		DurationSeconds: int(dur / time.Second),
+		ArtworkData:     tags.Artwork,
 	}
 	if err := s.store.InsertTrack(ctx, track); err != nil {
 		s.recordFileError(ctx, directoryID, path, err.Error())

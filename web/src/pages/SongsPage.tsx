@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { formatDuration, listSongs } from '../api/library'
 import { useListPage } from '../hooks/useListPage'
 import Pager from '../components/Pager'
+import ArtTile from '../components/ArtTile'
 import '../styles/catalog.css'
 
 export default function SongsPage() {
@@ -50,6 +51,7 @@ export default function SongsPage() {
       <div>
         {page?.items.map((song) => (
           <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
+            <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" />
             <div>
               <div className="t">{song.title}</div>
               <div className="a">

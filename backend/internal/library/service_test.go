@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 )
 
 // fakeDirectoryStore is an in-memory DirectoryStore for testing Service's
@@ -139,6 +141,35 @@ func (b *blockingScanner) Scan(_ context.Context, _ int64, _ string) {
 	<-b.block
 }
 
+// recordingEnricher is a non-blocking fake Enricher: it records the call
+// and signals doneCh, the same pattern recordingScanner uses.
+type recordingEnricher struct {
+	mu     sync.Mutex
+	calls  int
+	doneCh chan struct{}
+}
+
+func newRecordingEnricher() *recordingEnricher {
+	return &recordingEnricher{doneCh: make(chan struct{}, 10)}
+}
+
+func (r *recordingEnricher) Run(context.Context) enrich.RunSummary {
+	r.mu.Lock()
+	r.calls++
+	r.mu.Unlock()
+	r.doneCh <- struct{}{}
+	return enrich.RunSummary{}
+}
+
+func (r *recordingEnricher) waitForCall(t *testing.T) {
+	t.Helper()
+	select {
+	case <-r.doneCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for Run to be called")
+	}
+}
+
 func TestAddDirectoryReturnsBeforeScanCompletes(t *testing.T) {
 	root := t.TempDir()
 	store := newFakeDirectoryStore()
@@ -188,6 +219,43 @@ func TestAddDirectorySuccess(t *testing.T) {
 	if len(scanner.calls) != 1 || scanner.calls[0].directoryID != dir.ID || scanner.calls[0].path != sub {
 		t.Fatalf("scanner.calls = %+v, want one call for directory %d at %q", scanner.calls, dir.ID, sub)
 	}
+}
+
+func TestAddDirectoryRunsEnrichmentAfterScanCompletes(t *testing.T) {
+	root := t.TempDir()
+	sub := filepath.Join(root, "Jazz")
+	if err := os.Mkdir(sub, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	store := newFakeDirectoryStore()
+	scanner := newRecordingScanner()
+	enricher := newRecordingEnricher()
+	svc := NewService(Roots{root}, store, scanner)
+	svc.SetEnricher(enricher)
+
+	if _, err := svc.AddDirectory(ctx(), sub); err != nil {
+		t.Fatalf("AddDirectory: %v", err)
+	}
+
+	enricher.waitForCall(t)
+	if enricher.calls != 1 {
+		t.Fatalf("enricher.calls = %d, want 1", enricher.calls)
+	}
+}
+
+func TestAddDirectoryWithoutEnricherDoesNotPanic(t *testing.T) {
+	// SetEnricher is never called — AC-4's post-scan trigger must be a
+	// no-op, not a nil-pointer panic, for any Service that hasn't wired
+	// one up (e.g. every test that doesn't care about enrichment).
+	root := t.TempDir()
+	store := newFakeDirectoryStore()
+	scanner := newRecordingScanner()
+	svc := NewService(Roots{root}, store, scanner)
+
+	if _, err := svc.AddDirectory(ctx(), root); err != nil {
+		t.Fatalf("AddDirectory: %v", err)
+	}
+	scanner.waitForCall(t)
 }
 
 func TestAddDirectoryRejectsPathOutsideRoots(t *testing.T) {

@@ -12,4 +12,7 @@ type Track struct {
 	Year            int
 	Genre           string
 	DurationSeconds int
+
+	// ArtworkData is this file's embedded cover art, if any (see Tags.Artwork).
+	ArtworkData []byte
 }

@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { errorMessage, getArtist, type ArtistDetail } from '../api/library'
+import ArtTile from '../components/ArtTile'
+import InfoBlock from '../components/InfoBlock'
 import '../styles/catalog.css'
 
 export default function ArtistDetailPage() {
@@ -43,12 +45,7 @@ export default function ArtistDetailPage() {
         <Link to="/artists">Artists</Link> / {artist.name || 'Unknown Artist'}
       </p>
       <div className="detail-head">
-        <div className="detail-art round">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="8" r="3.2" stroke="currentColor" strokeWidth="1.6" />
-            <path d="M5 20c0-3.5 3-6 7-6s7 2.5 7 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
-          </svg>
-        </div>
+        <ArtTile src={artist.photoUrl || artist.photoThumbUrl} alt="" className="detail-art round" kind="artist" />
         <div className="detail-meta">
           <div className="kind">Artist</div>
           <h1>{artist.name || 'Unknown Artist'}</h1>
@@ -59,18 +56,23 @@ export default function ArtistDetailPage() {
         </div>
       </div>
 
+      <InfoBlock
+        facts={[
+          ...(artist.formedYear > 0 ? [{ label: 'Formed', value: String(artist.formedYear) }] : []),
+          ...(artist.country ? [{ label: 'Country', value: artist.country }] : []),
+          ...artist.genres.map((g) => ({ label: 'Genre', value: g })),
+        ]}
+        text={artist.bio}
+        sourceUrl={artist.bioSourceUrl}
+      />
+
       <div className="section-head">
         <h2>Albums</h2>
       </div>
       <div className="card-grid">
         {artist.albums.map((album) => (
           <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-            <div className="art">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
-                <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
-            </div>
+            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
             <div className="title">{album.title || 'Unknown Album'}</div>
             <div className="artist">{album.year > 0 ? album.year : ''}</div>
           </Link>

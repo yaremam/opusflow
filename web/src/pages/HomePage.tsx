@@ -12,6 +12,7 @@ import {
   type LibraryDirectory,
   type Song,
 } from '../api/library'
+import ArtTile from '../components/ArtTile'
 import '../styles/catalog.css'
 
 const PREVIEW_COUNT = 8
@@ -127,7 +128,7 @@ export default function HomePage() {
           <div className="chip-row">
             {data.artists.map((artist) => (
               <Link key={artist.id} className="artist-chip" to={`/artists/${artist.id}`}>
-                <span className="avatar">{artist.name ? artist.name[0].toUpperCase() : '?'}</span>
+                <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" />
                 <span className="name">{artist.name || 'Unknown Artist'}</span>
               </Link>
             ))}
@@ -140,12 +141,7 @@ export default function HomePage() {
           <div className="card-grid">
             {data.albums.map((album) => (
               <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-                <div className="art">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                    <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
-                    <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-                  </svg>
-                </div>
+                <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
                 <div className="title">{album.title || 'Unknown Album'}</div>
                 <div className="artist">{album.artistName || 'Unknown Artist'}</div>
               </Link>
@@ -159,6 +155,7 @@ export default function HomePage() {
           <div>
             {data.songs.map((song) => (
               <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
+                <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" />
                 <div>
                   <div className="t">{song.title}</div>
                   <div className="a">

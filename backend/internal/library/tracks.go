@@ -3,7 +3,9 @@ package library
 import (
 	"context"
 	"fmt"
+	"log"
 
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 	"github.com/yaremam/opusflow/backend/internal/library/scan"
 )
 
@@ -41,7 +43,64 @@ func (s *Store) InsertTrack(ctx context.Context, t scan.Track) error {
 		return fmt.Errorf("inserting track: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing track insert: %w", err)
+	}
+
+	// Saving embedded artwork happens after commit, outside the
+	// transaction — it's disk I/O (resizing), not something that needs
+	// the track/artist/album row's atomicity. AC-1: only the first
+	// embedded image found for this album wins, so the eventual write is
+	// conditioned on the album's art still being open (pending or
+	// failed) — a second track's artwork arriving after the first one
+	// already landed (including a concurrent scan of a second directory
+	// covering the same album) is a no-op, not an overwrite. A save/
+	// record failure here is logged, not returned — the track itself
+	// imported fine.
+	if s.images != nil && len(t.ArtworkData) > 0 {
+		s.saveEmbeddedAlbumArt(ctx, albumID, t.ArtworkData)
+	}
+	return nil
+}
+
+func (s *Store) saveEmbeddedAlbumArt(ctx context.Context, albumID int64, data []byte) {
+	// Checked before the decode/resize/encode work below, not just before
+	// the final write: most tracks on a tagged album carry the same
+	// embedded cover, so without this an album with N tagged tracks would
+	// pay the full image-processing cost N times over even though only
+	// the first result is ever kept.
+	open, err := s.albumArtStillOpen(ctx, albumID)
+	if err != nil {
+		log.Printf("library: album %d: checking art status: %v", albumID, err)
+		return
+	}
+	if !open {
+		return
+	}
+
+	thumbURL, fullURL, err := s.images.Save("album", albumID, data)
+	if err != nil {
+		log.Printf("library: album %d: saving embedded artwork: %v", albumID, err)
+		return
+	}
+	if err := s.SetAlbumArtIfOpen(ctx, albumID, enrich.Found, thumbURL, fullURL); err != nil {
+		log.Printf("library: album %d: recording embedded artwork: %v", albumID, err)
+	}
+}
+
+// albumArtStillOpen reports whether albumID's art is still pending or
+// failed (enrich.Store's "not yet settled" definition) — the same test
+// SetAlbumArtIfOpen's UPDATE applies, but cheap to run before doing any
+// expensive work that a settled album wouldn't need.
+func (s *Store) albumArtStillOpen(ctx context.Context, albumID int64) (bool, error) {
+	var open bool
+	err := s.db.QueryRowContext(ctx, `
+		SELECT art_status `+pendingOrFailed+` FROM albums WHERE id = $1
+	`, albumID).Scan(&open)
+	if err != nil {
+		return false, fmt.Errorf("checking album art status: %w", err)
+	}
+	return open, nil
 }
 
 // RecordFileError records that a single file within a directory's scan

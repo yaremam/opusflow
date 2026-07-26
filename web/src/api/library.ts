@@ -33,6 +33,18 @@ export interface Artist {
   albumCount: number
   trackCount: number
   createdAt: string
+
+  // Populated by the background enrichment job (TDR 003) — all start
+  // zero-valued until it runs. An empty photoUrl/photoThumbUrl means "show
+  // the placeholder tile", not "still loading"; empty genres/bio mean that
+  // section just isn't rendered.
+  photoThumbUrl: string
+  photoUrl: string
+  formedYear: number
+  country: string
+  genres: string[]
+  bio: string
+  bioSourceUrl: string
 }
 
 export interface Album {
@@ -43,6 +55,14 @@ export interface Album {
   year: number
   trackCount: number
   createdAt: string
+
+  coverThumbUrl: string
+  coverUrl: string
+  label: string
+  country: string
+  genres: string[]
+  description: string
+  descriptionSourceUrl: string
 }
 
 export interface Song {
@@ -52,6 +72,7 @@ export interface Song {
   artistName: string
   albumId: number
   albumTitle: string
+  albumCoverThumbUrl: string
   trackNumber: number
   year: number
   genre: string

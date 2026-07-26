@@ -2,14 +2,30 @@ package library
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 	"sync"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 )
 
 // Scanner starts an asynchronous scan of a registered directory. The real
 // implementation is scan.Scanner; tests substitute a fake.
 type Scanner interface {
 	Scan(ctx context.Context, directoryID int64, path string)
+}
+
+// Enricher runs one pass of the background artwork/info enrichment job
+// (TDR 003) — processing every artist/album still owed art, facts, or
+// bio/description, not just ones touched by the scan that triggered it.
+// The real implementation is enrich.Job; tests substitute a fake.
+//
+// ctx must be independent of any single scan's lifecycle: Run covers the
+// whole library, not one directory, so a caller must never pass a context
+// a directory-scoped operation (e.g. scan cancellation) can cancel out
+// from under the rest of the run — see AddDirectory, the one call site.
+type Enricher interface {
+	Run(ctx context.Context) enrich.RunSummary
 }
 
 // DirectoryStore is the persistence Service needs — directory management
@@ -63,9 +79,10 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 // Service orchestrates library directory management: browsing configured
 // roots, registering and scanning new directories, and removing them.
 type Service struct {
-	roots   Roots
-	store   DirectoryStore
-	scanner Scanner
+	roots    Roots
+	store    DirectoryStore
+	scanner  Scanner
+	enricher Enricher
 
 	mu          sync.Mutex
 	activeScans map[int64]context.CancelFunc
@@ -74,6 +91,15 @@ type Service struct {
 // NewService builds a Service.
 func NewService(roots Roots, store DirectoryStore, scanner Scanner) *Service {
 	return &Service{roots: roots, store: store, scanner: scanner, activeScans: make(map[int64]context.CancelFunc)}
+}
+
+// SetEnricher wires up the background artwork/info job, run after every
+// scan completes (AC-4). Kept as a setter rather than a NewService
+// parameter so existing callers (tests included) that don't need
+// enrichment aren't forced to construct one; nil (the default) just means
+// AddDirectory's scan-completion hook is a no-op.
+func (s *Service) SetEnricher(enricher Enricher) {
+	s.enricher = enricher
 }
 
 // ListRoots returns the configured library roots.
@@ -148,6 +174,11 @@ func (s *Service) AddDirectory(ctx context.Context, path string) (Directory, err
 	go func() {
 		defer s.endScan(dir.ID)
 		s.scanner.Scan(scanCtx, dir.ID, dir.Path)
+		if s.enricher != nil {
+			// context.Background(), not scanCtx — see Enricher's doc comment.
+			sum := s.enricher.Run(context.Background())
+			log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
+		}
 	}()
 
 	return dir, nil

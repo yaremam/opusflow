@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { errorMessage, formatDuration, getAlbum, type AlbumDetail } from '../api/library'
+import ArtTile from '../components/ArtTile'
+import InfoBlock from '../components/InfoBlock'
 import '../styles/catalog.css'
 
 export default function AlbumDetailPage() {
@@ -45,12 +47,7 @@ export default function AlbumDetailPage() {
         <Link to="/albums">Albums</Link> / {album.title || 'Unknown Album'}
       </p>
       <div className="detail-head">
-        <div className="detail-art">
-          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
-            <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-          </svg>
-        </div>
+        <ArtTile src={album.coverUrl || album.coverThumbUrl} alt="" className="detail-art" kind="album" />
         <div className="detail-meta">
           <div className="kind">Album</div>
           <h1>{album.title || 'Unknown Album'}</h1>
@@ -63,6 +60,16 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       </div>
+
+      <InfoBlock
+        facts={[
+          ...(album.label ? [{ label: 'Label', value: album.label }] : []),
+          ...(album.country ? [{ label: 'Country', value: album.country }] : []),
+          ...album.genres.map((g) => ({ label: 'Genre', value: g })),
+        ]}
+        text={album.description}
+        sourceUrl={album.descriptionSourceUrl}
+      />
 
       <table className="track-table">
         <thead>
