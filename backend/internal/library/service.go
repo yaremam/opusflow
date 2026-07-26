@@ -2,8 +2,11 @@ package library
 
 import (
 	"context"
+	"log"
 	"path/filepath"
 	"sync"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 )
 
 // Scanner starts an asynchronous scan of a registered directory. The real
@@ -16,8 +19,13 @@ type Scanner interface {
 // (TDR 003) — processing every artist/album still owed art, facts, or
 // bio/description, not just ones touched by the scan that triggered it.
 // The real implementation is enrich.Job; tests substitute a fake.
+//
+// ctx must be independent of any single scan's lifecycle: Run covers the
+// whole library, not one directory, so a caller must never pass a context
+// a directory-scoped operation (e.g. scan cancellation) can cancel out
+// from under the rest of the run — see AddDirectory, the one call site.
 type Enricher interface {
-	Run(ctx context.Context)
+	Run(ctx context.Context) enrich.RunSummary
 }
 
 // DirectoryStore is the persistence Service needs — directory management
@@ -166,12 +174,10 @@ func (s *Service) AddDirectory(ctx context.Context, path string) (Directory, err
 	go func() {
 		defer s.endScan(dir.ID)
 		s.scanner.Scan(scanCtx, dir.ID, dir.Path)
-		// A fresh, independent context rather than scanCtx: enrichment
-		// covers the whole library (AC-4), not just this directory, so a
-		// scan that got cancelled (e.g. RemoveDirectory) shouldn't also
-		// cut short every other artist/album's enrichment pass.
 		if s.enricher != nil {
-			s.enricher.Run(context.Background())
+			// context.Background(), not scanCtx — see Enricher's doc comment.
+			sum := s.enricher.Run(context.Background())
+			log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
 		}
 	}()
 

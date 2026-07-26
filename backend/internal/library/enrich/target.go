@@ -51,11 +51,11 @@ type Store interface {
 
 	SetArtistMusicBrainzID(ctx context.Context, id int64, mbid string) error
 	SetArtistArt(ctx context.Context, id int64, status Status, thumbPath, fullPath string) error
-	SetArtistFacts(ctx context.Context, id int64, status Status, formedYear int, country string, genres []string) error
+	SetArtistFacts(ctx context.Context, id int64, status Status, info ArtistInfo) error
 	SetArtistBio(ctx context.Context, id int64, status Status, bio, sourceURL string) error
 
 	SetAlbumMusicBrainzID(ctx context.Context, id int64, mbid string) error
 	SetAlbumArt(ctx context.Context, id int64, status Status, thumbPath, fullPath string) error
-	SetAlbumFacts(ctx context.Context, id int64, status Status, label, country string, genres []string) error
+	SetAlbumFacts(ctx context.Context, id int64, status Status, info ReleaseGroupInfo) error
 	SetAlbumDescription(ctx context.Context, id int64, status Status, description, sourceURL string) error
 }

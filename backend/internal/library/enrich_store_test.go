@@ -85,7 +85,7 @@ func TestSetArtistFactsWithNilGenresDoesNotViolateNotNull(t *testing.T) {
 	insertTrackFor(t, s, "Nil Genres Artist", "Album")
 	artist := findArtistByName(t, s, "Nil Genres Artist")
 
-	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Failed, 0, "", nil); err != nil {
+	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Failed, enrich.ArtistInfo{}); err != nil {
 		t.Fatalf("SetArtistFacts with nil genres: %v", err)
 	}
 
@@ -103,7 +103,7 @@ func TestSetAlbumFactsWithNilGenresDoesNotViolateNotNull(t *testing.T) {
 	insertTrackFor(t, s, "Artist", "Nil Genres Album")
 	album := findAlbumByTitle(t, s, "Nil Genres Album")
 
-	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Failed, "", "", nil); err != nil {
+	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Failed, enrich.ReleaseGroupInfo{}); err != nil {
 		t.Fatalf("SetAlbumFacts with nil genres: %v", err)
 	}
 
@@ -155,7 +155,7 @@ func TestSetArtistFactsAndBioRoundTrip(t *testing.T) {
 	insertTrackFor(t, s, "Facts Artist", "Album")
 	artist := findArtistByName(t, s, "Facts Artist")
 
-	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Found, 1999, "UK", []string{"Dream pop", "Shoegaze"}); err != nil {
+	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Found, enrich.ArtistInfo{FormedYear: 1999, Country: "UK", Genres: []string{"Dream pop", "Shoegaze"}}); err != nil {
 		t.Fatalf("SetArtistFacts: %v", err)
 	}
 	if err := s.SetArtistBio(ctx(), artist.ID, enrich.NotFound, "", ""); err != nil {
@@ -210,7 +210,7 @@ func TestSetAlbumArtFactsDescriptionRoundTrip(t *testing.T) {
 	if err := s.SetAlbumArt(ctx(), album.ID, enrich.Found, "/artwork/album/1/thumb.jpg", "/artwork/album/1/full.jpg"); err != nil {
 		t.Fatalf("SetAlbumArt: %v", err)
 	}
-	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Found, "Harbor & Kite", "UK", []string{"Dream pop"}); err != nil {
+	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Found, enrich.ReleaseGroupInfo{Label: "Harbor & Kite", Country: "UK", Genres: []string{"Dream pop"}}); err != nil {
 		t.Fatalf("SetAlbumFacts: %v", err)
 	}
 	if err := s.SetAlbumDescription(ctx(), album.ID, enrich.Found, "A record about tides.", "https://en.wikipedia.org/wiki/Example"); err != nil {

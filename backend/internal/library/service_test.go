@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 )
 
 // fakeDirectoryStore is an in-memory DirectoryStore for testing Service's
@@ -151,11 +153,12 @@ func newRecordingEnricher() *recordingEnricher {
 	return &recordingEnricher{doneCh: make(chan struct{}, 10)}
 }
 
-func (r *recordingEnricher) Run(context.Context) {
+func (r *recordingEnricher) Run(context.Context) enrich.RunSummary {
 	r.mu.Lock()
 	r.calls++
 	r.mu.Unlock()
 	r.doneCh <- struct{}{}
+	return enrich.RunSummary{}
 }
 
 func (r *recordingEnricher) waitForCall(t *testing.T) {

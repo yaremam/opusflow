@@ -73,7 +73,8 @@ func main() {
 	go func() {
 		migrateWithRetry(conn)
 		if job != nil {
-			job.Run(context.Background())
+			sum := job.Run(context.Background())
+			log.Printf("enrich: startup run: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
 		}
 	}()
 

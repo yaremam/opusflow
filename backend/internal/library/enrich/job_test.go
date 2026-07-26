@@ -20,10 +20,8 @@ type fakeStore struct {
 		thumbURL, fullURL string
 	}
 	artistFactsCalls map[int64]struct {
-		status     Status
-		formedYear int
-		country    string
-		genres     []string
+		status Status
+		info   ArtistInfo
 	}
 	artistBioCalls map[int64]struct {
 		status         Status
@@ -36,10 +34,8 @@ type fakeStore struct {
 		thumbURL, fullURL string
 	}
 	albumFactsCalls map[int64]struct {
-		status  Status
-		label   string
-		country string
-		genres  []string
+		status Status
+		info   ReleaseGroupInfo
 	}
 	albumDescriptionCalls map[int64]struct {
 		status      Status
@@ -55,10 +51,8 @@ func newFakeStore() *fakeStore {
 			thumbURL, fullURL string
 		}{},
 		artistFactsCalls: map[int64]struct {
-			status     Status
-			formedYear int
-			country    string
-			genres     []string
+			status Status
+			info   ArtistInfo
 		}{},
 		artistBioCalls: map[int64]struct {
 			status         Status
@@ -69,10 +63,8 @@ func newFakeStore() *fakeStore {
 			thumbURL, fullURL string
 		}{},
 		albumFactsCalls: map[int64]struct {
-			status  Status
-			label   string
-			country string
-			genres  []string
+			status Status
+			info   ReleaseGroupInfo
 		}{},
 		albumDescriptionCalls: map[int64]struct {
 			status      Status
@@ -99,13 +91,11 @@ func (f *fakeStore) SetArtistArt(_ context.Context, id int64, status Status, thu
 	}{status, thumbURL, fullURL}
 	return nil
 }
-func (f *fakeStore) SetArtistFacts(_ context.Context, id int64, status Status, formedYear int, country string, genres []string) error {
+func (f *fakeStore) SetArtistFacts(_ context.Context, id int64, status Status, info ArtistInfo) error {
 	f.artistFactsCalls[id] = struct {
-		status     Status
-		formedYear int
-		country    string
-		genres     []string
-	}{status, formedYear, country, genres}
+		status Status
+		info   ArtistInfo
+	}{status, info}
 	return nil
 }
 func (f *fakeStore) SetArtistBio(_ context.Context, id int64, status Status, bio, sourceURL string) error {
@@ -126,13 +116,11 @@ func (f *fakeStore) SetAlbumArt(_ context.Context, id int64, status Status, thum
 	}{status, thumbURL, fullURL}
 	return nil
 }
-func (f *fakeStore) SetAlbumFacts(_ context.Context, id int64, status Status, label, country string, genres []string) error {
+func (f *fakeStore) SetAlbumFacts(_ context.Context, id int64, status Status, info ReleaseGroupInfo) error {
 	f.albumFactsCalls[id] = struct {
-		status  Status
-		label   string
-		country string
-		genres  []string
-	}{status, label, country, genres}
+		status Status
+		info   ReleaseGroupInfo
+	}{status, info}
 	return nil
 }
 func (f *fakeStore) SetAlbumDescription(_ context.Context, id int64, status Status, description, sourceURL string) error {
@@ -210,7 +198,7 @@ func TestJobResolvesArtistArtFactsAndBioEndToEnd(t *testing.T) {
 		t.Fatalf("expected MBID cached for artist 1, got %+v", store.artistMBIDCalls)
 	}
 	facts := store.artistFactsCalls[1]
-	if facts.status != Found || facts.formedYear != 2011 || facts.country != "UK" {
+	if facts.status != Found || facts.info.FormedYear != 2011 || facts.info.Country != "UK" {
 		t.Fatalf("facts = %+v", facts)
 	}
 	bio := store.artistBioCalls[1]
@@ -232,7 +220,7 @@ func TestJobMarksAllKindsNotFoundWhenArtistSearchHasNoMatch(t *testing.T) {
 	store := newFakeStore()
 	store.artists = []ArtistTarget{{ID: 5, Name: "Nobody", ArtStatus: Pending, FactsStatus: Pending, BioStatus: Pending}}
 
-	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+	sum := NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
 
 	if store.artistFactsCalls[5].status != NotFound {
 		t.Fatalf("facts status = %v, want not_found", store.artistFactsCalls[5].status)
@@ -245,6 +233,65 @@ func TestJobMarksAllKindsNotFoundWhenArtistSearchHasNoMatch(t *testing.T) {
 	}
 	if len(store.artistMBIDCalls) != 0 {
 		t.Fatalf("expected no MBID cached for an unmatched artist, got %+v", store.artistMBIDCalls)
+	}
+	if sum != (RunSummary{NotFound: 3}) {
+		t.Fatalf("Run summary = %+v, want {NotFound: 3}", sum)
+	}
+}
+
+func TestJobRunSummaryCountsFound(t *testing.T) {
+	// Reuses the same fixtures as the end-to-end resolution test above —
+	// all three kinds resolve to Found — to check Run's returned tally,
+	// not just what got written to the store.
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/artist", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"artists": [{"id": "artist-mbid"}]}`))
+	})
+	mux.HandleFunc("/mb/artist/artist-mbid", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{
+			"life-span": {"begin": "2011"}, "area": {"name": "UK"},
+			"genres": [{"name": "Dream pop"}],
+			"relations": [{"type": "wikidata", "url": {"resource": "https://www.wikidata.org/wiki/Q1"}}]
+		}`))
+	})
+	mux.HandleFunc("/wikidata", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"entities": {"Q1": {
+			"sitelinks": {"enwiki": {"title": "Marlow Creek"}},
+			"claims": {"P18": [{"mainsnak": {"datavalue": {"value": "photo.jpg"}}}]}
+		}}}`))
+	})
+	mux.HandleFunc("/wikipedia/Marlow%20Creek", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"extract": "A band.", "content_urls": {"desktop": {"page": "https://en.wikipedia.org/wiki/Marlow_Creek"}}}`))
+	})
+	mux.HandleFunc("/commons/photo.jpg", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(testPNG(t, 400, 400))
+	})
+
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.artists = []ArtistTarget{{ID: 1, Name: "Marlow Creek", ArtStatus: Pending, FactsStatus: Pending, BioStatus: Pending}}
+
+	sum := NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if sum != (RunSummary{Found: 3}) {
+		t.Fatalf("Run summary = %+v, want {Found: 3}", sum)
+	}
+}
+
+func TestJobRunSummaryCountsFailed(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/artist", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	})
+
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.artists = []ArtistTarget{{ID: 8, Name: "Broken Lookup", ArtStatus: Pending, FactsStatus: Pending, BioStatus: Pending}}
+
+	sum := NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if sum != (RunSummary{Failed: 3}) {
+		t.Fatalf("Run summary = %+v, want {Failed: 3}", sum)
 	}
 }
 
