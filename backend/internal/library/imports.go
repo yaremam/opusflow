@@ -28,6 +28,7 @@ var ErrImportNotFound = errors.New("import not found")
 // here is deduplicated.
 type Import struct {
 	ID                int64        `json:"id"`
+	LibraryID         int64        `json:"libraryId"`
 	SourceDescription string       `json:"sourceDescription"`
 	Status            ImportStatus `json:"status"`
 	FilesProcessed    int          `json:"filesProcessed"`
@@ -38,15 +39,16 @@ type Import struct {
 	CreatedAt         time.Time    `json:"createdAt"`
 }
 
-// CreateImport records a new import run with status "copying".
-func (s *Store) CreateImport(ctx context.Context, sourceDescription string) (Import, error) {
+// CreateImport records a new import run with status "copying", attributed
+// to the library it will copy into.
+func (s *Store) CreateImport(ctx context.Context, libraryID int64, sourceDescription string) (Import, error) {
 	var imp Import
 	err := s.db.QueryRowContext(ctx, `
-		INSERT INTO imports (source_description, status)
-		VALUES ($1, $2)
-		RETURNING id, source_description, status, files_processed, files_total, error, created_at
-	`, sourceDescription, ImportStatusCopying).Scan(
-		&imp.ID, &imp.SourceDescription, &imp.Status, &imp.FilesProcessed, &imp.FilesTotal, &imp.Error, &imp.CreatedAt,
+		INSERT INTO imports (library_id, source_description, status)
+		VALUES ($1, $2, $3)
+		RETURNING id, library_id, source_description, status, files_processed, files_total, error, created_at
+	`, libraryID, sourceDescription, ImportStatusCopying).Scan(
+		&imp.ID, &imp.LibraryID, &imp.SourceDescription, &imp.Status, &imp.FilesProcessed, &imp.FilesTotal, &imp.Error, &imp.CreatedAt,
 	)
 	if err != nil {
 		return Import{}, fmt.Errorf("inserting import: %w", err)
@@ -56,7 +58,7 @@ func (s *Store) CreateImport(ctx context.Context, sourceDescription string) (Imp
 }
 
 // importColumnsSQL is the column list scanImport expects, in order.
-const importColumnsSQL = `i.id, i.source_description, i.status, i.files_processed, i.files_total, i.error, i.created_at`
+const importColumnsSQL = `i.id, i.library_id, i.source_description, i.status, i.files_processed, i.files_total, i.error, i.created_at`
 
 // GetImport fetches a single import by ID, including its track count and
 // any recorded per-file errors.
@@ -148,11 +150,11 @@ func (s *Store) MarkImportFailed(ctx context.Context, id int64, errMsg string) e
 }
 
 // scanImport scans one row produced by a query built on importColumnsSQL —
-// the 6 base columns, then track count as the 7th — into an Import.
+// the 7 base columns, then track count as the 8th — into an Import.
 func (s *Store) scanImport(row rowScanner) (Import, error) {
 	var imp Import
 	err := row.Scan(
-		&imp.ID, &imp.SourceDescription, &imp.Status, &imp.FilesProcessed, &imp.FilesTotal, &imp.Error, &imp.CreatedAt, &imp.TrackCount,
+		&imp.ID, &imp.LibraryID, &imp.SourceDescription, &imp.Status, &imp.FilesProcessed, &imp.FilesTotal, &imp.Error, &imp.CreatedAt, &imp.TrackCount,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Import{}, ErrImportNotFound

@@ -19,16 +19,16 @@ import (
 )
 
 // lazyService builds a *library.Service for tests that never actually hit
-// the database (health, static file serving, roots, browse) — its store
-// wraps a lazily-connecting *sql.DB that's never queried.
-func lazyService(t *testing.T, roots library.Roots) *library.Service {
+// the database (health, static file serving, browse) — its store wraps a
+// lazily-connecting *sql.DB that's never queried.
+func lazyService(t *testing.T) *library.Service {
 	t.Helper()
 	sqlDB, err := sql.Open("postgres", "postgres://unused:unused@127.0.0.1:1/unused?sslmode=disable")
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sqlDB.Close() })
-	return library.NewService(roots, t.TempDir(), library.NewStore(sqlDB), organize.CopyJob{})
+	return library.NewService(library.NewStore(sqlDB), organize.CopyJob{})
 }
 
 func randomSuffix() string {
@@ -39,15 +39,15 @@ func randomSuffix() string {
 
 // testService builds a *library.Service backed by a real, freshly-migrated
 // Postgres schema, skipping the test if DATABASE_URL isn't configured.
-func testService(t *testing.T, roots library.Roots) *library.Service {
+func testService(t *testing.T) *library.Service {
 	t.Helper()
-	_, svc := testStoreAndService(t, roots)
+	_, svc := testStoreAndService(t)
 	return svc
 }
 
 // testStoreAndService is testService but also hands back the underlying
 // *library.Store, for tests that need to seed tracks directly.
-func testStoreAndService(t *testing.T, roots library.Roots) (*library.Store, *library.Service) {
+func testStoreAndService(t *testing.T) (*library.Store, *library.Service) {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -74,14 +74,14 @@ func testStoreAndService(t *testing.T, roots library.Roots) (*library.Store, *li
 	}
 
 	store := library.NewStore(conn)
-	return store, library.NewService(roots, t.TempDir(), store, organize.CopyJob{})
+	return store, library.NewService(store, organize.CopyJob{})
 }
 
 func TestHealth(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, nil)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -98,7 +98,7 @@ func TestHealthReportsRevision(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "abc1234", lazyService(t, nil)).ServeHTTP(rec, req)
+	New("", "", "abc1234", lazyService(t)).ServeHTTP(rec, req)
 
 	var body healthResponse
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
@@ -118,7 +118,7 @@ func TestStaticFallsBackToIndexForUnknownRoute(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
 	rec := httptest.NewRecorder()
 
-	New(dir, "", "", lazyService(t, nil)).ServeHTTP(rec, req)
+	New(dir, "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -140,7 +140,7 @@ func TestArtworkServesFilesFromArtworkDir(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/artwork/album/42/thumb.jpg", nil)
 	rec := httptest.NewRecorder()
 
-	New("", dir, "", lazyService(t, nil)).ServeHTTP(rec, req)
+	New("", dir, "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -154,33 +154,10 @@ func TestArtworkRouteAbsentWhenArtworkDirUnset(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/artwork/album/42/thumb.jpg", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, nil)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusOK {
 		t.Fatalf("expected the /artwork/ route to be absent when artworkDir is unset, got status %d", rec.Code)
-	}
-}
-
-func TestImportRootsListsConfiguredRoots(t *testing.T) {
-	roots := library.Roots{"/music", "/nas-music"}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/imports/roots", nil)
-	rec := httptest.NewRecorder()
-
-	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-
-	var got []struct {
-		Path string `json:"path"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal response: %v, body = %s", err, rec.Body.String())
-	}
-	if len(got) != 2 || got[0].Path != "/music" || got[1].Path != "/nas-music" {
-		t.Fatalf("roots = %+v, want [/music, /nas-music]", got)
 	}
 }
 
@@ -189,12 +166,11 @@ func TestImportBrowseListsSubdirectories(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(root, "Rock"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	roots := library.Roots{root}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -209,28 +185,25 @@ func TestImportBrowseListsSubdirectories(t *testing.T) {
 	}
 }
 
-func TestImportBrowseRejectsPathOutsideRoots(t *testing.T) {
+func TestImportBrowseAllowsAnyPath(t *testing.T) {
+	// No allowlist anymore (TDR 006) — any absolute path is browsable.
 	root := t.TempDir()
-	outside := t.TempDir()
-	roots := library.Roots{root}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+outside, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 }
 
 func TestImportBrowseRequiresPathParam(t *testing.T) {
-	roots := library.Roots{t.TempDir()}
-
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -239,12 +212,11 @@ func TestImportBrowseRequiresPathParam(t *testing.T) {
 
 func TestImportBrowseNonexistentPath(t *testing.T) {
 	root := t.TempDir()
-	roots := library.Roots{root}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+filepath.Join(root, "nope"), nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())

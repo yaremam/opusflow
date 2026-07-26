@@ -3,23 +3,24 @@ import { Link } from 'react-router'
 import {
   buildPlan,
   confirmImport,
+  createLibrary,
   errorMessage,
   getImport,
-  listImportRoots,
   listImports,
+  listLibraries,
   validatePlan,
   type Import,
+  type Library,
   type Plan,
   type PlanAlbum,
   type PlanResponse,
-  type RootInfo,
   type ValidationError,
 } from '../api/library'
 import SourceFolderPicker from '../components/SourceFolderPicker'
 import UploadDropzone from '../components/UploadDropzone'
 import './ImportPage.css'
 
-type Step = 'list' | 'source' | 'browse' | 'upload' | 'review' | 'copying' | 'done'
+type Step = 'list' | 'library' | 'createLibrary' | 'source' | 'browse' | 'upload' | 'review' | 'copying' | 'done'
 
 const POLL_INTERVAL_MS = 1200
 
@@ -70,7 +71,12 @@ export default function ImportPage() {
   const [imports, setImports] = useState<Import[]>([])
   const [listError, setListError] = useState<string | null>(null)
 
-  const [roots, setRoots] = useState<RootInfo[]>([])
+  const [libraries, setLibraries] = useState<Library[]>([])
+  const [libraryListError, setLibraryListError] = useState<string | null>(null)
+  const [libraryId, setLibraryId] = useState<number | null>(null)
+  const [createName, setCreateName] = useState('')
+  const [createSubmitting, setCreateSubmitting] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
 
   const [sourceDescription, setSourceDescription] = useState('')
   const [plan, setPlan] = useState<Plan | null>(null)
@@ -100,14 +106,36 @@ export default function ImportPage() {
     setPlanLoadError(null)
     setConfirmError(null)
     setSourceDescription('')
-    setStep('source')
+    setLibraryId(null)
+    setLibraryListError(null)
+    listLibraries()
+      .then(setLibraries)
+      .catch((err: unknown) => setLibraryListError(errorMessage(err)))
+    setStep('library')
   }
 
   function chooseBrowse() {
-    listImportRoots()
-      .then(setRoots)
-      .catch((err: unknown) => setPlanLoadError(errorMessage(err)))
     setStep('browse')
+  }
+
+  function startCreateLibrary() {
+    setCreateName('')
+    setCreateError(null)
+    setStep('createLibrary')
+  }
+
+  async function handleCreateLibraryConfirm(rootPath: string) {
+    setCreateSubmitting(true)
+    setCreateError(null)
+    try {
+      const lib = await createLibrary(createName, rootPath)
+      setLibraryId(lib.id)
+      setStep('source')
+    } catch (err) {
+      setCreateError(errorMessage(err))
+    } finally {
+      setCreateSubmitting(false)
+    }
   }
 
   function applyPlanResponse(result: PlanResponse) {
@@ -116,10 +144,11 @@ export default function ImportPage() {
   }
 
   async function handleBrowseConfirm(path: string) {
+    if (libraryId == null) return
     setPlanLoading(true)
     setPlanLoadError(null)
     try {
-      const result = await buildPlan(path)
+      const result = await buildPlan(libraryId, path)
       setSourceDescription(path)
       applyPlanResponse(result)
       setStep('review')
@@ -138,8 +167,9 @@ export default function ImportPage() {
 
   async function revalidate(next: Plan) {
     setPlan(next)
+    if (libraryId == null) return
     try {
-      const result = await validatePlan(next)
+      const result = await validatePlan(libraryId, next)
       setPlan(result.plan)
       setErrors(result.errors)
     } catch (err) {
@@ -177,11 +207,11 @@ export default function ImportPage() {
   }
 
   async function handleConfirm() {
-    if (!plan) return
+    if (!plan || libraryId == null) return
     setConfirming(true)
     setConfirmError(null)
     try {
-      const result = await confirmImport(sourceDescription, plan)
+      const result = await confirmImport(libraryId, sourceDescription, plan)
       if (result.errors) {
         setErrors(result.errors)
         return
@@ -287,6 +317,60 @@ export default function ImportPage() {
         </>
       )}
 
+      {step === 'library' && (
+        <>
+          <div className="library-topbar">
+            <div>
+              <p className="eyebrow">Import music</p>
+              <h1>Choose a library</h1>
+              <p className="sub">Which library should this import copy into?</p>
+            </div>
+            <button type="button" className="btn-ghost" onClick={() => setStep('list')}>
+              Cancel
+            </button>
+          </div>
+
+          {libraryListError && <p className="library-load-error">{libraryListError}</p>}
+
+          <div className="lib-grid">
+            {libraries.map((lib) => (
+              <button
+                type="button"
+                className="lib-card"
+                key={lib.id}
+                onClick={() => {
+                  setLibraryId(lib.id)
+                  setStep('source')
+                }}
+              >
+                <div className="name">{lib.name}</div>
+                <div className="path mono">{lib.rootPath}</div>
+                <div className="meta">{lib.trackCount} tracks</div>
+              </button>
+            ))}
+            <button type="button" className="lib-card new" onClick={startCreateLibrary}>
+              <div className="glyph">＋</div>
+              <div>Create a new library</div>
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 'createLibrary' && (
+        <SourceFolderPicker
+          title="Create a library"
+          description="Give it a name, and pick (or create) the folder opusflow should organize files into."
+          confirmLabel="Create library →"
+          confirmingLabel="Creating…"
+          cancelLabel="Back"
+          nameField={{ label: 'Library name', value: createName, onChange: setCreateName }}
+          submitting={createSubmitting}
+          submitError={createError}
+          onCancel={() => setStep('library')}
+          onConfirm={handleCreateLibraryConfirm}
+        />
+      )}
+
       {step === 'source' && (
         <>
           <div className="library-topbar">
@@ -294,7 +378,7 @@ export default function ImportPage() {
               <p className="eyebrow">Import music</p>
               <h1>Choose a source</h1>
             </div>
-            <button type="button" className="btn-ghost" onClick={() => setStep('list')}>
+            <button type="button" className="btn-ghost" onClick={() => setStep('library')}>
               Cancel
             </button>
           </div>
@@ -315,7 +399,6 @@ export default function ImportPage() {
 
       {step === 'browse' && (
         <SourceFolderPicker
-          roots={roots}
           title="Import music from…"
           description="Pick the folder containing the files to bring in. They'll be copied, not moved."
           confirmLabel="Next: review plan →"
@@ -328,7 +411,9 @@ export default function ImportPage() {
         />
       )}
 
-      {step === 'upload' && <UploadDropzone onBack={() => setStep('source')} onUploaded={handleUploaded} />}
+      {step === 'upload' && libraryId != null && (
+        <UploadDropzone libraryId={libraryId} onBack={() => setStep('source')} onUploaded={handleUploaded} />
+      )}
 
       {step === 'review' && plan && (
         <>

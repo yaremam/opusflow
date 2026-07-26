@@ -3,6 +3,7 @@ import { errorMessage, uploadImport, type PlanResponse, type UploadFile, type Up
 import './UploadDropzone.css'
 
 interface UploadDropzoneProps {
+  libraryId: number
   onBack: () => void
   onUploaded: (result: PlanResponse) => void
 }
@@ -67,7 +68,7 @@ function formatBytes(bytes: number): string {
 // request carries every file, so per-file progress below is derived from
 // each file's byte offset within the whole upload rather than tracked
 // independently.
-export default function UploadDropzone({ onBack, onUploaded }: UploadDropzoneProps) {
+export default function UploadDropzone({ libraryId, onBack, onUploaded }: UploadDropzoneProps) {
   const [files, setFiles] = useState<UploadFile[]>([])
   const [uploading, setUploading] = useState(false)
   const [progress, setProgress] = useState<UploadProgress | null>(null)
@@ -92,7 +93,7 @@ export default function UploadDropzone({ onBack, onUploaded }: UploadDropzonePro
     setUploadError(null)
     setUploading(true)
     try {
-      const uploaded = await uploadImport(selected, setProgress)
+      const uploaded = await uploadImport(libraryId, selected, setProgress)
       setResult(uploaded)
     } catch (err) {
       setUploadError(errorMessage(err))

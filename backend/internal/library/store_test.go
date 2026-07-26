@@ -56,11 +56,13 @@ func testStore(t *testing.T) *Store {
 
 func ctx() context.Context { return context.Background() }
 
-// mustCreateImport creates an import with a throwaway source description,
-// for tests that just need a valid import_id to attribute tracks to.
+// mustCreateImport creates an import (under a throwaway library) with a
+// throwaway source description, for tests that just need a valid import_id
+// to attribute tracks to.
 func mustCreateImport(t *testing.T, s *Store) int64 {
 	t.Helper()
-	imp, err := s.CreateImport(ctx(), "/music/"+randomSuffix())
+	lib := mustCreateLibrary(t, s, t.TempDir())
+	imp, err := s.CreateImport(ctx(), lib.ID, "/music/"+randomSuffix())
 	if err != nil {
 		t.Fatalf("CreateImport: %v", err)
 	}
@@ -69,13 +71,17 @@ func mustCreateImport(t *testing.T, s *Store) int64 {
 
 func TestCreateImport(t *testing.T) {
 	s := testStore(t)
+	lib := mustCreateLibrary(t, s, t.TempDir())
 
-	imp, err := s.CreateImport(ctx(), "/music/Rock")
+	imp, err := s.CreateImport(ctx(), lib.ID, "/music/Rock")
 	if err != nil {
 		t.Fatalf("CreateImport: %v", err)
 	}
 	if imp.ID == 0 {
 		t.Fatal("expected non-zero ID")
+	}
+	if imp.LibraryID != lib.ID {
+		t.Fatalf("LibraryID = %d, want %d", imp.LibraryID, lib.ID)
 	}
 	if imp.SourceDescription != "/music/Rock" {
 		t.Fatalf("SourceDescription = %q", imp.SourceDescription)
@@ -99,7 +105,8 @@ func TestGetImportNotFound(t *testing.T) {
 
 func TestUpdateImportProgress(t *testing.T) {
 	s := testStore(t)
-	imp, _ := s.CreateImport(ctx(), "/music/Rock")
+	lib := mustCreateLibrary(t, s, t.TempDir())
+	imp, _ := s.CreateImport(ctx(), lib.ID, "/music/Rock")
 
 	if err := s.UpdateImportProgress(ctx(), imp.ID, 42, 100); err != nil {
 		t.Fatalf("UpdateImportProgress: %v", err)
@@ -119,7 +126,8 @@ func TestUpdateImportProgress(t *testing.T) {
 
 func TestMarkImportComplete(t *testing.T) {
 	s := testStore(t)
-	imp, _ := s.CreateImport(ctx(), "/music/Rock")
+	lib := mustCreateLibrary(t, s, t.TempDir())
+	imp, _ := s.CreateImport(ctx(), lib.ID, "/music/Rock")
 
 	if err := s.MarkImportComplete(ctx(), imp.ID); err != nil {
 		t.Fatalf("MarkImportComplete: %v", err)
@@ -136,7 +144,8 @@ func TestMarkImportComplete(t *testing.T) {
 
 func TestMarkImportFailed(t *testing.T) {
 	s := testStore(t)
-	imp, _ := s.CreateImport(ctx(), "/music/Rock")
+	lib := mustCreateLibrary(t, s, t.TempDir())
+	imp, _ := s.CreateImport(ctx(), lib.ID, "/music/Rock")
 
 	if err := s.MarkImportFailed(ctx(), imp.ID, "every file failed to copy"); err != nil {
 		t.Fatalf("MarkImportFailed: %v", err)
@@ -184,8 +193,9 @@ func TestInsertTrackAndTrackCount(t *testing.T) {
 
 func TestListImportsNewestFirst(t *testing.T) {
 	s := testStore(t)
-	first, _ := s.CreateImport(ctx(), "/music/first")
-	second, _ := s.CreateImport(ctx(), "/music/second")
+	lib := mustCreateLibrary(t, s, t.TempDir())
+	first, _ := s.CreateImport(ctx(), lib.ID, "/music/first")
+	second, _ := s.CreateImport(ctx(), lib.ID, "/music/second")
 
 	imports, err := s.ListImports(ctx())
 	if err != nil {

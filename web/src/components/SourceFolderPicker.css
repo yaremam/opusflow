@@ -30,25 +30,26 @@
   margin: 0 0 0.6rem;
 }
 
-.picker-roots {
-  display: flex;
-  gap: 0.4rem;
-  flex-wrap: wrap;
+.name-field {
+  margin: 0.9rem 1.2rem 0;
+  padding-bottom: 0.9rem;
+  border-bottom: 1px solid var(--border);
 }
-.root-tab {
-  font-size: 0.78rem;
-  font-weight: 700;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-  padding: 0.35rem 0.6rem;
-  border-radius: 6px;
-  border: 1px solid var(--border);
-  background: transparent;
+.name-field label {
+  display: block;
+  font-size: 0.76rem;
   color: var(--mist-400);
+  margin-bottom: 0.4rem;
 }
-.root-tab.active {
-  background: color-mix(in srgb, var(--accent) 16%, transparent);
-  border-color: var(--accent);
-  color: var(--accent-strong);
+.name-field input {
+  width: 100%;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  color: var(--paper-50);
+  font: inherit;
+  font-size: 0.9rem;
+  padding: 0.55rem 0.7rem;
+  border-radius: 7px;
 }
 
 .picker-breadcrumb {

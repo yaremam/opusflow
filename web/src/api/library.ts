@@ -5,8 +5,20 @@ export interface FileError {
   error: string
 }
 
+// Library is a named root folder opusflow organizes imports into (TDR 006)
+// — created and managed entirely within the app, not an environment
+// variable.
+export interface Library {
+  id: number
+  name: string
+  rootPath: string
+  trackCount: number
+  createdAt: string
+}
+
 export interface Import {
   id: number
+  libraryId: number
   sourceDescription: string
   status: ImportStatus
   filesProcessed: number
@@ -15,10 +27,6 @@ export interface Import {
   trackCount: number
   fileErrors: FileError[]
   createdAt: string
-}
-
-export interface RootInfo {
-  path: string
 }
 
 export interface Entry {
@@ -165,12 +173,6 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// The last non-empty path segment (e.g. "/mnt/music" -> "music") — used as
-// a short "which mount is this" identifier, not the full configured path.
-export function rootLabel(root: string): string {
-  return root.split('/').filter(Boolean).pop() ?? root
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, init)
   if (!res.ok) {
@@ -191,20 +193,28 @@ function postJSON<T>(path: string, body: unknown): Promise<T> {
   })
 }
 
-export function listImportRoots(): Promise<RootInfo[]> {
-  return request('/api/imports/roots')
+export function listLibraries(): Promise<Library[]> {
+  return request('/api/libraries')
+}
+
+export function createLibrary(name: string, rootPath: string): Promise<Library> {
+  return postJSON('/api/libraries', { name, rootPath })
+}
+
+export function deleteLibrary(id: number, deleteFiles: boolean): Promise<void> {
+  return request(`/api/libraries/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' })
 }
 
 export function browse(path: string): Promise<Entry[]> {
   return request(`/api/imports/browse?path=${encodeURIComponent(path)}`)
 }
 
-export function buildPlan(sourceDir: string): Promise<PlanResponse> {
-  return postJSON('/api/imports/plan', { sourceDir })
+export function buildPlan(libraryId: number, sourceDir: string): Promise<PlanResponse> {
+  return postJSON('/api/imports/plan', { libraryId, sourceDir })
 }
 
-export function validatePlan(plan: Plan): Promise<PlanResponse> {
-  return postJSON('/api/imports/plan/validate', plan)
+export function validatePlan(libraryId: number, plan: Plan): Promise<PlanResponse> {
+  return postJSON('/api/imports/plan/validate', { libraryId, plan })
 }
 
 export interface UploadFile {
@@ -225,9 +235,14 @@ export interface UploadProgress {
 // on a request body aren't otherwise observable — onProgress reports
 // combined bytes across the whole upload, not per file; the caller derives
 // individual file progress from each file's byte offset within the request.
-export function uploadImport(files: UploadFile[], onProgress: (progress: UploadProgress) => void): Promise<PlanResponse> {
+export function uploadImport(
+  libraryId: number,
+  files: UploadFile[],
+  onProgress: (progress: UploadProgress) => void,
+): Promise<PlanResponse> {
   return new Promise((resolve, reject) => {
     const form = new FormData()
+    form.append('libraryId', String(libraryId))
     for (const f of files) {
       form.append('files', f.file, f.relativePath)
     }
@@ -262,11 +277,11 @@ export interface ConfirmResult {
 // request(): a 422 (plan still isn't ready) is an expected outcome the
 // review screen redraws around, not an exception — only an actual
 // network/server failure should throw.
-export async function confirmImport(sourceDescription: string, plan: Plan): Promise<ConfirmResult> {
+export async function confirmImport(libraryId: number, sourceDescription: string, plan: Plan): Promise<ConfirmResult> {
   const res = await fetch('/api/imports', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sourceDescription, plan }),
+    body: JSON.stringify({ libraryId, sourceDescription, plan }),
   })
   if (res.status === 422) {
     const body = (await res.json()) as { errors: ValidationError[] }

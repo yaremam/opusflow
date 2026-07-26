@@ -51,7 +51,7 @@ func (c *catalogCapturingStore) ListSongs(_ context.Context, opts ListOptions) (
 
 func TestListArtistsNormalizesDefaults(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	if _, err := svc.ListArtists(ctx(), ListOptions{}); err != nil {
 		t.Fatalf("ListArtists: %v", err)
@@ -70,7 +70,7 @@ func TestListArtistsNormalizesDefaults(t *testing.T) {
 
 func TestListAlbumsClampsPageAndPageSize(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	if _, err := svc.ListAlbums(ctx(), ListOptions{Page: -5, PageSize: 9000}); err != nil {
 		t.Fatalf("ListAlbums: %v", err)
@@ -86,7 +86,7 @@ func TestListAlbumsClampsPageAndPageSize(t *testing.T) {
 
 func TestListSongsRejectsUnknownSort(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	if _, err := svc.ListSongs(ctx(), ListOptions{Sort: "banana"}); err != nil {
 		t.Fatalf("ListSongs: %v", err)
@@ -98,7 +98,7 @@ func TestListSongsRejectsUnknownSort(t *testing.T) {
 
 func TestListOptionsPreservesGenreYearQuery(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	opts := ListOptions{Genre: "Jazz", Year: 1965, Query: "sinner", Sort: "name"}
 	if _, err := svc.ListArtists(ctx(), opts); err != nil {
@@ -112,7 +112,7 @@ func TestListOptionsPreservesGenreYearQuery(t *testing.T) {
 
 func TestServiceGetArtistAndAlbumDelegate(t *testing.T) {
 	store := newCatalogCapturingStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	artist, err := svc.GetArtist(ctx(), 42)
 	if err != nil {

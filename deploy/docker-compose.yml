@@ -5,6 +5,11 @@
 # Manager ("Projects" → Create → paste docker-compose.yml), edit those
 # lines, and deploy. See ../docs/deploy/synology.md for a full walkthrough.
 #
+# The three data volumes (pgdata, artwork, data) have no default path: they're
+# written as ${VAR:?message} below, so `docker compose up` refuses to start
+# and prints exactly what's missing until you replace each whole ${...}
+# token with a real host path.
+#
 #   docker compose up -d          # start everything
 #   docker compose pull && docker compose up -d   # update to newest nightly
 
@@ -16,35 +21,24 @@ services:
       postgres:
         condition: service_healthy
     environment:
-      # Password must match POSTGRES_PASSWORD below exactly — if you edit
-      # one, edit both.
-      DATABASE_URL: postgres://opusflow:change-me-please@postgres:5432/opusflow?sslmode=disable
-      ARTWORK_DIR: /data/artwork
-      # Where opusflow writes your organized library — every import copies
-      # files into here, renamed into <Artist>/<Year>.<Album>/ subfolders.
-      LIBRARY_ROOT: /music
-      # Comma-separated container paths — one per `<host path>:/import/N`
-      # line below, in the same order. These are where "browse a server
-      # folder" is allowed to look when importing; only LIBRARY_ROOT above
-      # is ever written to.
-      IMPORT_SOURCE_ROOTS: /import/1
+      POSTGRES_USER: opusflow
+      POSTGRES_DB: opusflow
+      ARTWORK_DIR: /artwork
     volumes:
-      - artwork:/data/artwork
-      #   - /volume1/docker/opusflow/artwork:/data/artwork   # DSM bind-mount variant
-      #
-      # ↓ EDIT THIS: where your organized library lives on the host (e.g.
-      # /volume1/music on a Synology). The default below (a folder next to
-      # this file) only exists so the stack starts cleanly before you do.
-      - ./music:/music
-      # ↓ EDIT THIS: point at whatever folder you're importing FROM (e.g. an
-      # existing unsorted music dump). Read-only — an import only ever
-      # copies out of here, never writes back.
-      - ./import-1:/import/1:ro
-      # More source folders? Uncomment a line below, edit its host path,
-      # and append the matching container path to IMPORT_SOURCE_ROOTS above,
-      # e.g. IMPORT_SOURCE_ROOTS: /import/1,/import/2
-      #   - /volume1/kids-music-dump:/import/2:ro
-      #   - /volume2/archive-music-dump:/import/3:ro
+      # ↓ EDIT THIS: where fetched/extracted artist photos and album covers
+      # are cached on the host (e.g. /volume1/docker/opusflow/artwork on a
+      # Synology). No default — replace the whole ${...} token with your
+      # path, or the stack refuses to start and tells you so.
+      - ${OPUSFLOW_ARTWORK_DIR:?set OPUSFLOW_ARTWORK_DIR to a host path for the artwork cache, e.g. /volume1/docker/opusflow/artwork}:/artwork
+      # ↓ EDIT THIS: where opusflow reads and writes your actual music —
+      # everything lives somewhere under this one folder (e.g.
+      # /volume1/opusflow-data on a Synology). There's no separate
+      # "library root" or "import source" setting anymore: use the
+      # in-app Libraries page to create a library at any path under here,
+      # and the Import page's "browse a server folder" to pick a source
+      # anywhere under here too. No default — replace the whole ${...}
+      # token with your path, or the stack refuses to start and tells you so.
+      - ${OPUSFLOW_DATA_DIR:?set OPUSFLOW_DATA_DIR to a host path for your music data, e.g. /volume1/opusflow-data}:/data
     ports:
       # ↓ EDIT THIS if 8090 is already taken on your machine (DSM claims
       # 5000/5001 itself, and some packages default to 8080). Which build
@@ -57,19 +51,19 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: opusflow
-      # ↓ EDIT THIS, and update DATABASE_URL above to match exactly.
-      POSTGRES_PASSWORD: change-me-please
       POSTGRES_DB: opusflow
+      # No password: postgres isn't reachable from outside this compose
+      # network (no ports: mapping below), so trust authentication is safe
+      # here and there's nothing to leak into this file or keep in sync.
+      POSTGRES_HOST_AUTH_METHOD: trust
     volumes:
-      # Named volume by default; on DSM you can bind-mount instead, e.g.
-      #   - /volume1/docker/opusflow/pgdata:/var/lib/postgresql/data
-      - pgdata:/var/lib/postgresql/data
+      # ↓ EDIT THIS: where the Postgres database itself lives on the host
+      # (e.g. /volume1/docker/opusflow/pgdata on a Synology). No default —
+      # replace the whole ${...} token with your path, or the stack refuses
+      # to start and tells you so.
+      - ${OPUSFLOW_PGDATA_DIR:?set OPUSFLOW_PGDATA_DIR to a host path for the Postgres database, e.g. /volume1/docker/opusflow/pgdata}:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U opusflow -d opusflow"]
       interval: 5s
       timeout: 3s
       retries: 10
-
-volumes:
-  pgdata:
-  artwork:

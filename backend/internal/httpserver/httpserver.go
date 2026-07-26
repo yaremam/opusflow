@@ -21,7 +21,9 @@ import (
 func New(staticDir, artworkDir, revision string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(revision))
-	mux.HandleFunc("GET /api/imports/roots", handleImportRoots(svc))
+	mux.HandleFunc("GET /api/libraries", handleListLibraries(svc))
+	mux.HandleFunc("POST /api/libraries", handleCreateLibrary(svc))
+	mux.HandleFunc("DELETE /api/libraries/{id}", handleDeleteLibrary(svc))
 	mux.HandleFunc("GET /api/imports/browse", handleImportBrowse(svc))
 	mux.HandleFunc("POST /api/imports/plan", handleBuildPlan(svc))
 	mux.HandleFunc("POST /api/imports/plan/validate", handleValidatePlan(svc))

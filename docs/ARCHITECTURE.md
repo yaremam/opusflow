@@ -12,9 +12,16 @@ designed.
 replaced the original add-directory/scan-in-place model
 ([TDR 001](tdr/001_add_local_directory_design.md)) — the library is now built
 by importing from a chosen source (a browsed server folder or an upload),
-which copies files into a single organized `LIBRARY_ROOT`, renamed into
+which copies files into a library's organized root, renamed into
 `<Artist>/<Year>.<Album>/<NN>.<Title>` and reviewed before anything is
-copied. On top of that: a Home screen plus Artist/Album/Song browsing
+copied. [TDR 006](tdr/006_multiple_libraries_design.md) then turned "the
+library root" into a real in-app concept — a **library** (name + root
+folder) created and managed from the app itself, with more than one able to
+exist side by side — removing the `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS`
+environment variables entirely; filesystem browsing (for both an import
+source and a new library's root) is unrestricted from `/`, bounded only by
+whatever the deploying admin actually mounts into the container. On top of
+that: a Home screen plus Artist/Album/Song browsing
 ([TDR 002](tdr/002_home_and_browsing_design.md)), artist/album artwork plus
 MusicBrainz/Wikipedia-sourced facts and bio
 ([TDR 003](tdr/003_artwork_and_info_design.md)), and self-hosted deployment
@@ -34,17 +41,15 @@ flowchart TB
     end
 
     Postgres[("PostgreSQL")]
-    SourceVolumes[("Import source mounts<br/>(IMPORT_SOURCE_ROOTS, read-only)")]
-    LibraryVolume[("Organized library volume<br/>(LIBRARY_ROOT, read-write)")]
+    DataVolume[("Data volume<br/>(one broad read-write mount)")]
     Artwork[("Artwork cache volume<br/>(ARTWORK_DIR)")]
     External[("MusicBrainz /<br/>Cover Art Archive /<br/>Wikidata + Wikipedia")]
 
     Browser -->|HTTP| Backend
     Backend -->|serves static files,<br/>SPA fallback to index.html| Web
     Phone -->|HTTP, not yet defined| Backend
-    Backend -->|imports, import_errors,<br/>tracks, artists, albums| Postgres
-    Backend -->|browse, read (import)| SourceVolumes
-    Backend -->|write (import),<br/>delete (remove)| LibraryVolume
+    Backend -->|libraries, imports,<br/>import_errors, tracks,<br/>artists, albums| Postgres
+    Backend -->|browse (source/library root),<br/>write (import), delete (remove)| DataVolume
     Backend -->|read/write resized<br/>artist photos, album covers| Artwork
     Backend -->|HTTPS, rate-limited| External
 ```
@@ -80,13 +85,23 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 
 - **`backend/cmd/server`** — process entrypoint. Reads `PORT` (default
   `8080`), `STATIC_DIR` (set to `/app/web` in the Docker image; empty in
-  local `go run`, which then serves API-only), `ARTWORK_DIR` (optional, like
-  `STATIC_DIR` — unset disables embedded-art saving and the enrichment job
-  entirely rather than erroring), `DATABASE_URL`, `LIBRARY_ROOT` (single
-  absolute path — the only place a confirmed import ever writes to), and
-  `IMPORT_SOURCE_ROOTS` (comma-separated absolute paths, one per Docker
-  volume mount — the only filesystem locations "browse a server folder" may
-  look under; read-only in practice). Opens Postgres, runs migrations, wires
+  local `go run`, which then serves API-only), and `ARTWORK_DIR` (optional,
+  like `STATIC_DIR` — unset disables embedded-art saving and the enrichment
+  job entirely rather than erroring). There is no `LIBRARY_ROOT`/
+  `IMPORT_SOURCE_ROOTS` env var (removed by [TDR 006](tdr/006_multiple_libraries_design.md))
+  — a library's root is created and stored in the database from within the
+  app, and filesystem browsing (for both an import source and a new
+  library's root) is unrestricted from `/`; the only real boundary is
+  whatever the deploying admin mounts into the container. The database
+  connection is `DATABASE_URL` if set (an explicit
+  connection string), otherwise built from `POSTGRES_HOST`/`POSTGRES_PORT`
+  (defaulting to the compose service name and `5432`) plus
+  `POSTGRES_USER`/`POSTGRES_DB` and an optional `POSTGRES_PASSWORD` —
+  `deploy/docker-compose.yml` sets no password at all: `postgres` isn't
+  reachable outside the compose network, so it runs with
+  `POSTGRES_HOST_AUTH_METHOD=trust` instead, and there's nothing
+  credential-shaped to keep in sync between the two services or leak into
+  the file. Opens Postgres, runs migrations, wires
   up `library.Service` (and, when `ARTWORK_DIR` is set, an `enrich.Job` run
   once at startup after migrations succeed — TDR 003's backfill trigger)
   before starting the HTTP server.
@@ -99,18 +114,27 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   set, a static file server for the built web app with SPA fallback
   (unmatched GETs serve `index.html` rather than 404, so client-side routing
   survives a refresh).
+  - `GET /api/libraries` — list every library (name, root path, track count)
+  - `POST /api/libraries` `{"name", "rootPath"}` — create a library;
+    `rootPath` must already exist as a directory
+  - `DELETE /api/libraries/{id}?deleteFiles=true|false` — remove a library
+    and everything imported into it; `deleteFiles` is required, never
+    defaulted
   - `GET /api/imports` — list every recorded import, newest first
-  - `GET /api/imports/roots` — list configured `IMPORT_SOURCE_ROOTS`
   - `GET /api/imports/browse?path=` — list a path's immediate subdirectories
-  - `POST /api/imports/plan` `{"sourceDir": "..."}` — build a plan by reading
-    tags under a browsed source directory
-  - `POST /api/imports/plan/validate` `{...plan}` — recompute destinations/
-    conflicts/missing-field errors for a reviewer-edited plan
-  - `POST /api/imports/upload` (multipart) — stage an uploaded folder, then
-    build a plan from it the same way
-  - `POST /api/imports` `{"sourceDescription", "plan"}` — validate one last
-    time, then copy in the background; `202` + the new import, or `422` +
-    validation errors if the plan still isn't ready
+    (unrestricted from `/`; used for both import-source and
+    create-a-library browsing)
+  - `POST /api/imports/plan` `{"libraryId", "sourceDir"}` — build a plan by
+    reading tags under a browsed source directory, computed against that
+    library's root; rejects a source the same as or nested inside any
+    library's root (TDR 006 AC-8)
+  - `POST /api/imports/plan/validate` `{"libraryId", "plan"}` — recompute
+    destinations/conflicts/missing-field errors for a reviewer-edited plan
+  - `POST /api/imports/upload` (multipart, `libraryId` field) — stage an
+    uploaded folder, then build a plan from it the same way
+  - `POST /api/imports` `{"libraryId", "sourceDescription", "plan"}` —
+    validate one last time, then copy in the background; `202` + the new
+    import, or `422` + validation errors if the plan still isn't ready
   - `GET /api/imports/{id}` — an import's copy progress and any per-file
     errors
   - `GET /api/library/artists` / `GET /api/library/albums` /
@@ -126,17 +150,21 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 - **`backend/internal/db`** — Postgres connection (`Open`) and schema
   migrations (`Migrate`, embedding `internal/db/migrations/*.sql`, tracked in
   a `schema_migrations` table).
-- **`backend/internal/library`** — the library domain: `Roots` (filesystem
-  containment/browsing, shared unchanged between TDR 001's directory model
-  and TDR 005's `IMPORT_SOURCE_ROOTS`), `Store` (Postgres persistence for
-  imports/tracks/import errors/artists/albums, direct artist/album deletion
-  with an optional on-disk file delete, plus the enrichment query/update
-  methods satisfying `enrich.Store`), `Service` (orchestrates
-  browse/plan/validate/confirm and artist/album/song listing/detail/delete;
-  `ConfirmImport` starts the copy as a background goroutine so `POST
-  /api/imports` returns before it finishes, then runs one `enrich.Job` pass
-  under a fresh background context once the copy completes — the same
-  post-scan trigger shape TDR 003 introduced).
+- **`backend/internal/library`** — the library domain: `Browse` (a plain,
+  unscoped directory listing — no allowlist since TDR 006 removed it) and
+  `ValidateDirectory` (confirms a path exists as a directory, the one check
+  left for a new library's root), `Store` (Postgres persistence for
+  libraries/imports/tracks/import errors/artists/albums; direct artist/
+  album/library deletion with an optional on-disk file delete — deleting a
+  library also sweeps any artist/album left with zero tracks, the one place
+  that orphan-cleanup shape survives after TDR 005 removed it as a general
+  behavior; plus the enrichment query/update methods satisfying
+  `enrich.Store`), `Service` (orchestrates library create/list/delete,
+  browse/plan/validate/confirm scoped to a chosen library, and artist/
+  album/song listing/detail/delete; `ConfirmImport` starts the copy as a
+  background goroutine so `POST /api/imports` returns before it finishes,
+  then runs one `enrich.Job` pass under a fresh background context once the
+  copy completes — the same post-scan trigger shape TDR 003 introduced).
 - **`backend/internal/library/organize`** — the organize-on-import engine
   (TDR 005): `BuildPlan` (recursive source walk, tag reads that leave a
   blank field blank rather than guessing — deliberately distinct from
@@ -171,19 +199,23 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   `pending`/`failed`, not scoped to a particular scan, tracking each kind's
   outcome independently.
 - **`web/`** — `react-router` routes wrapped in `src/components/AppLayout.tsx`
-  (persistent Home/Artists/Albums/Songs/Import header nav):
+  (persistent Home/Artists/Albums/Songs/Import/Libraries header nav):
   `src/pages/HomePage.tsx` (library snapshot + recently-added previews),
   `src/pages/ArtistsPage.tsx` / `AlbumsPage.tsx` / `SongsPage.tsx` (paginated,
   sortable, filterable index pages, sharing fetch/pagination logic via
   `src/hooks/useListPage.ts`), `src/pages/ArtistDetailPage.tsx` /
   `AlbumDetailPage.tsx` (each with a "Remove…" action opening
-  `src/components/RemoveModal.tsx` — TDR 005's keep-vs-delete-files prompt),
-  and `src/pages/ImportPage.tsx` — the organize-on-import flow as one
-  page-level state machine (history list → choose a source → browse/upload →
-  review plan → copying → done), replacing the old directory-list Library
-  page. It composes `src/components/SourceFolderPicker.tsx` (root selector +
-  breadcrumb folder browser, generalized from TDR 001's directory picker so
-  its title/labels fit wherever a source folder needs picking) and
+  `src/components/RemoveModal.tsx` — TDR 005's keep-vs-delete-files prompt,
+  reused verbatim by `LibrariesPage` below), `src/pages/ImportPage.tsx` — the
+  organize-on-import flow as one page-level state machine (history list →
+  choose/create a library → choose a source → browse/upload → review plan →
+  copying → done), replacing the old directory-list Library page, and
+  `src/pages/LibrariesPage.tsx` (TDR 006) — lists every library and is the
+  only place one can be deleted from. Both pages compose
+  `src/components/SourceFolderPicker.tsx` (breadcrumb folder browser,
+  unrestricted from `/` since TDR 006 removed the allowlist it used to
+  browse within; an optional `nameField` prop lets it double as the
+  create-a-library form) and, for uploads,
   `src/components/UploadDropzone.tsx` (drag-and-drop via the File System
   Entry API, or a `webkitdirectory` file input; per-file progress derived
   from each file's byte offset within one combined upload request, since the
@@ -202,12 +234,19 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 
 Postgres, migrated via `backend/internal/db` (see §3):
 
-- **`imports`** — one row per confirmed import run: `source_description`
-  (the browsed source path, or "Uploaded from device"), `status`
-  (`copying` / `complete` / `failed`), `files_processed`, `files_total`,
-  `error`, `created_at`. Replaces TDR 001's `library_directories` — an
-  import is a historical record of a copy that happened, not a managed
-  resource with its own remove action (see TDR 005).
+- **`libraries`** — one row per library (TDR 006): `name`, `root_path`,
+  `created_at`. Created and managed entirely from the app — there is no
+  `LIBRARY_ROOT` environment variable equivalent. Deleting one cascades to
+  its imports (see below) and sweeps any artist/album left with zero tracks.
+- **`imports`** — one row per confirmed import run: `library_id` (FK,
+  `ON DELETE CASCADE` — which library this import copied into),
+  `source_description` (the browsed source path, or "Uploaded from
+  device"), `status` (`copying` / `complete` / `failed`), `files_processed`,
+  `files_total`, `error`, `created_at`. Replaces TDR 001's
+  `library_directories` — an import is a historical record of a copy that
+  happened, not a managed resource with its own remove action (see TDR 005);
+  it's also not itself browsable by library — catalog browsing stays
+  unified across every library (TDR 006 AC-2).
 - **`tracks`** — one row per copied audio file: `import_id` (FK,
   `ON DELETE CASCADE`; renamed from `directory_id`), `path` (now the
   organized destination path, not the original source path), `title`,
@@ -246,7 +285,8 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
-| Organize-on-import | [005](tdr/005_organize_on_import_design.md) | Replaces add-directory/scan-in-place entirely: import copies files from a chosen source into a single `LIBRARY_ROOT`, renamed into `<Artist>/<Year>.<Album>/<NN>.<Title>`; review-before-copy with server-computed destinations/conflicts; tag write-back scoped to MP3/FLAC; direct artist/album deletion with explicit keep-or-delete-files choice | The original scan-in-place model left files wherever they started, with no consistent on-disk naming — organizing them is the point, not an optional extra step |
+| Multiple libraries | [006](tdr/006_multiple_libraries_design.md) | `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS` env vars removed; a library (name + root folder) is created/deleted from within the app, several can exist; catalog browsing stays unified across all of them; filesystem browsing unrestricted from `/`, bounded only by what's mounted into the container; deleting a library cascades with the same keep-or-delete-files choice as artist/album removal | A fixed, deploy-time destination folder was inflexible for more than one logical collection, and coupled a purely operational choice to a redeploy rather than something changeable in the app |
+| Organize-on-import *(its single-`LIBRARY_ROOT` destination superseded by [006](tdr/006_multiple_libraries_design.md))* | [005](tdr/005_organize_on_import_design.md) | Replaces add-directory/scan-in-place entirely: import copies files from a chosen source into a single `LIBRARY_ROOT`, renamed into `<Artist>/<Year>.<Album>/<NN>.<Title>`; review-before-copy with server-computed destinations/conflicts; tag write-back scoped to MP3/FLAC; direct artist/album deletion with explicit keep-or-delete-files choice | The original scan-in-place model left files wherever they started, with no consistent on-disk naming — organizing them is the point, not an optional extra step |
 | Self-hosted deployment | [004](tdr/004_self_hosted_deployment_design.md) | Nightly multi-platform image on GHCR (skip-if-unchanged, test-gated); separate `deploy/docker-compose.yml` pulling it, with bundled Postgres and multi-root music bind-mounts | Removes the Go/Node toolchain requirement from the target machine (a NAS); mirrors a proven pattern from a sibling project (docuflow) adapted for opusflow's host-mounted-library model |
 | Artist/album artwork and info | [003](tdr/003_artwork_and_info_design.md) | Embedded-tag art first, MusicBrainz + Cover Art Archive + Wikidata/Wikipedia fallback via a background `enrich.Job`; three independent per-kind statuses; files on disk under `ARTWORK_DIR`, not DB blobs | Free/open/no-API-key sources matching the project's anti-proprietary-protocol stance; a background job (not inline with scanning) respects MusicBrainz's rate limit and doubles as backfill for pre-existing libraries |
 | Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan/import time); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
@@ -269,6 +309,12 @@ an index with the one-line "why" for each, newest first.
 - **Symlink handling during an import's source walk** — not specifically
   handled; `filepath.WalkDir` follows the OS's normal (non-recursive-symlink)
   traversal semantics.
+- **No allowlist bounding filesystem browsing** — TDR 006 removed
+  `IMPORT_SOURCE_ROOTS`'s containment check entirely; anyone with access to
+  the app's UI can browse anywhere the container can see. Accepted as a
+  deliberate tradeoff for this app's single-operator, self-hosted audience
+  — the real boundary is what the deploying admin mounts into the
+  container — but would need revisiting for any future multi-tenant use.
 - **Cancelling an in-progress import** — once confirmed, a copy runs to
   completion (or per-file failure) with no way to stop it early; TDR 005
   didn't carry over TDR 001's scan-cancellation behavior since no
