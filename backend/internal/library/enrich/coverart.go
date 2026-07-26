@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 const coverArtArchiveBaseURL = "https://coverartarchive.org"
@@ -23,7 +22,7 @@ type CoverArtArchive struct {
 // NewCoverArtArchive builds a CoverArtArchive client.
 func NewCoverArtArchive(userAgent string) *CoverArtArchive {
 	return &CoverArtArchive{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: newHTTPClient(),
 		baseURL:    coverArtArchiveBaseURL,
 		userAgent:  userAgent,
 	}
@@ -35,13 +34,7 @@ func NewCoverArtArchive(userAgent string) *CoverArtArchive {
 // 200 here always means real image bytes. found = false (nil error) means
 // Cover Art Archive has nothing for this release-group at all.
 func (c *CoverArtArchive) FetchFront(ctx context.Context, releaseGroupMBID string) (data []byte, found bool, err error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/release-group/"+releaseGroupMBID+"/front", nil)
-	if err != nil {
-		return nil, false, fmt.Errorf("building cover art archive request: %w", err)
-	}
-	req.Header.Set("User-Agent", c.userAgent)
-
-	resp, err := c.httpClient.Do(req)
+	resp, err := doGet(ctx, c.httpClient, c.userAgent, "", c.baseURL+"/release-group/"+releaseGroupMBID+"/front")
 	if err != nil {
 		return nil, false, fmt.Errorf("cover art archive request: %w", err)
 	}

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
-	"time"
 )
 
 const (
@@ -39,7 +38,7 @@ type Wikidata struct {
 // NewWikidata builds a Wikidata client.
 func NewWikidata(userAgent string) *Wikidata {
 	return &Wikidata{
-		httpClient:       &http.Client{Timeout: 10 * time.Second},
+		httpClient:       newHTTPClient(),
 		apiBaseURL:       wikidataAPIBaseURL,
 		commonsBaseURL:   commonsFilePathBase,
 		wikipediaBaseURL: wikipediaSummaryBase,
@@ -111,13 +110,7 @@ func (w *Wikidata) ResolveEntity(ctx context.Context, wikidataURL string) (Entit
 // the actual file — http.Client follows that automatically.
 func (w *Wikidata) FetchImage(ctx context.Context, filename string) ([]byte, error) {
 	reqURL := w.commonsBaseURL + "/" + url.PathEscape(filename)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("building commons request: %w", err)
-	}
-	req.Header.Set("User-Agent", w.userAgent)
-
-	resp, err := w.httpClient.Do(req)
+	resp, err := doGet(ctx, w.httpClient, w.userAgent, "", reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("commons request: %w", err)
 	}
@@ -144,14 +137,7 @@ type Summary struct {
 // WikipediaTitle), via Wikipedia's REST summary endpoint.
 func (w *Wikidata) FetchSummary(ctx context.Context, title string) (Summary, error) {
 	reqURL := w.wikipediaBaseURL + "/" + url.PathEscape(title)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return Summary{}, fmt.Errorf("building wikipedia summary request: %w", err)
-	}
-	req.Header.Set("User-Agent", w.userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := w.httpClient.Do(req)
+	resp, err := doGet(ctx, w.httpClient, w.userAgent, "application/json", reqURL)
 	if err != nil {
 		return Summary{}, fmt.Errorf("wikipedia summary request: %w", err)
 	}
@@ -178,14 +164,7 @@ func (w *Wikidata) FetchSummary(ctx context.Context, title string) (Summary, err
 }
 
 func (w *Wikidata) get(ctx context.Context, base string, params url.Values, out any) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, base+"?"+params.Encode(), nil)
-	if err != nil {
-		return fmt.Errorf("building wikidata request: %w", err)
-	}
-	req.Header.Set("User-Agent", w.userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := w.httpClient.Do(req)
+	resp, err := doGet(ctx, w.httpClient, w.userAgent, "application/json", base+"?"+params.Encode())
 	if err != nil {
 		return fmt.Errorf("wikidata request: %w", err)
 	}

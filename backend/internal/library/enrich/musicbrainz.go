@@ -40,7 +40,7 @@ type MusicBrainz struct {
 // one are liable to be blocked.
 func NewMusicBrainz(userAgent string) *MusicBrainz {
 	return &MusicBrainz{
-		httpClient: &http.Client{Timeout: 10 * time.Second},
+		httpClient: newHTTPClient(),
 		limiter:    newRateLimiter(musicBrainzRateLimit),
 		baseURL:    musicBrainzBaseURL,
 		userAgent:  userAgent,
@@ -214,14 +214,7 @@ func (m *MusicBrainz) get(ctx context.Context, path string, params url.Values, o
 		return err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, m.baseURL+path+"?"+params.Encode(), nil)
-	if err != nil {
-		return fmt.Errorf("building musicbrainz request: %w", err)
-	}
-	req.Header.Set("User-Agent", m.userAgent)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := m.httpClient.Do(req)
+	resp, err := doGet(ctx, m.httpClient, m.userAgent, "application/json", m.baseURL+path+"?"+params.Encode())
 	if err != nil {
 		return fmt.Errorf("musicbrainz request: %w", err)
 	}

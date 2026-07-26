@@ -238,13 +238,14 @@ func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist]
 // them, newest first.
 func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	var d ArtistDetail
+	dest := append([]any{&d.ID, &d.Name, &d.CreatedAt, &d.AlbumCount, &d.TrackCount}, scanArtistEnrich(&d.Artist)...)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT a.id, a.name, a.created_at,
 		       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
 		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
 		       `+artistEnrichCols+`
 		FROM artists a WHERE a.id = $1
-	`, id).Scan(append([]any{&d.ID, &d.Name, &d.CreatedAt, &d.AlbumCount, &d.TrackCount}, scanArtistEnrich(&d.Artist)...)...)
+	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ArtistDetail{}, ErrArtistNotFound
 	}
@@ -325,6 +326,7 @@ func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], 
 // ordered by track number.
 func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	var d AlbumDetail
+	dest := append([]any{&d.ID, &d.Title, &d.ArtistID, &d.ArtistName, &d.Year, &d.CreatedAt, &d.TrackCount}, scanAlbumEnrich(&d.Album)...)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT al.id, al.title, al.artist_id, ar.name, al.year, al.created_at,
 		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
@@ -332,7 +334,7 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 		FROM albums al
 		JOIN artists ar ON ar.id = al.artist_id
 		WHERE al.id = $1
-	`, id).Scan(append([]any{&d.ID, &d.Title, &d.ArtistID, &d.ArtistName, &d.Year, &d.CreatedAt, &d.TrackCount}, scanAlbumEnrich(&d.Album)...)...)
+	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AlbumDetail{}, ErrAlbumNotFound
 	}

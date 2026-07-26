@@ -145,6 +145,21 @@ func (s *Store) SetAlbumArt(ctx context.Context, id int64, status enrich.Status,
 	return nil
 }
 
+// SetAlbumArtIfOpen is SetAlbumArt, but only takes effect while the
+// album's art is still open (pending or failed) — used for embedded-tag
+// art (AC-1), where "first image found wins" must never clobber art a
+// different track, or the enrichment job, already resolved.
+func (s *Store) SetAlbumArtIfOpen(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE albums SET art_status = $2, cover_thumb_path = $3, cover_path = $4
+		WHERE id = $1 AND art_status `+pendingOrFailed+`
+	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath))
+	if err != nil {
+		return fmt.Errorf("setting album art if open: %w", err)
+	}
+	return nil
+}
+
 // SetAlbumFacts records the outcome of an album facts lookup. See
 // SetArtistFacts's doc comment re: nil genres.
 func (s *Store) SetAlbumFacts(ctx context.Context, id int64, status enrich.Status, label, country string, genres []string) error {
