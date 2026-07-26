@@ -1,6 +1,7 @@
 package library
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
@@ -138,6 +139,116 @@ func TestSetArtistArtRoundTrips(t *testing.T) {
 		if target.ID == artist.ID && target.ArtStatus != enrich.Found {
 			t.Fatalf("expected ArtStatus found after SetArtistArt, got %+v", target)
 		}
+	}
+}
+
+// TestSetArtistArtPreservesExistingPhotoOnNotFound guards TDR 007's AC-11:
+// a retry that comes up empty this time must never destroy an
+// already-found photo — only a Found write may touch the path columns.
+func TestSetArtistArtPreservesExistingPhotoOnNotFound(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Retried Artist", "Album")
+	artist := findArtistByName(t, s, "Retried Artist")
+
+	if err := s.SetArtistArt(ctx(), artist.ID, enrich.Found, "/artwork/artist/1/thumb.jpg", "/artwork/artist/1/full.jpg"); err != nil {
+		t.Fatalf("SetArtistArt(Found): %v", err)
+	}
+	if err := s.SetArtistArt(ctx(), artist.ID, enrich.NotFound, "", ""); err != nil {
+		t.Fatalf("SetArtistArt(NotFound): %v", err)
+	}
+
+	got, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if got.PhotoThumbURL != "/artwork/artist/1/thumb.jpg" || got.PhotoURL != "/artwork/artist/1/full.jpg" {
+		t.Fatalf("photo URLs should survive a later NotFound write, got %q / %q", got.PhotoThumbURL, got.PhotoURL)
+	}
+}
+
+func TestSetAlbumArtPreservesExistingCoverOnFailed(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Retried Album")
+	album := findAlbumByTitle(t, s, "Retried Album")
+
+	if err := s.SetAlbumArt(ctx(), album.ID, enrich.Found, "/artwork/album/1/thumb.jpg", "/artwork/album/1/full.jpg"); err != nil {
+		t.Fatalf("SetAlbumArt(Found): %v", err)
+	}
+	if err := s.SetAlbumArt(ctx(), album.ID, enrich.Failed, "", ""); err != nil {
+		t.Fatalf("SetAlbumArt(Failed): %v", err)
+	}
+
+	got, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if got.CoverThumbURL != "/artwork/album/1/thumb.jpg" || got.CoverURL != "/artwork/album/1/full.jpg" {
+		t.Fatalf("cover URLs should survive a later Failed write, got %q / %q", got.CoverThumbURL, got.CoverURL)
+	}
+}
+
+// TestResetArtistArtMarksPendingWithoutTouchingPhoto backs TDR 007's retry
+// flow: resetting status to pending must leave any existing photo alone,
+// so the last known-good image keeps rendering while a retry is in flight.
+func TestResetArtistArtMarksPendingWithoutTouchingPhoto(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Reset Artist", "Album")
+	artist := findArtistByName(t, s, "Reset Artist")
+
+	if err := s.SetArtistArt(ctx(), artist.ID, enrich.Found, "/artwork/artist/1/thumb.jpg", "/artwork/artist/1/full.jpg"); err != nil {
+		t.Fatalf("SetArtistArt: %v", err)
+	}
+	if err := s.ResetArtistArt(ctx(), artist.ID); err != nil {
+		t.Fatalf("ResetArtistArt: %v", err)
+	}
+
+	got, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if got.ArtStatus != enrich.Pending {
+		t.Fatalf("ArtStatus = %q, want pending", got.ArtStatus)
+	}
+	if got.PhotoThumbURL != "/artwork/artist/1/thumb.jpg" || got.PhotoURL != "/artwork/artist/1/full.jpg" {
+		t.Fatalf("photo URLs should survive a reset, got %q / %q", got.PhotoThumbURL, got.PhotoURL)
+	}
+}
+
+func TestResetAlbumArtMarksPendingWithoutTouchingCover(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Reset Album")
+	album := findAlbumByTitle(t, s, "Reset Album")
+
+	if err := s.SetAlbumArt(ctx(), album.ID, enrich.Found, "/artwork/album/1/thumb.jpg", "/artwork/album/1/full.jpg"); err != nil {
+		t.Fatalf("SetAlbumArt: %v", err)
+	}
+	if err := s.ResetAlbumArt(ctx(), album.ID); err != nil {
+		t.Fatalf("ResetAlbumArt: %v", err)
+	}
+
+	got, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if got.ArtStatus != enrich.Pending {
+		t.Fatalf("ArtStatus = %q, want pending", got.ArtStatus)
+	}
+	if got.CoverThumbURL != "/artwork/album/1/thumb.jpg" || got.CoverURL != "/artwork/album/1/full.jpg" {
+		t.Fatalf("cover URLs should survive a reset, got %q / %q", got.CoverThumbURL, got.CoverURL)
+	}
+}
+
+func TestResetArtistArtNotFound(t *testing.T) {
+	s := testStore(t)
+	if err := s.ResetArtistArt(ctx(), 999999); !errors.Is(err, ErrArtistNotFound) {
+		t.Fatalf("ResetArtistArt(nonexistent) = %v, want ErrArtistNotFound", err)
+	}
+}
+
+func TestResetAlbumArtNotFound(t *testing.T) {
+	s := testStore(t)
+	if err := s.ResetAlbumArt(ctx(), 999999); !errors.Is(err, ErrAlbumNotFound) {
+		t.Fatalf("ResetAlbumArt(nonexistent) = %v, want ErrAlbumNotFound", err)
 	}
 }
 

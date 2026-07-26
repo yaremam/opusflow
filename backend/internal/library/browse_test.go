@@ -123,3 +123,100 @@ func TestValidateDirectoryRejectsNonexistentPath(t *testing.T) {
 		t.Fatal("ValidateDirectory(nonexistent) error = nil, want error")
 	}
 }
+
+func TestWithinRootAllowsAnyPathWhenRootIsEmpty(t *testing.T) {
+	if err := WithinRoot("/anything/at/all", ""); err != nil {
+		t.Fatalf("WithinRoot with empty root = %v, want nil (unrestricted)", err)
+	}
+}
+
+func TestWithinRootAcceptsRootItself(t *testing.T) {
+	if err := WithinRoot("/data", "/data"); err != nil {
+		t.Fatalf("WithinRoot(root, root) = %v, want nil", err)
+	}
+}
+
+func TestWithinRootAcceptsNestedPath(t *testing.T) {
+	if err := WithinRoot("/data/music/Rock", "/data"); err != nil {
+		t.Fatalf("WithinRoot(nested, root) = %v, want nil", err)
+	}
+}
+
+func TestWithinRootRejectsPathOutsideRoot(t *testing.T) {
+	err := WithinRoot("/etc/passwd", "/data")
+	if !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("WithinRoot(outside, root) = %v, want ErrOutsideRoot", err)
+	}
+}
+
+func TestCreateFolderMakesNewSubdirectory(t *testing.T) {
+	parent := t.TempDir()
+
+	entry, err := CreateFolder(parent, "New Library")
+	if err != nil {
+		t.Fatalf("CreateFolder: %v", err)
+	}
+	want := filepath.Join(parent, "New Library")
+	if entry.Path != want || entry.Name != "New Library" {
+		t.Fatalf("entry = %+v, want {Name: New Library, Path: %s}", entry, want)
+	}
+	if info, err := os.Stat(want); err != nil || !info.IsDir() {
+		t.Fatalf("CreateFolder did not create a directory at %s (err=%v)", want, err)
+	}
+}
+
+func TestCreateFolderIsIdempotentForAnExistingDirectory(t *testing.T) {
+	parent := t.TempDir()
+	existing := filepath.Join(parent, "Already Here")
+	if err := os.Mkdir(existing, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateFolder(parent, "Already Here"); err != nil {
+		t.Fatalf("CreateFolder on existing dir: %v", err)
+	}
+}
+
+func TestCreateFolderRejectsExistingFile(t *testing.T) {
+	parent := t.TempDir()
+	if err := os.WriteFile(filepath.Join(parent, "afile"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := CreateFolder(parent, "afile"); !errors.Is(err, ErrNotADirectory) {
+		t.Fatalf("CreateFolder over an existing file: err = %v, want ErrNotADirectory", err)
+	}
+}
+
+func TestCreateFolderRejectsNonexistentParent(t *testing.T) {
+	parent := filepath.Join(t.TempDir(), "does-not-exist")
+
+	if _, err := CreateFolder(parent, "New Library"); err == nil {
+		t.Fatal("CreateFolder with nonexistent parent: error = nil, want error")
+	}
+}
+
+func TestCreateFolderRejectsNameWithPathSeparator(t *testing.T) {
+	parent := t.TempDir()
+
+	if _, err := CreateFolder(parent, "a/b"); !errors.Is(err, ErrInvalidFolderName) {
+		t.Fatalf("CreateFolder(%q): err = %v, want ErrInvalidFolderName", "a/b", err)
+	}
+}
+
+func TestCreateFolderRejectsParentReference(t *testing.T) {
+	parent := t.TempDir()
+
+	if _, err := CreateFolder(parent, ".."); !errors.Is(err, ErrInvalidFolderName) {
+		t.Fatalf("CreateFolder(..): err = %v, want ErrInvalidFolderName", err)
+	}
+}
+
+func TestWithinRootRejectsSiblingWithSharedStringPrefix(t *testing.T) {
+	// /data-other must not be treated as inside /data just because it
+	// shares a string prefix — this must compare path segments, not bytes.
+	err := WithinRoot("/data-other/thing", "/data")
+	if !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("WithinRoot(/data-other/thing, /data) = %v, want ErrOutsideRoot", err)
+	}
+}

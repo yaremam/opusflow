@@ -187,6 +187,31 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+/* TDR 007: a small corner badge on a placeholder tile whose art lookup
+   came up empty (warn, amber) or errored (bad, red) — never shown when a
+   real image is rendered instead, see hasArtProblem. */
+.art-badge {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.3rem;
+  width: 0.85rem;
+  height: 0.85rem;
+  border-radius: 50%;
+  border: 2px solid var(--ink-900);
+}
+.art-badge.warn {
+  background: var(--warn);
+}
+.art-badge.bad {
+  background: var(--bad);
+}
+.thumb .art-badge {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-width: 1.5px;
 }
 .art.placeholder svg {
   width: 42%;

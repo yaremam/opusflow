@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"github.com/lib/pq"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 )
 
 // ErrArtistNotFound is returned when an artist ID doesn't match any
@@ -33,13 +35,14 @@ type Artist struct {
 	TrackCount int       `json:"trackCount"`
 	CreatedAt  time.Time `json:"createdAt"`
 
-	PhotoThumbURL string   `json:"photoThumbUrl"`
-	PhotoURL      string   `json:"photoUrl"`
-	FormedYear    int      `json:"formedYear"`
-	Country       string   `json:"country"`
-	Genres        []string `json:"genres"`
-	Bio           string   `json:"bio"`
-	BioSourceURL  string   `json:"bioSourceUrl"`
+	PhotoThumbURL string        `json:"photoThumbUrl"`
+	PhotoURL      string        `json:"photoUrl"`
+	ArtStatus     enrich.Status `json:"artStatus"`
+	FormedYear    int           `json:"formedYear"`
+	Country       string        `json:"country"`
+	Genres        []string      `json:"genres"`
+	Bio           string        `json:"bio"`
+	BioSourceURL  string        `json:"bioSourceUrl"`
 }
 
 // Album is one album attributed to a single Artist. See Artist's doc
@@ -55,30 +58,32 @@ type Album struct {
 	TrackCount int       `json:"trackCount"`
 	CreatedAt  time.Time `json:"createdAt"`
 
-	CoverThumbURL        string   `json:"coverThumbUrl"`
-	CoverURL             string   `json:"coverUrl"`
-	Label                string   `json:"label"`
-	Country              string   `json:"country"`
-	Genres               []string `json:"genres"`
-	Description          string   `json:"description"`
-	DescriptionSourceURL string   `json:"descriptionSourceUrl"`
+	CoverThumbURL        string        `json:"coverThumbUrl"`
+	CoverURL             string        `json:"coverUrl"`
+	ArtStatus            enrich.Status `json:"artStatus"`
+	Label                string        `json:"label"`
+	Country              string        `json:"country"`
+	Genres               []string      `json:"genres"`
+	Description          string        `json:"description"`
+	DescriptionSourceURL string        `json:"descriptionSourceUrl"`
 }
 
 // Song is one imported track, with its artist and album names denormalized
 // alongside the IDs so a songs listing doesn't need a client-side join.
 type Song struct {
-	ID                 int64     `json:"id"`
-	Title              string    `json:"title"`
-	ArtistID           int64     `json:"artistId"`
-	ArtistName         string    `json:"artistName"`
-	AlbumID            int64     `json:"albumId"`
-	AlbumTitle         string    `json:"albumTitle"`
-	AlbumCoverThumbURL string    `json:"albumCoverThumbUrl"`
-	TrackNumber        int       `json:"trackNumber"`
-	Year               int       `json:"year"`
-	Genre              string    `json:"genre"`
-	DurationSeconds    int       `json:"durationSeconds"`
-	CreatedAt          time.Time `json:"createdAt"`
+	ID                 int64         `json:"id"`
+	Title              string        `json:"title"`
+	ArtistID           int64         `json:"artistId"`
+	ArtistName         string        `json:"artistName"`
+	AlbumID            int64         `json:"albumId"`
+	AlbumTitle         string        `json:"albumTitle"`
+	AlbumCoverThumbURL string        `json:"albumCoverThumbUrl"`
+	AlbumArtStatus     enrich.Status `json:"albumArtStatus"`
+	TrackNumber        int           `json:"trackNumber"`
+	Year               int           `json:"year"`
+	Genre              string        `json:"genre"`
+	DurationSeconds    int           `json:"durationSeconds"`
+	CreatedAt          time.Time     `json:"createdAt"`
 }
 
 // AlbumTrack is one track within an AlbumDetail's listing — narrower than
@@ -133,16 +138,16 @@ func (o ListOptions) offset() int { return (o.Page - 1) * o.PageSize }
 // nullable (never set until the enrich job first runs) and COALESCEd to ”
 // here so Go's Artist/Album never need a nullable string type, matching
 // this codebase's existing "real empty row, not null" convention.
-const artistEnrichCols = `COALESCE(a.photo_thumb_path, ''), COALESCE(a.photo_path, ''), a.formed_year, a.country, a.genres, a.bio, a.bio_source_url`
-const albumEnrichCols = `COALESCE(al.cover_thumb_path, ''), COALESCE(al.cover_path, ''), al.label, al.country, al.genres, al.description, al.description_source_url`
+const artistEnrichCols = `COALESCE(a.photo_thumb_path, ''), COALESCE(a.photo_path, ''), a.art_status, a.formed_year, a.country, a.genres, a.bio, a.bio_source_url`
+const albumEnrichCols = `COALESCE(al.cover_thumb_path, ''), COALESCE(al.cover_path, ''), al.art_status, al.label, al.country, al.genres, al.description, al.description_source_url`
 
 // scanArtistEnrich/scanAlbumEnrich are the *sql.Row/*sql.Rows destinations
 // matching artistEnrichCols/albumEnrichCols, in order.
 func scanArtistEnrich(a *Artist) []any {
-	return []any{&a.PhotoThumbURL, &a.PhotoURL, &a.FormedYear, &a.Country, pq.Array(&a.Genres), &a.Bio, &a.BioSourceURL}
+	return []any{&a.PhotoThumbURL, &a.PhotoURL, &a.ArtStatus, &a.FormedYear, &a.Country, pq.Array(&a.Genres), &a.Bio, &a.BioSourceURL}
 }
 func scanAlbumEnrich(al *Album) []any {
-	return []any{&al.CoverThumbURL, &al.CoverURL, &al.Label, &al.Country, pq.Array(&al.Genres), &al.Description, &al.DescriptionSourceURL}
+	return []any{&al.CoverThumbURL, &al.CoverURL, &al.ArtStatus, &al.Label, &al.Country, pq.Array(&al.Genres), &al.Description, &al.DescriptionSourceURL}
 }
 
 // recentOrName picks the literal ORDER BY fragment for opts.Sort. Sort is
@@ -372,7 +377,7 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	order := recentOrName(opts, "t.created_at", "t.title")
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.title, t.artist_id, ar.name, t.album_id, al.title,
-		       COALESCE(al.cover_thumb_path, ''),
+		       COALESCE(al.cover_thumb_path, ''), al.art_status,
 		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at,
 		       COUNT(*) OVER()
 		FROM tracks t
@@ -393,7 +398,7 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	for rows.Next() {
 		var sg Song
 		if err := rows.Scan(
-			&sg.ID, &sg.Title, &sg.ArtistID, &sg.ArtistName, &sg.AlbumID, &sg.AlbumTitle, &sg.AlbumCoverThumbURL,
+			&sg.ID, &sg.Title, &sg.ArtistID, &sg.ArtistName, &sg.AlbumID, &sg.AlbumTitle, &sg.AlbumCoverThumbURL, &sg.AlbumArtStatus,
 			&sg.TrackNumber, &sg.Year, &sg.Genre, &sg.DurationSeconds, &sg.CreatedAt, &page.TotalCount,
 		); err != nil {
 			return Page[Song]{}, fmt.Errorf("scanning song: %w", err)

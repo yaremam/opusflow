@@ -228,6 +228,13 @@ button {
   margin: 0 0 0.6rem;
 }
 
+.page-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
 .page-head h1 {
   font-size: 2rem;
   line-height: 1.15;

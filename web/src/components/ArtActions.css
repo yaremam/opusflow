@@ -1,0 +1,70 @@
+.art-actions-wrap {
+  margin-top: 0.7rem;
+}
+
+.art-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.35rem 0.65rem;
+  border-radius: 100px;
+  margin-bottom: 0.6rem;
+}
+.art-status-pill.warn {
+  background: var(--warn-bg);
+  color: var(--warn);
+}
+.art-status-pill.bad {
+  background: var(--bad-bg);
+  color: var(--bad);
+}
+.art-status-pill .dot {
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+.art-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.btn-bordered {
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.45rem 0.8rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--ink-800);
+  color: var(--paper-50);
+}
+.btn-bordered:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+.btn-ghost-art {
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0.3rem 0.2rem;
+  border: none;
+  background: transparent;
+  color: var(--mist-400);
+}
+.btn-ghost-art:hover:not(:disabled) {
+  color: var(--accent-strong);
+}
+.art-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.art-actions-error {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--bad);
+}

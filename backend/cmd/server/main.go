@@ -34,6 +34,7 @@ func main() {
 	}
 	staticDir := os.Getenv("STATIC_DIR")
 	artworkDir := os.Getenv("ARTWORK_DIR")
+	dataDir := os.Getenv("DATA_DIR")
 	revision := os.Getenv("GIT_SHA")
 
 	conn, err := db.Connect(databaseURL())
@@ -45,6 +46,14 @@ func main() {
 	store := library.NewStore(conn)
 	svc := library.NewService(store, organize.CopyJob{})
 
+	// DATA_DIR is optional the same way ARTWORK_DIR is: unset means
+	// browsing/library-creation stays unrestricted (TDR 006's original
+	// stance), e.g. for a plain `go run` outside the Docker image where
+	// there's no /data mount to confine anything to.
+	if dataDir != "" {
+		svc.SetBrowseRoot(dataDir)
+	}
+
 	// ARTWORK_DIR is optional the same way STATIC_DIR is: unset means
 	// "this feature is off" (embedded-art extraction skipped, no
 	// enrichment job) rather than an error, e.g. for a plain `go run`
@@ -53,6 +62,7 @@ func main() {
 	if artworkDir != "" {
 		images := enrich.NewImageStore(artworkDir)
 		store.SetImages(images)
+		svc.SetImages(images)
 		job = enrich.NewJob(store,
 			enrich.NewMusicBrainz(enrichUserAgent),
 			enrich.NewCoverArtArchive(enrichUserAgent),

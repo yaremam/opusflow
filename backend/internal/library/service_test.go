@@ -27,6 +27,21 @@ type fakeImportStore struct {
 	nextLibID   int64
 	libraries   map[int64]Library
 	deletedLibs []int64
+
+	resetArtistArtCalls []int64
+	resetAlbumArtCalls  []int64
+	resetArtistArtErr   error
+	resetAlbumArtErr    error
+	setArtistArtCalls   []setArtCall
+	setAlbumArtCalls    []setArtCall
+}
+
+// setArtCall records one SetArtistArt/SetAlbumArt invocation — used by
+// upload tests (TDR 007) to assert what got written without a real DB.
+type setArtCall struct {
+	id                  int64
+	status              enrich.Status
+	thumbPath, fullPath string
 }
 
 func newFakeImportStore() *fakeImportStore {
@@ -168,6 +183,40 @@ func (f *fakeImportStore) DeleteAlbum(_ context.Context, id int64, deleteFiles b
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletedAlbums = append(f.deletedAlbums, id)
+	return nil
+}
+
+func (f *fakeImportStore) ResetArtistArt(_ context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.resetArtistArtErr != nil {
+		return f.resetArtistArtErr
+	}
+	f.resetArtistArtCalls = append(f.resetArtistArtCalls, id)
+	return nil
+}
+
+func (f *fakeImportStore) ResetAlbumArt(_ context.Context, id int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.resetAlbumArtErr != nil {
+		return f.resetAlbumArtErr
+	}
+	f.resetAlbumArtCalls = append(f.resetAlbumArtCalls, id)
+	return nil
+}
+
+func (f *fakeImportStore) SetArtistArt(_ context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.setArtistArtCalls = append(f.setArtistArtCalls, setArtCall{id, status, thumbPath, fullPath})
+	return nil
+}
+
+func (f *fakeImportStore) SetAlbumArt(_ context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.setAlbumArtCalls = append(f.setAlbumArtCalls, setArtCall{id, status, thumbPath, fullPath})
 	return nil
 }
 
@@ -506,6 +555,138 @@ func TestDeleteAlbumDelegatesToStore(t *testing.T) {
 	}
 }
 
+func TestRetryArtistArtResetsStatusAndWakesEnricher(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	enricher := newRecordingEnricher()
+	svc.SetEnricher(enricher)
+
+	if err := svc.RetryArtistArt(ctx(), 42); err != nil {
+		t.Fatalf("RetryArtistArt: %v", err)
+	}
+	if len(store.resetArtistArtCalls) != 1 || store.resetArtistArtCalls[0] != 42 {
+		t.Fatalf("resetArtistArtCalls = %+v, want [42]", store.resetArtistArtCalls)
+	}
+	enricher.waitForCall(t)
+}
+
+func TestRetryAlbumArtResetsStatusAndWakesEnricher(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	enricher := newRecordingEnricher()
+	svc.SetEnricher(enricher)
+
+	if err := svc.RetryAlbumArt(ctx(), 7); err != nil {
+		t.Fatalf("RetryAlbumArt: %v", err)
+	}
+	if len(store.resetAlbumArtCalls) != 1 || store.resetAlbumArtCalls[0] != 7 {
+		t.Fatalf("resetAlbumArtCalls = %+v, want [7]", store.resetAlbumArtCalls)
+	}
+	enricher.waitForCall(t)
+}
+
+func TestRetryArtistArtWithoutEnricherDoesNotPanic(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.RetryArtistArt(ctx(), 42); err != nil {
+		t.Fatalf("RetryArtistArt: %v", err)
+	}
+}
+
+func TestRetryArtistArtPropagatesStoreError(t *testing.T) {
+	store := newFakeImportStore()
+	store.resetArtistArtErr = ErrArtistNotFound
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.RetryArtistArt(ctx(), 999999); !errors.Is(err, ErrArtistNotFound) {
+		t.Fatalf("RetryArtistArt error = %v, want ErrArtistNotFound", err)
+	}
+}
+
+// onePixelPNG is a minimal valid PNG, for tests that just need something
+// image.Decode accepts without caring what it looks like.
+func onePixelPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+		0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d, 0xb0, 0x00, 0x00, 0x00,
+		0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+}
+
+func TestUploadArtistArtSavesImageAndSetsFound(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	artist, err := svc.UploadArtistArt(ctx(), 42, onePixelPNG())
+	if err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	if artist.ID != 42 {
+		t.Fatalf("artist.ID = %d, want 42", artist.ID)
+	}
+	if len(store.setArtistArtCalls) != 1 {
+		t.Fatalf("setArtistArtCalls = %+v, want 1 call", store.setArtistArtCalls)
+	}
+	call := store.setArtistArtCalls[0]
+	if call.id != 42 || call.status != enrich.Found || call.thumbPath == "" || call.fullPath == "" {
+		t.Fatalf("setArtistArtCalls[0] = %+v, want id=42 status=found with non-empty paths", call)
+	}
+}
+
+func TestUploadArtistArtWithoutImagesConfiguredErrors(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if _, err := svc.UploadArtistArt(ctx(), 42, onePixelPNG()); !errors.Is(err, ErrArtworkNotConfigured) {
+		t.Fatalf("UploadArtistArt error = %v, want ErrArtworkNotConfigured", err)
+	}
+}
+
+func TestUploadArtistArtRejectsUndecodableData(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	if _, err := svc.UploadArtistArt(ctx(), 42, []byte("not an image")); err == nil {
+		t.Fatal("UploadArtistArt with invalid image data: error = nil, want error")
+	}
+}
+
+func TestUploadAlbumArtSavesImageAndSetsFound(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	album, err := svc.UploadAlbumArt(ctx(), 7, onePixelPNG())
+	if err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	if album.ID != 7 {
+		t.Fatalf("album.ID = %d, want 7", album.ID)
+	}
+	if len(store.setAlbumArtCalls) != 1 {
+		t.Fatalf("setAlbumArtCalls = %+v, want 1 call", store.setAlbumArtCalls)
+	}
+	call := store.setAlbumArtCalls[0]
+	if call.id != 7 || call.status != enrich.Found || call.thumbPath == "" || call.fullPath == "" {
+		t.Fatalf("setAlbumArtCalls[0] = %+v, want id=7 status=found with non-empty paths", call)
+	}
+}
+
+func TestUploadAlbumArtWithoutImagesConfiguredErrors(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if _, err := svc.UploadAlbumArt(ctx(), 7, onePixelPNG()); !errors.Is(err, ErrArtworkNotConfigured) {
+		t.Fatalf("UploadAlbumArt error = %v, want ErrArtworkNotConfigured", err)
+	}
+}
+
 func TestDeleteLibraryDelegatesToStore(t *testing.T) {
 	store := newFakeImportStore()
 	svc := NewService(store, newRecordingCopier())
@@ -529,6 +710,46 @@ func TestCreateLibraryDelegatesToStore(t *testing.T) {
 	}
 	if lib.Name != "Main Collection" || lib.RootPath != root {
 		t.Fatalf("lib = %+v", lib)
+	}
+}
+
+func TestCreateLibraryRejectsPathOutsideBrowseRoot(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	root := t.TempDir()
+	svc.SetBrowseRoot(root)
+
+	outside := t.TempDir() // a sibling temp dir, not under root
+	_, err := svc.CreateLibrary(ctx(), "Main Collection", outside)
+	if !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("CreateLibrary outside browse root: err = %v, want ErrOutsideRoot", err)
+	}
+}
+
+func TestCreateLibraryAllowsPathInsideBrowseRoot(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	root := t.TempDir()
+	svc.SetBrowseRoot(root)
+
+	inside := filepath.Join(root, "Main Collection")
+	if err := os.MkdirAll(inside, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateLibrary(ctx(), "Main Collection", inside); err != nil {
+		t.Fatalf("CreateLibrary inside browse root: %v", err)
+	}
+}
+
+func TestBrowseRejectsPathOutsideBrowseRoot(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	root := t.TempDir()
+	svc.SetBrowseRoot(root)
+
+	outside := t.TempDir()
+	if _, err := svc.Browse(outside); !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("Browse outside browse root: err = %v, want ErrOutsideRoot", err)
 	}
 }
 

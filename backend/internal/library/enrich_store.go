@@ -86,13 +86,38 @@ func (s *Store) SetArtistMusicBrainzID(ctx context.Context, id int64, mbid strin
 	return nil
 }
 
-// SetArtistArt records the outcome of an artist photo lookup.
+// SetArtistArt records the outcome of an artist photo lookup. Only a
+// Found outcome overwrites the path columns — a NotFound/Failed write
+// touches art_status alone, so a previously-found photo survives a later
+// attempt (e.g. a manual retry, TDR 007) that doesn't turn up a
+// replacement, rather than being nulled out by it.
 func (s *Store) SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE artists SET art_status = $2, photo_thumb_path = $3, photo_path = $4 WHERE id = $1
-	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath))
+		UPDATE artists SET
+			art_status = $2,
+			photo_thumb_path = CASE WHEN $5 = 'found' THEN $3 ELSE photo_thumb_path END,
+			photo_path = CASE WHEN $5 = 'found' THEN $4 ELSE photo_path END
+		WHERE id = $1
+	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath), string(status))
 	if err != nil {
 		return fmt.Errorf("setting artist art: %w", err)
+	}
+	return nil
+}
+
+// ResetArtistArt marks an artist's art status pending again — used by a
+// manual retry (TDR 007) to wake the enrichment job for just this one
+// artist without touching any existing photo path, so the last known-good
+// image keeps rendering until (and unless) a new one replaces it.
+func (s *Store) ResetArtistArt(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE artists SET art_status = 'pending' WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("resetting artist art status: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("resetting artist art status: %w", err)
+	} else if n == 0 {
+		return ErrArtistNotFound
 	}
 	return nil
 }
@@ -140,13 +165,33 @@ func (s *Store) SetAlbumMusicBrainzID(ctx context.Context, id int64, mbid string
 	return nil
 }
 
-// SetAlbumArt records the outcome of an album cover lookup.
+// SetAlbumArt records the outcome of an album cover lookup. See
+// SetArtistArt's doc comment — same Found-only path-column write, same
+// reasoning.
 func (s *Store) SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
 	_, err := s.db.ExecContext(ctx, `
-		UPDATE albums SET art_status = $2, cover_thumb_path = $3, cover_path = $4 WHERE id = $1
-	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath))
+		UPDATE albums SET
+			art_status = $2,
+			cover_thumb_path = CASE WHEN $5 = 'found' THEN $3 ELSE cover_thumb_path END,
+			cover_path = CASE WHEN $5 = 'found' THEN $4 ELSE cover_path END
+		WHERE id = $1
+	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath), string(status))
 	if err != nil {
 		return fmt.Errorf("setting album art: %w", err)
+	}
+	return nil
+}
+
+// ResetAlbumArt is ResetArtistArt's album counterpart. See its doc comment.
+func (s *Store) ResetAlbumArt(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `UPDATE albums SET art_status = 'pending' WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("resetting album art status: %w", err)
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return fmt.Errorf("resetting album art status: %w", err)
+	} else if n == 0 {
+		return ErrAlbumNotFound
 	}
 	return nil
 }

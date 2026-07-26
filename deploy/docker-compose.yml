@@ -24,6 +24,10 @@ services:
       POSTGRES_USER: opusflow
       POSTGRES_DB: opusflow
       ARTWORK_DIR: /artwork
+      # Confines the Libraries page's folder picker and the import source
+      # browser to this one mount — not the host path you set below, always
+      # this fixed container-side path, so leave it as /data.
+      DATA_DIR: /data
     volumes:
       # ↓ EDIT THIS: where fetched/extracted artist photos and album covers
       # are cached on the host (e.g. /volume1/docker/opusflow/artwork on a

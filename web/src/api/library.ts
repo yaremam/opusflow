@@ -74,6 +74,11 @@ export interface PlanResponse {
   errors: ValidationError[]
 }
 
+// ArtStatus is an artist/album's photo/cover lookup state (TDR 003). A
+// badge/pill (TDR 007) only ever renders for not_found/failed, and only
+// when there's no image to fall back on instead — see hasArtProblem below.
+export type ArtStatus = 'pending' | 'found' | 'not_found' | 'failed'
+
 export interface Artist {
   id: number
   name: string
@@ -87,6 +92,7 @@ export interface Artist {
   // section just isn't rendered.
   photoThumbUrl: string
   photoUrl: string
+  artStatus: ArtStatus
   formedYear: number
   country: string
   genres: string[]
@@ -105,6 +111,7 @@ export interface Album {
 
   coverThumbUrl: string
   coverUrl: string
+  artStatus: ArtStatus
   label: string
   country: string
   genres: string[]
@@ -120,11 +127,20 @@ export interface Song {
   albumId: number
   albumTitle: string
   albumCoverThumbUrl: string
+  albumArtStatus: ArtStatus
   trackNumber: number
   year: number
   genre: string
   durationSeconds: number
   createdAt: string
+}
+
+// hasArtProblem is the one rule every badge/pill in the app follows: show
+// something is wrong only when there's genuinely no image to show instead
+// — a not_found/failed status next to a still-good (or newly-uploaded)
+// image is not a problem worth flagging (TDR 007 AC-2/AC-3).
+export function hasArtProblem(status: ArtStatus, thumbUrl: string): boolean {
+  return (status === 'not_found' || status === 'failed') && thumbUrl === ''
 }
 
 export interface AlbumTrack {
@@ -205,8 +221,70 @@ export function deleteLibrary(id: number, deleteFiles: boolean): Promise<void> {
   return request(`/api/libraries/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' })
 }
 
+// retryArtistArt/retryAlbumArt queue a fresh art lookup (TDR 007) and wake
+// the background enrichment job immediately rather than waiting for the
+// next import. The response reflects the reset (status back to pending)
+// right away — the caller polls get{Artist,Album} afterward for the
+// eventual outcome, see pollForArtResolution below.
+export function retryArtistArt(id: number): Promise<Artist> {
+  return postJSON(`/api/library/artists/${id}/art/retry`, {})
+}
+
+export function retryAlbumArt(id: number): Promise<Album> {
+  return postJSON(`/api/library/albums/${id}/art/retry`, {})
+}
+
+function uploadArt<T>(path: string, file: File): Promise<T> {
+  const form = new FormData()
+  form.append('image', file)
+  return request(path, { method: 'POST', body: form })
+}
+
+// uploadArtistArt/uploadAlbumArt save a manually-chosen image, bypassing
+// MusicBrainz/Cover Art Archive entirely — synchronous (no polling needed):
+// the response already reflects the new photo/cover.
+export function uploadArtistArt(id: number, file: File): Promise<Artist> {
+  return uploadArt(`/api/library/artists/${id}/art`, file)
+}
+
+export function uploadAlbumArt(id: number, file: File): Promise<Album> {
+  return uploadArt(`/api/library/albums/${id}/art`, file)
+}
+
+// pollForArtResolution re-fetches an artist/album every 2s for up to ~30s
+// after a retry, stopping as soon as its status leaves "pending" (AC-6).
+// Generic over Artist/Album since both follow the identical shape.
+export async function pollForArtResolution<T extends { artStatus: ArtStatus }>(
+  fetchOne: () => Promise<T>,
+): Promise<T> {
+  const deadline = Date.now() + 30_000
+  let latest = await fetchOne()
+  while (latest.artStatus === 'pending' && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    latest = await fetchOne()
+  }
+  return latest
+}
+
+export interface Config {
+  dataDir: string
+}
+
+// getConfig fetches server-side config the picker needs before it can
+// browse anything — currently just dataDir (empty means unrestricted),
+// telling SourceFolderPicker where to start instead of defaulting to "/"
+// and immediately hitting a "path is outside the configured data
+// directory" error when a DATA_DIR is set.
+export function getConfig(): Promise<Config> {
+  return request('/api/config')
+}
+
 export function browse(path: string): Promise<Entry[]> {
   return request(`/api/imports/browse?path=${encodeURIComponent(path)}`)
+}
+
+export function createFolder(parentPath: string, name: string): Promise<Entry> {
+  return postJSON('/api/imports/browse/folders', { parentPath, name })
 }
 
 export function buildPlan(libraryId: number, sourceDir: string): Promise<PlanResponse> {

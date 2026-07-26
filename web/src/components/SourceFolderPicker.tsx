@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { browse, errorMessage, type Entry } from '../api/library'
+import { browse, createFolder, errorMessage, getConfig, type Entry } from '../api/library'
 import './SourceFolderPicker.css'
 
 interface NameFieldProps {
@@ -26,25 +26,29 @@ interface BreadcrumbSegment {
   path: string
 }
 
-// toBreadcrumb splits currentPath into clickable segments, pairing each
-// segment's display label with the actual path clicking it should navigate
-// to — so a click handler never has to reconstruct a path from labels. "/"
-// itself is always the first segment, since there's no configured root to
-// start from anymore (TDR 006) — browsing starts at the filesystem root.
-function toBreadcrumb(currentPath: string): BreadcrumbSegment[] {
-  const parts = currentPath.split('/').filter(Boolean)
-  const segments: BreadcrumbSegment[] = [{ label: '/', path: '/' }]
-  let path = ''
-  for (const part of parts) {
+// toBreadcrumb splits currentPath into clickable segments below root,
+// pairing each segment's display label with the actual path clicking it
+// should navigate to — so a click handler never has to reconstruct a path
+// from labels. root itself is always the first segment: with DATA_DIR
+// configured that's the browse root (e.g. "/data"), not the filesystem
+// root, since there's nothing above it to browse into anyway (TDR 006,
+// amended — see ARCHITECTURE.md's DATA_DIR entry).
+function toBreadcrumb(currentPath: string, root: string): BreadcrumbSegment[] {
+  const rootBase = root === '/' ? '' : root.replace(/\/$/, '')
+  const remainder = currentPath.slice(rootBase.length).split('/').filter(Boolean)
+  const segments: BreadcrumbSegment[] = [{ label: root, path: root }]
+  let path = rootBase
+  for (const part of remainder) {
     path = `${path}/${part}`
     segments.push({ label: part, path })
   }
   return segments
 }
 
-// SourceFolderPicker browses the container's filesystem, unrestricted from
-// "/" (TDR 006 — there's no configured allowlist anymore), so the reviewer
-// can pick a folder to import from or a new library's root. Generalized
+// SourceFolderPicker browses the container's filesystem — confined to
+// DATA_DIR when the backend has one configured, unrestricted from "/"
+// otherwise (TDR 006, amended) — so the reviewer can pick a folder to
+// import from or a new library's root. Generalized
 // (title/description/labels as props, plus an optional name field) so the
 // same breadcrumb browser serves both the standalone "browse a server
 // folder" step and the create-a-library form, without duplicating the
@@ -61,12 +65,39 @@ export default function SourceFolderPicker({
   submitting,
   submitError,
 }: SourceFolderPickerProps) {
+  // root is the configured DATA_DIR (or "/" when unrestricted) — null
+  // until that's known, which gates the browse effect below so it never
+  // fires against the wrong starting path (e.g. "/" when DATA_DIR is set).
+  const [root, setRoot] = useState<string | null>(null)
   const [currentPath, setCurrentPath] = useState('/')
   const [entries, setEntries] = useState<Entry[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [browseError, setBrowseError] = useState<string | null>(null)
 
+  const [creatingFolder, setCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newFolderSubmitting, setNewFolderSubmitting] = useState(false)
+  const [newFolderError, setNewFolderError] = useState<string | null>(null)
+
   useEffect(() => {
+    let cancelled = false
+    getConfig()
+      .then((cfg) => {
+        if (cancelled) return
+        const effectiveRoot = cfg.dataDir || '/'
+        setRoot(effectiveRoot)
+        setCurrentPath(effectiveRoot)
+      })
+      .catch(() => {
+        if (!cancelled) setRoot('/')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (root === null) return // still resolving the starting path above
     let cancelled = false
     setLoading(true)
     setBrowseError(null)
@@ -83,9 +114,24 @@ export default function SourceFolderPicker({
     return () => {
       cancelled = true
     }
-  }, [currentPath])
+  }, [currentPath, root])
 
-  const segments = toBreadcrumb(currentPath)
+  async function handleCreateFolderConfirm() {
+    setNewFolderSubmitting(true)
+    setNewFolderError(null)
+    try {
+      const entry = await createFolder(currentPath, newFolderName.trim())
+      setCreatingFolder(false)
+      setNewFolderName('')
+      setCurrentPath(entry.path)
+    } catch (err) {
+      setNewFolderError(errorMessage(err))
+    } finally {
+      setNewFolderSubmitting(false)
+    }
+  }
+
+  const segments = toBreadcrumb(currentPath, root ?? '/')
   const canConfirm = Boolean(currentPath) && (!nameField || nameField.value.trim() !== '')
 
   return (
@@ -109,15 +155,68 @@ export default function SourceFolderPicker({
         )}
 
         <div className="picker-breadcrumb">
-          {segments.map((seg, i) => (
-            <span key={seg.path}>
-              {i > 0 && <span className="sep">/</span>}
-              <button type="button" className="crumb" onClick={() => setCurrentPath(seg.path)}>
-                {seg.label}
-              </button>
-            </span>
-          ))}
+          <span className="breadcrumb-trail">
+            {segments.map((seg, i) => (
+              <span key={seg.path}>
+                {i > 0 && <span className="sep">/</span>}
+                <button type="button" className="crumb" onClick={() => setCurrentPath(seg.path)}>
+                  {seg.label}
+                </button>
+              </span>
+            ))}
+          </span>
+          {nameField && !creatingFolder && (
+            <button
+              type="button"
+              className="new-folder-trigger"
+              onClick={() => {
+                setCreatingFolder(true)
+                setNewFolderError(null)
+              }}
+            >
+              ﹢ New folder
+            </button>
+          )}
         </div>
+
+        {nameField && creatingFolder && (
+          <div className="new-folder-row">
+            <input
+              type="text"
+              autoFocus
+              placeholder="Folder name"
+              value={newFolderName}
+              onChange={(e) => setNewFolderName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && newFolderName.trim() !== '') handleCreateFolderConfirm()
+                if (e.key === 'Escape') {
+                  setCreatingFolder(false)
+                  setNewFolderName('')
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="btn-ghost"
+              onClick={() => {
+                setCreatingFolder(false)
+                setNewFolderName('')
+                setNewFolderError(null)
+              }}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn-primary"
+              disabled={newFolderSubmitting || newFolderName.trim() === ''}
+              onClick={handleCreateFolderConfirm}
+            >
+              {newFolderSubmitting ? 'Creating…' : 'Create'}
+            </button>
+            {newFolderError && <p className="picker-status error">{newFolderError}</p>}
+          </div>
+        )}
 
         <div className="picker-folder-list">
           {loading && <p className="picker-status">Loading…</p>}

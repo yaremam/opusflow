@@ -51,7 +51,7 @@ export default function AlbumsPage() {
       <div className="card-grid">
         {page?.items.map((album) => (
           <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
+            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" artStatus={album.artStatus} />
             <div className="title">{album.title || 'Unknown Album'}</div>
             <div className="artist">
               {album.artistName || 'Unknown Artist'}

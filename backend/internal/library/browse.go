@@ -9,11 +9,32 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 )
 
 // ErrNotADirectory is returned when a requested path exists but names a
-// regular file rather than a directory.
+// regular file rather than a regular directory.
 var ErrNotADirectory = errors.New("path is not a directory")
+
+// ErrOutsideRoot is returned when a path falls outside the browse root
+// configured via DATA_DIR. There is no such root by default (TDR 006) — an
+// unconfigured root means WithinRoot never rejects anything.
+var ErrOutsideRoot = errors.New("path is outside the configured data directory")
+
+// WithinRoot reports whether path is root itself or somewhere underneath
+// it, comparing cleaned path segments (not raw byte prefixes, so a sibling
+// like /data-other is never mistaken for being inside /data). An empty root
+// means no restriction is configured, so every path passes.
+func WithinRoot(path, root string) error {
+	if root == "" {
+		return nil
+	}
+	rel, err := filepath.Rel(filepath.Clean(root), filepath.Clean(path))
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return fmt.Errorf("%s: %w", path, ErrOutsideRoot)
+	}
+	return nil
+}
 
 // Entry is one subdirectory returned by Browse.
 type Entry struct {
@@ -60,4 +81,32 @@ func ValidateDirectory(path string) error {
 		return fmt.Errorf("%s: %w", path, ErrNotADirectory)
 	}
 	return nil
+}
+
+// ErrInvalidFolderName is returned when CreateFolder's name isn't a single
+// path segment — no separators, and no "." or ".." parent references.
+var ErrInvalidFolderName = errors.New("invalid folder name")
+
+// CreateFolder makes a new subdirectory named name directly inside parent
+// (never nested — name must be a single path segment) so a library's root
+// no longer has to already exist on the host before it can be picked.
+// Idempotent: an existing directory with that name is left as-is and
+// returned rather than treated as an error, since the most likely reason a
+// caller hits that is re-selecting a folder they already made.
+func CreateFolder(parent, name string) (Entry, error) {
+	if name == "" || name == "." || name == ".." || name != filepath.Base(name) {
+		return Entry{}, fmt.Errorf("%q: %w", name, ErrInvalidFolderName)
+	}
+	if err := ValidateDirectory(parent); err != nil {
+		return Entry{}, err
+	}
+
+	path := filepath.Join(filepath.Clean(parent), name)
+	if err := os.Mkdir(path, 0o755); err != nil && !os.IsExist(err) {
+		return Entry{}, fmt.Errorf("creating directory: %w", err)
+	}
+	if err := ValidateDirectory(path); err != nil {
+		return Entry{}, err
+	}
+	return Entry{Name: name, Path: path}, nil
 }

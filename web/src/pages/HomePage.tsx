@@ -71,6 +71,11 @@ export default function HomePage() {
       <p className="eyebrow">Household library</p>
       <div className="page-head">
         <h1>{greeting()}</h1>
+        {data && data.totalSongs > 0 && (
+          <Link className="btn-primary" to="/import">
+            ＋ Import music
+          </Link>
+        )}
       </div>
       <p className="sub">Here's what's in your shared library right now.</p>
 
@@ -128,7 +133,7 @@ export default function HomePage() {
           <div className="chip-row">
             {data.artists.map((artist) => (
               <Link key={artist.id} className="artist-chip" to={`/artists/${artist.id}`}>
-                <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" />
+                <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" artStatus={artist.artStatus} />
                 <span className="name">{artist.name || 'Unknown Artist'}</span>
               </Link>
             ))}
@@ -141,7 +146,7 @@ export default function HomePage() {
           <div className="card-grid">
             {data.albums.map((album) => (
               <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-                <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
+                <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" artStatus={album.artStatus} />
                 <div className="title">{album.title || 'Unknown Album'}</div>
                 <div className="artist">{album.artistName || 'Unknown Artist'}</div>
               </Link>
@@ -155,7 +160,7 @@ export default function HomePage() {
           <div>
             {data.songs.map((song) => (
               <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
-                <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" />
+                <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" artStatus={song.albumArtStatus} />
                 <div>
                   <div className="t">{song.title}</div>
                   <div className="a">

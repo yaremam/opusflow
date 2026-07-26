@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
@@ -161,6 +162,46 @@ func TestArtworkRouteAbsentWhenArtworkDirUnset(t *testing.T) {
 	}
 }
 
+func TestConfigReportsEmptyDataDirWhenUnconfigured(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	rec := httptest.NewRecorder()
+
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got struct {
+		DataDir string `json:"dataDir"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal response: %v, body = %s", err, rec.Body.String())
+	}
+	if got.DataDir != "" {
+		t.Fatalf("dataDir = %q, want empty", got.DataDir)
+	}
+}
+
+func TestConfigReportsConfiguredDataDir(t *testing.T) {
+	svc := lazyService(t)
+	svc.SetBrowseRoot("/data")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	rec := httptest.NewRecorder()
+
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	var got struct {
+		DataDir string `json:"dataDir"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal response: %v, body = %s", err, rec.Body.String())
+	}
+	if got.DataDir != "/data" {
+		t.Fatalf("dataDir = %q, want /data", got.DataDir)
+	}
+}
+
 func TestImportBrowseListsSubdirectories(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "Rock"), 0o755); err != nil {
@@ -199,6 +240,21 @@ func TestImportBrowseAllowsAnyPath(t *testing.T) {
 	}
 }
 
+func TestImportBrowseRejectsPathOutsideConfiguredRoot(t *testing.T) {
+	svc := lazyService(t)
+	svc.SetBrowseRoot(t.TempDir())
+
+	outside := t.TempDir() // a sibling temp dir, not under the configured root
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+outside, nil)
+	rec := httptest.NewRecorder()
+
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
 func TestImportBrowseRequiresPathParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse", nil)
 	rec := httptest.NewRecorder()
@@ -220,5 +276,59 @@ func TestImportBrowseNonexistentPath(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestCreateFolderEndpointMakesNewSubdirectory(t *testing.T) {
+	parent := t.TempDir()
+	body := `{"parentPath":"` + jsonEscape(parent) + `","name":"New Library"}`
+
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	var entry library.Entry
+	if err := json.Unmarshal(rec.Body.Bytes(), &entry); err != nil {
+		t.Fatalf("unmarshal response: %v, body = %s", err, rec.Body.String())
+	}
+	want := filepath.Join(parent, "New Library")
+	if entry.Path != want {
+		t.Fatalf("entry.Path = %q, want %q", entry.Path, want)
+	}
+	if info, err := os.Stat(want); err != nil || !info.IsDir() {
+		t.Fatalf("folder not created at %s (err=%v)", want, err)
+	}
+}
+
+func TestCreateFolderEndpointRejectsPathOutsideConfiguredRoot(t *testing.T) {
+	svc := lazyService(t)
+	svc.SetBrowseRoot(t.TempDir())
+
+	outside := t.TempDir()
+	body := `{"parentPath":"` + jsonEscape(outside) + `","name":"New Library"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestCreateFolderEndpointRequiresName(t *testing.T) {
+	parent := t.TempDir()
+	body := `{"parentPath":"` + jsonEscape(parent) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+
+	New("", "", "", lazyService(t)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }

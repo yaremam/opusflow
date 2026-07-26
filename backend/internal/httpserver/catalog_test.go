@@ -1,14 +1,17 @@
 package httpserver
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library"
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
@@ -209,6 +212,212 @@ func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
 	}
 	if _, err := svc.GetArtist(context.Background(), id); err == nil {
 		t.Fatal("expected artist to be removed")
+	}
+}
+
+func TestRetryArtistArtEndpointResetsStatusToPending(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Retry Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	if err := store.SetArtistArt(context.Background(), id, "found", "/artwork/artist/1/thumb.jpg", "/artwork/artist/1/full.jpg"); err != nil {
+		t.Fatalf("SetArtistArt: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art/retry", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	var got library.ArtistDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ArtStatus != "pending" {
+		t.Fatalf("ArtStatus = %q, want pending", got.ArtStatus)
+	}
+	// The photo URL must survive the reset (AC-11) — only a later Found
+	// write may clear it.
+	if got.PhotoThumbURL == "" {
+		t.Fatal("expected photo URL to survive the retry reset")
+	}
+}
+
+func TestRetryArtistArtEndpointNotFound(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/999999/art/retry", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestRetryAlbumArtEndpointResetsStatusToPending(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Retry Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	if err := store.SetAlbumArt(context.Background(), id, "found", "/artwork/album/1/thumb.jpg", "/artwork/album/1/full.jpg"); err != nil {
+		t.Fatalf("SetAlbumArt: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/art/retry", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
+	}
+	var got library.AlbumDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ArtStatus != "pending" {
+		t.Fatalf("ArtStatus = %q, want pending", got.ArtStatus)
+	}
+	if got.CoverThumbURL == "" {
+		t.Fatal("expected cover URL to survive the retry reset")
+	}
+}
+
+func TestRetryAlbumArtEndpointNotFound(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/999999/art/retry", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+// onePixelPNG is a minimal valid PNG, for tests that just need something
+// image.Decode accepts without caring what it looks like.
+func onePixelPNG() []byte {
+	return []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
+		0x49, 0x48, 0x44, 0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x02, 0x00, 0x00, 0x00, 0x90, 0x77, 0x53, 0xde, 0x00, 0x00, 0x00,
+		0x0c, 0x49, 0x44, 0x41, 0x54, 0x08, 0xd7, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0x18, 0xdd, 0x8d, 0xb0, 0x00, 0x00, 0x00,
+		0x00, 0x49, 0x45, 0x4e, 0x44, 0xae, 0x42, 0x60, 0x82,
+	}
+}
+
+// mustBuildImageUploadBody builds a multipart request body with a single
+// "image" field carrying data, plus the multipart Content-Type header a
+// caller needs to set alongside it.
+func mustBuildImageUploadBody(t *testing.T, data []byte) (*bytes.Buffer, string) {
+	t.Helper()
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	part, err := mw.CreateFormFile("image", "art.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return body, mw.FormDataContentType()
+}
+
+func TestUploadArtistArtEndpointSavesImage(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Upload Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	body, contentType := mustBuildImageUploadBody(t, onePixelPNG())
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.Artist
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ArtStatus != "found" || got.PhotoThumbURL == "" || got.PhotoURL == "" {
+		t.Fatalf("artist = %+v, want ArtStatus found with non-empty photo URLs", got)
+	}
+}
+
+func TestUploadArtistArtEndpointWithoutArtworkConfiguredReturns503(t *testing.T) {
+	store, svc := testStoreAndService(t) // no SetImages call
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "No Artwork Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	body, contentType := mustBuildImageUploadBody(t, onePixelPNG())
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
+	}
+}
+
+func TestUploadArtistArtEndpointRejectsMissingImageField(t *testing.T) {
+	_, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	body := &bytes.Buffer{}
+	mw := multipart.NewWriter(body)
+	mw.Close()
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/1/art", body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestUploadAlbumArtEndpointSavesImage(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Upload Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	body, contentType := mustBuildImageUploadBody(t, onePixelPNG())
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/art", body)
+	req.Header.Set("Content-Type", contentType)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.Album
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ArtStatus != "found" || got.CoverThumbURL == "" || got.CoverURL == "" {
+		t.Fatalf("album = %+v, want ArtStatus found with non-empty cover URLs", got)
 	}
 }
 

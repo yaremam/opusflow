@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
 	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
@@ -198,6 +199,64 @@ func TestGetArtistReturnsAlbumsNewestFirst(t *testing.T) {
 	}
 	if detail.Albums[0].Title != "In Rainbows" || detail.Albums[1].Title != "The Bends" {
 		t.Fatalf("albums order = %+v, want In Rainbows (2007) before The Bends (1995)", detail.Albums)
+	}
+}
+
+// TestArtStatusExposedOnFreshAndEnrichedRows locks in TDR 007's AC-1: the
+// API-facing Artist/Album (and, via embedding, ArtistDetail/AlbumDetail)
+// must carry ArtStatus, defaulting to pending and reflecting a later
+// SetArtistArt/SetAlbumArt write — not just the derived photo/cover URL.
+func TestArtStatusExposedOnFreshAndEnrichedRows(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Status Artist", "Status Album")
+	artist := findArtistByName(t, s, "Status Artist")
+	album := findAlbumByTitle(t, s, "Status Album")
+
+	if artist.ArtStatus != enrich.Pending {
+		t.Fatalf("fresh artist ArtStatus = %q, want pending", artist.ArtStatus)
+	}
+	if album.ArtStatus != enrich.Pending {
+		t.Fatalf("fresh album ArtStatus = %q, want pending", album.ArtStatus)
+	}
+
+	if err := s.SetArtistArt(ctx(), artist.ID, enrich.Found, "/artwork/artist/1/thumb.jpg", "/artwork/artist/1/full.jpg"); err != nil {
+		t.Fatalf("SetArtistArt: %v", err)
+	}
+	if err := s.SetAlbumArt(ctx(), album.ID, enrich.NotFound, "", ""); err != nil {
+		t.Fatalf("SetAlbumArt: %v", err)
+	}
+
+	gotArtist, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if gotArtist.ArtStatus != enrich.Found {
+		t.Fatalf("GetArtist ArtStatus = %q, want found", gotArtist.ArtStatus)
+	}
+
+	gotAlbum, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if gotAlbum.ArtStatus != enrich.NotFound {
+		t.Fatalf("GetAlbum ArtStatus = %q, want not_found", gotAlbum.ArtStatus)
+	}
+
+	songs, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListSongs: %v", err)
+	}
+	found := false
+	for _, sg := range songs.Items {
+		if sg.AlbumID == album.ID {
+			found = true
+			if sg.AlbumArtStatus != enrich.NotFound {
+				t.Fatalf("song AlbumArtStatus = %q, want not_found", sg.AlbumArtStatus)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected the inserted song in ListSongs")
 	}
 }
 

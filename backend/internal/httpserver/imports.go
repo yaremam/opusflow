@@ -56,6 +56,36 @@ func handleImportBrowse(svc *library.Service) http.HandlerFunc {
 	}
 }
 
+func handleCreateFolder(svc *library.Service) http.HandlerFunc {
+	type createFolderRequest struct {
+		ParentPath string `json:"parentPath"`
+		Name       string `json:"name"`
+	}
+
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req createFolderRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.ParentPath == "" {
+			http.Error(w, "parentPath is required", http.StatusBadRequest)
+			return
+		}
+		if req.Name == "" {
+			http.Error(w, "name is required", http.StatusBadRequest)
+			return
+		}
+
+		entry, err := svc.CreateFolder(req.ParentPath, req.Name)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusCreated, entry)
+	}
+}
+
 func handleBuildPlan(svc *library.Service) http.HandlerFunc {
 	type buildRequest struct {
 		LibraryID int64  `json:"libraryId"`
@@ -277,6 +307,10 @@ func libraryErrorStatus(err error) int {
 		return http.StatusBadRequest
 	case errors.Is(err, library.ErrSourceInsideLibrary):
 		return http.StatusBadRequest
+	case errors.Is(err, library.ErrOutsideRoot):
+		return http.StatusBadRequest
+	case errors.Is(err, library.ErrInvalidFolderName):
+		return http.StatusBadRequest
 	case errors.Is(err, library.ErrLibraryNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, library.ErrImportNotFound):
@@ -285,6 +319,8 @@ func libraryErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, library.ErrAlbumNotFound):
 		return http.StatusNotFound
+	case errors.Is(err, library.ErrArtworkNotConfigured):
+		return http.StatusServiceUnavailable
 	case errors.Is(err, fs.ErrNotExist):
 		return http.StatusNotFound
 	default:

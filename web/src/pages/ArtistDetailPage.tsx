@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { deleteArtist, errorMessage, getArtist, type ArtistDetail } from '../api/library'
+import {
+  deleteArtist,
+  errorMessage,
+  getArtist,
+  pollForArtResolution,
+  retryArtistArt,
+  uploadArtistArt,
+  type ArtistDetail,
+} from '../api/library'
+import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import InfoBlock from '../components/InfoBlock'
 import RemoveModal from '../components/RemoveModal'
@@ -14,6 +23,20 @@ export default function ArtistDetailPage() {
   const [removing, setRemoving] = useState(false)
   const [removeSubmitting, setRemoveSubmitting] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function handleRetryArt() {
+    if (!artist) return
+    const queued = await retryArtistArt(artist.id)
+    setArtist((prev) => prev && { ...prev, ...queued })
+    const resolved = await pollForArtResolution(() => getArtist(artist.id))
+    setArtist((prev) => prev && { ...prev, ...resolved })
+  }
+
+  async function handleUploadArt(file: File) {
+    if (!artist) return
+    const updated = await uploadArtistArt(artist.id, file)
+    setArtist((prev) => prev && { ...prev, ...updated })
+  }
 
   async function handleRemove(deleteFiles: boolean) {
     if (!artist) return
@@ -63,7 +86,13 @@ export default function ArtistDetailPage() {
         <Link to="/artists">Artists</Link> / {artist.name || 'Unknown Artist'}
       </p>
       <div className="detail-head">
-        <ArtTile src={artist.photoUrl || artist.photoThumbUrl} alt="" className="detail-art round" kind="artist" />
+        <ArtTile
+          src={artist.photoUrl || artist.photoThumbUrl}
+          alt=""
+          className="detail-art round"
+          kind="artist"
+          artStatus={artist.artStatus}
+        />
         <div className="detail-meta">
           <div className="kind">Artist</div>
           <h1>{artist.name || 'Unknown Artist'}</h1>
@@ -71,6 +100,13 @@ export default function ArtistDetailPage() {
             {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
             {artist.trackCount === 1 ? '' : 's'}
           </div>
+          <ArtActions
+            thumbUrl={artist.photoThumbUrl}
+            artStatus={artist.artStatus}
+            label="photo"
+            onRetry={handleRetryArt}
+            onUpload={handleUploadArt}
+          />
           <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
             Remove artist…
           </button>
@@ -107,7 +143,7 @@ export default function ArtistDetailPage() {
       <div className="card-grid">
         {artist.albums.map((album) => (
           <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
+            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" artStatus={album.artStatus} />
             <div className="title">{album.title || 'Unknown Album'}</div>
             <div className="artist">{album.year > 0 ? album.year : ''}</div>
           </Link>

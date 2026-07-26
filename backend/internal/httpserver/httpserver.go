@@ -21,10 +21,12 @@ import (
 func New(staticDir, artworkDir, revision string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth(revision))
+	mux.HandleFunc("GET /api/config", handleConfig(svc))
 	mux.HandleFunc("GET /api/libraries", handleListLibraries(svc))
 	mux.HandleFunc("POST /api/libraries", handleCreateLibrary(svc))
 	mux.HandleFunc("DELETE /api/libraries/{id}", handleDeleteLibrary(svc))
 	mux.HandleFunc("GET /api/imports/browse", handleImportBrowse(svc))
+	mux.HandleFunc("POST /api/imports/browse/folders", handleCreateFolder(svc))
 	mux.HandleFunc("POST /api/imports/plan", handleBuildPlan(svc))
 	mux.HandleFunc("POST /api/imports/plan/validate", handleValidatePlan(svc))
 	mux.HandleFunc("POST /api/imports/upload", handleUploadImport(svc))
@@ -34,9 +36,13 @@ func New(staticDir, artworkDir, revision string, svc *library.Service) http.Hand
 	mux.HandleFunc("GET /api/library/artists", handleListArtists(svc))
 	mux.HandleFunc("GET /api/library/artists/{id}", handleGetArtist(svc))
 	mux.HandleFunc("DELETE /api/library/artists/{id}", handleDeleteArtist(svc))
+	mux.HandleFunc("POST /api/library/artists/{id}/art/retry", handleRetryArtistArt(svc))
+	mux.HandleFunc("POST /api/library/artists/{id}/art", handleUploadArtistArt(svc))
 	mux.HandleFunc("GET /api/library/albums", handleListAlbums(svc))
 	mux.HandleFunc("GET /api/library/albums/{id}", handleGetAlbum(svc))
 	mux.HandleFunc("DELETE /api/library/albums/{id}", handleDeleteAlbum(svc))
+	mux.HandleFunc("POST /api/library/albums/{id}/art/retry", handleRetryAlbumArt(svc))
+	mux.HandleFunc("POST /api/library/albums/{id}/art", handleUploadAlbumArt(svc))
 	mux.HandleFunc("GET /api/library/songs", handleListSongs(svc))
 
 	if artworkDir != "" {
@@ -60,6 +66,19 @@ func handleHealth(revision string) http.HandlerFunc {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		json.NewEncoder(w).Encode(healthResponse{Status: "ok", Revision: revision})
+	}
+}
+
+// configResponse is frontend-relevant server configuration — currently just
+// the browse root, so SourceFolderPicker knows where to start browsing
+// instead of defaulting to "/" and immediately hitting ErrOutsideRoot.
+type configResponse struct {
+	DataDir string `json:"dataDir"`
+}
+
+func handleConfig(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, configResponse{DataDir: svc.BrowseRoot()})
 	}
 }
 

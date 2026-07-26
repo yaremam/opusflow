@@ -51,7 +51,7 @@ export default function SongsPage() {
       <div>
         {page?.items.map((song) => (
           <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
-            <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" />
+            <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" artStatus={song.albumArtStatus} />
             <div>
               <div className="t">{song.title}</div>
               <div className="a">

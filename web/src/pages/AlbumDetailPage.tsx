@@ -1,6 +1,16 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { deleteAlbum, errorMessage, formatDuration, getAlbum, type AlbumDetail } from '../api/library'
+import {
+  deleteAlbum,
+  errorMessage,
+  formatDuration,
+  getAlbum,
+  pollForArtResolution,
+  retryAlbumArt,
+  uploadAlbumArt,
+  type AlbumDetail,
+} from '../api/library'
+import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import InfoBlock from '../components/InfoBlock'
 import RemoveModal from '../components/RemoveModal'
@@ -14,6 +24,20 @@ export default function AlbumDetailPage() {
   const [removing, setRemoving] = useState(false)
   const [removeSubmitting, setRemoveSubmitting] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
+
+  async function handleRetryArt() {
+    if (!album) return
+    const queued = await retryAlbumArt(album.id)
+    setAlbum((prev) => prev && { ...prev, ...queued })
+    const resolved = await pollForArtResolution(() => getAlbum(album.id))
+    setAlbum((prev) => prev && { ...prev, ...resolved })
+  }
+
+  async function handleUploadArt(file: File) {
+    if (!album) return
+    const updated = await uploadAlbumArt(album.id, file)
+    setAlbum((prev) => prev && { ...prev, ...updated })
+  }
 
   async function handleRemove(deleteFiles: boolean) {
     if (!album) return
@@ -65,7 +89,13 @@ export default function AlbumDetailPage() {
         <Link to="/albums">Albums</Link> / {album.title || 'Unknown Album'}
       </p>
       <div className="detail-head">
-        <ArtTile src={album.coverUrl || album.coverThumbUrl} alt="" className="detail-art" kind="album" />
+        <ArtTile
+          src={album.coverUrl || album.coverThumbUrl}
+          alt=""
+          className="detail-art"
+          kind="album"
+          artStatus={album.artStatus}
+        />
         <div className="detail-meta">
           <div className="kind">Album</div>
           <h1>{album.title || 'Unknown Album'}</h1>
@@ -76,6 +106,13 @@ export default function AlbumDetailPage() {
             {album.year > 0 ? `${album.year} · ` : ''}
             {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
           </div>
+          <ArtActions
+            thumbUrl={album.coverThumbUrl}
+            artStatus={album.artStatus}
+            label="cover"
+            onRetry={handleRetryArt}
+            onUpload={handleUploadArt}
+          />
           <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
             Remove album…
           </button>

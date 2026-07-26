@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"path/filepath"
 	"strings"
@@ -50,6 +51,11 @@ type ImportStore interface {
 	DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error
 	DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error
 
+	ResetArtistArt(ctx context.Context, id int64) error
+	ResetAlbumArt(ctx context.Context, id int64) error
+	SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
+	SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
+
 	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
 	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
 	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
@@ -96,9 +102,11 @@ var ErrSourceInsideLibrary = errors.New("import source is inside a library's roo
 // a plan against a chosen library's root, confirming it (which copies files
 // in the background), and removing catalog entries.
 type Service struct {
-	store    ImportStore
-	copier   Copier
-	enricher Enricher
+	store      ImportStore
+	copier     Copier
+	enricher   Enricher
+	browseRoot string
+	images     *enrich.ImageStore
 }
 
 // NewService builds a Service.
@@ -115,17 +123,61 @@ func (s *Service) SetEnricher(enricher Enricher) {
 	s.enricher = enricher
 }
 
+// SetImages wires up manual artwork upload (TDR 007) with the same
+// ImageStore the background enrichment job already saves into — kept as a
+// setter, same reasoning as SetEnricher, so a deployment with ARTWORK_DIR
+// unset simply can't upload (ErrArtworkNotConfigured) rather than needing a
+// stub to construct a Service at all.
+func (s *Service) SetImages(images *enrich.ImageStore) {
+	s.images = images
+}
+
+// SetBrowseRoot confines Browse and CreateLibrary to root (DATA_DIR).
+// Kept as a setter, same as SetEnricher, so tests and any deployment that
+// doesn't set DATA_DIR aren't forced to configure one; the zero value ""
+// means unrestricted (TDR 006's original stance).
+func (s *Service) SetBrowseRoot(root string) {
+	s.browseRoot = root
+}
+
+// BrowseRoot returns the configured root (empty if unrestricted) — the web
+// app's folder picker needs this to know where to start browsing instead of
+// defaulting to "/" and immediately hitting ErrOutsideRoot.
+func (s *Service) BrowseRoot() string {
+	return s.browseRoot
+}
+
 // Browse lists the immediate subdirectories of path — used for both
-// choosing an import source and choosing a new library's root. There is no
-// configured allowlist to check path against anymore (TDR 006).
+// choosing an import source and choosing a new library's root. Rejects path
+// if it falls outside the configured browse root (empty by default, see
+// SetBrowseRoot).
 func (s *Service) Browse(path string) ([]Entry, error) {
+	if err := WithinRoot(path, s.browseRoot); err != nil {
+		return nil, err
+	}
 	return Browse(path)
 }
 
 // CreateLibrary records a new library, rooted at rootPath (which must
-// already exist as a directory).
+// already exist as a directory, and fall within the configured browse root
+// if one is set).
 func (s *Service) CreateLibrary(ctx context.Context, name, rootPath string) (Library, error) {
-	return s.store.CreateLibrary(ctx, name, filepath.Clean(rootPath))
+	clean := filepath.Clean(rootPath)
+	if err := WithinRoot(clean, s.browseRoot); err != nil {
+		return Library{}, err
+	}
+	return s.store.CreateLibrary(ctx, name, clean)
+}
+
+// CreateFolder makes a new subdirectory named name inside parent — used by
+// the create-library dialog's "new folder" affordance, so a library's root
+// no longer has to already exist on the host. Rejects parent if it falls
+// outside the configured browse root (empty by default, see SetBrowseRoot).
+func (s *Service) CreateFolder(parent, name string) (Entry, error) {
+	if err := WithinRoot(parent, s.browseRoot); err != nil {
+		return Entry{}, err
+	}
+	return CreateFolder(parent, name)
 }
 
 // ListLibraries returns every library.
@@ -226,10 +278,7 @@ func (s *Service) ConfirmImport(ctx context.Context, libraryID int64, sourceDesc
 			log.Printf("library: import %d: marking complete: %v", imp.ID, err)
 		}
 
-		if s.enricher != nil {
-			sum := s.enricher.Run(context.Background())
-			log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
-		}
+		s.wakeEnricher()
 	}()
 
 	return imp, nil, nil
@@ -255,6 +304,88 @@ func (s *Service) DeleteArtist(ctx context.Context, id int64, deleteFiles bool) 
 // files from disk too (AC-13).
 func (s *Service) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error {
 	return s.store.DeleteAlbum(ctx, id, deleteFiles)
+}
+
+// RetryArtistArt resets an artist's art status to pending and wakes the
+// background enrichment job immediately (TDR 007) rather than waiting for
+// the next import or backend restart — the same fire-and-forget goroutine
+// ConfirmImport already launches after a copy completes. Returns once the
+// reset itself is recorded; the actual lookup runs asynchronously, so a
+// caller wanting the outcome polls GetArtist afterward.
+func (s *Service) RetryArtistArt(ctx context.Context, id int64) error {
+	if err := s.store.ResetArtistArt(ctx, id); err != nil {
+		return err
+	}
+	s.wakeEnricher()
+	return nil
+}
+
+// RetryAlbumArt is RetryArtistArt's album counterpart.
+func (s *Service) RetryAlbumArt(ctx context.Context, id int64) error {
+	if err := s.store.ResetAlbumArt(ctx, id); err != nil {
+		return err
+	}
+	s.wakeEnricher()
+	return nil
+}
+
+// wakeEnricher launches one enrichment pass in the background, ignoring a
+// nil enricher (ARTWORK_DIR unset — see main.go) the same way ConfirmImport
+// already does.
+func (s *Service) wakeEnricher() {
+	if s.enricher == nil {
+		return
+	}
+	go func() {
+		sum := s.enricher.Run(context.Background())
+		log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
+	}()
+}
+
+// ErrArtworkNotConfigured is returned by UploadArtistArt/UploadAlbumArt
+// when ARTWORK_DIR isn't set — there's nowhere on disk to save an upload
+// to, the same constraint the background enrichment job is already under.
+var ErrArtworkNotConfigured = errors.New("artwork storage is not configured")
+
+// UploadArtistArt saves data as id's photo — bypassing MusicBrainz/Cover
+// Art Archive entirely (TDR 007), synchronously (no queueing, unlike
+// retry): the same thumb/full variants the automatic lookup produces are
+// written via the shared ImageStore, then recorded as Found immediately.
+func (s *Service) UploadArtistArt(ctx context.Context, id int64, data []byte) (Artist, error) {
+	if s.images == nil {
+		return Artist{}, ErrArtworkNotConfigured
+	}
+	thumbURL, fullURL, err := s.images.Save("artist", id, data)
+	if err != nil {
+		return Artist{}, fmt.Errorf("saving artist photo: %w", err)
+	}
+	if err := s.store.SetArtistArt(ctx, id, enrich.Found, thumbURL, fullURL); err != nil {
+		return Artist{}, err
+	}
+	detail, err := s.store.GetArtist(ctx, id)
+	if err != nil {
+		return Artist{}, err
+	}
+	return detail.Artist, nil
+}
+
+// UploadAlbumArt is UploadArtistArt's album counterpart.
+func (s *Service) UploadAlbumArt(ctx context.Context, id int64, data []byte) (Album, error) {
+	if s.images == nil {
+		return Album{}, ErrArtworkNotConfigured
+	}
+	thumbURL, fullURL, err := s.images.Save("album", id, data)
+	if err != nil {
+		return Album{}, fmt.Errorf("saving album cover: %w", err)
+	}
+	if err := s.store.SetAlbumArt(ctx, id, enrich.Found, thumbURL, fullURL); err != nil {
+		return Album{}, err
+	}
+	detail, err := s.store.GetAlbum(ctx, id)
+	if err != nil {
+		return Album{}, err
+	}
+	return detail.Album, nil
 }
 
 // ListArtists returns a page of artists matching opts.

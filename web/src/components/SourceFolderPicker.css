@@ -54,12 +54,19 @@
 
 .picker-breadcrumb {
   padding: 0.75rem 1.2rem;
-  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   font-size: 0.85rem;
   color: var(--mist-400);
   border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.breadcrumb-trail {
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   overflow-x: auto;
   white-space: nowrap;
+  min-width: 0;
 }
 .picker-breadcrumb .sep {
   margin: 0 0.3rem;
@@ -77,6 +84,46 @@
 }
 .crumb:hover {
   text-decoration: underline;
+}
+.new-folder-trigger {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: var(--accent-strong);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0;
+  white-space: nowrap;
+}
+.new-folder-trigger:hover {
+  text-decoration: underline;
+}
+
+.new-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 1.2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--ink-950);
+}
+.new-folder-row input {
+  flex: 1 1 auto;
+  min-width: 8rem;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  color: var(--paper-50);
+  font: inherit;
+  font-size: 0.85rem;
+  padding: 0.45rem 0.6rem;
+  border-radius: 7px;
+}
+.new-folder-row .picker-status.error {
+  flex-basis: 100%;
+  padding: 0;
+  margin-top: 0.2rem;
 }
 
 .picker-folder-list {

@@ -65,9 +65,13 @@ Once the project shows both containers as **Running**:
   problem.
 - Visit `http://<your-nas-ip>:<port>` in a browser for the app itself. Nothing
   exists yet — open the **Libraries** page and create your first library
-  (give it a name, then browse to a folder under `/data` for it to live in),
-  then use the **Import** page to browse a source folder under `/data` (or
-  upload from your device) and copy files into it. Check
+  (give it a name, then either pick an existing folder under `/data` or use
+  "＋ New folder" to make one on the spot), then use the **Import** page to
+  browse a source folder under `/data` (or upload from your device) and copy
+  files into it. The folder picker only shows what's under `/data`
+  (`DATA_DIR` in `deploy/docker-compose.yml`) — if a folder you expect to
+  see is missing, confirm it actually lives under the host path you set for
+  the `:/data` mount in step 5. Check
   **Container Manager → Project → opusflow → Logs** on the `app` container
   if an import seems stuck for a large batch of files.
 
