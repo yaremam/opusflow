@@ -163,7 +163,7 @@ func (s *Store) SetAlbumDescription(ctx context.Context, id int64, status enrich
 
 // nullIfEmpty turns "" into a SQL NULL so path columns stay genuinely NULL
 // (never set) rather than an empty string, matching artistEnrichCols'/
-// albumEnrichCols' COALESCE(..., '') read side.
+// albumEnrichCols' COALESCE(..., ”) read side.
 func nullIfEmpty(s string) any {
 	if s == "" {
 		return nil

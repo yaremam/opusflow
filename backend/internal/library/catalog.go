@@ -130,7 +130,7 @@ func (o ListOptions) offset() int { return (o.Page - 1) * o.PageSize }
 
 // artistEnrichCols/albumEnrichCols are the enrichment columns (TDR 003)
 // shared by every query that returns a full Artist/Album — path columns are
-// nullable (never set until the enrich job first runs) and COALESCEd to ''
+// nullable (never set until the enrich job first runs) and COALESCEd to ”
 // here so Go's Artist/Album never need a nullable string type, matching
 // this codebase's existing "real empty row, not null" convention.
 const artistEnrichCols = `COALESCE(a.photo_thumb_path, ''), COALESCE(a.photo_path, ''), a.formed_year, a.country, a.genres, a.bio, a.bio_source_url`
