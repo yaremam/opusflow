@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 )
 
 // DeleteArtist removes an artist and, via ON DELETE CASCADE, every album
@@ -88,11 +89,7 @@ func (s *Store) DeleteLibrary(ctx context.Context, id int64, deleteFiles bool) e
 		return fmt.Errorf("committing library delete: %w", err)
 	}
 
-	for _, p := range paths {
-		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
-			log.Printf("library: deleting file %q: %v", p, err)
-		}
-	}
+	removeFilesAndEmptyDirs(paths)
 	return nil
 }
 
@@ -158,10 +155,56 @@ func (s *Store) deleteWithFiles(ctx context.Context, deleteFiles bool, pathQuery
 		return notFound
 	}
 
+	removeFilesAndEmptyDirs(paths)
+	return nil
+}
+
+// removeFilesAndEmptyDirs removes each file, then cleans up the
+// <Artist>/<Year>.<Album>/ and <Artist>/ directories organize's canonical
+// layout (TDR 005) always creates around a track — exactly two levels
+// above it, never further, so a library's root is never at risk even if
+// walked all the way up (GitHub issue #7: a deleted artist's/album's
+// folders used to survive because only the file itself was ever removed).
+// A directory that isn't actually empty (a sibling album/track still using
+// it) is left alone — not an error, the common case for DeleteAlbum.
+func removeFilesAndEmptyDirs(paths []string) {
+	albumDirs := map[string]bool{}
 	for _, p := range paths {
 		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 			log.Printf("library: deleting file %q: %v", p, err)
+			continue
+		}
+		albumDirs[filepath.Dir(p)] = true
+	}
+
+	artistDirs := map[string]bool{}
+	for dir := range albumDirs {
+		if removeIfEmpty(dir) {
+			artistDirs[filepath.Dir(dir)] = true
 		}
 	}
-	return nil
+	for dir := range artistDirs {
+		removeIfEmpty(dir)
+	}
+}
+
+// removeIfEmpty removes dir if (and only if) it currently has no entries,
+// reporting whether it did. A non-empty or already-gone directory is not
+// logged as an error — both are expected outcomes here, not failures.
+func removeIfEmpty(dir string) bool {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			log.Printf("library: checking directory %q: %v", dir, err)
+		}
+		return false
+	}
+	if len(entries) > 0 {
+		return false
+	}
+	if err := os.Remove(dir); err != nil && !errors.Is(err, os.ErrNotExist) {
+		log.Printf("library: removing empty directory %q: %v", dir, err)
+		return false
+	}
+	return true
 }
