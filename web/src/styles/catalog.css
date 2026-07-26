@@ -503,3 +503,91 @@ table.track-table td.trk {
   color: var(--accent-strong);
   border-color: var(--accent-strong);
 }
+
+/* Home page grid/table toggle (TDR 008) */
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 1.75rem;
+}
+.toolbar-row .hint {
+  font-size: 0.8rem;
+  color: var(--mist-400);
+}
+.view-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.view-toggle button {
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.4rem 0.75rem;
+  background: var(--ink-900);
+  color: var(--mist-400);
+  border: none;
+  cursor: pointer;
+}
+.view-toggle button + button {
+  border-left: 1px solid var(--border);
+}
+.view-toggle button.active {
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+.data-table th {
+  text-align: left;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--mist-400);
+  padding: 0 0.7rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+}
+.data-table th.num,
+.data-table td.num {
+  text-align: right;
+}
+.data-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid var(--border);
+}
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+.data-table tr.row-link {
+  cursor: pointer;
+}
+.data-table tr.row-link:hover td {
+  background: var(--accent-wash);
+}
+.row-thumb {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.row-thumb .avatar.sm,
+.row-thumb .art.sm {
+  width: 2rem;
+  height: 2rem;
+  flex-shrink: 0;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.row-thumb .avatar.sm {
+  border-radius: 50%;
+}
+.row-thumb .name {
+  font-weight: 600;
+}
