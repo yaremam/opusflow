@@ -113,6 +113,27 @@ button {
   outline-offset: 2px;
 }
 
+.btn-bad {
+  background: var(--bad-bg);
+  border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent);
+  color: var(--bad);
+  font-size: 0.82rem;
+  font-weight: 700;
+  padding: 0.5rem 0.85rem;
+  border-radius: 7px;
+}
+.btn-bad:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--bad) 22%, transparent);
+}
+.btn-bad:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.btn-bad:focus-visible {
+  outline: 2px solid var(--bad);
+  outline-offset: 2px;
+}
+
 .btn-icon {
   background: transparent;
   border: none;
@@ -150,7 +171,8 @@ button {
   gap: 0.35rem;
   flex-shrink: 0;
 }
-.pill.scanning {
+.pill.scanning,
+.pill.copying {
   background: var(--warn-bg);
   color: var(--warn);
 }

@@ -4,31 +4,22 @@ import (
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
 // insertTrackFor is a small helper: InsertTrack upserts the artist/album
-// rows a test needs, exercising the same path a real scan uses.
+// rows a test needs, exercising the same path a real import uses.
 func insertTrackFor(t *testing.T, s *Store, artist, album string) {
 	t.Helper()
-	if err := s.InsertTrack(ctx(), scan.Track{
-		DirectoryID: mustAddDirectory(t, s),
-		Path:        "/music/" + artist + "/" + album + "/track.mp3",
-		Title:       "Track",
-		Artist:      artist,
-		Album:       album,
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID: mustCreateImport(t, s),
+		Path:     "/music/" + artist + "/" + album + "/track.mp3",
+		Title:    "Track",
+		Artist:   artist,
+		Album:    album,
 	}); err != nil {
 		t.Fatalf("InsertTrack: %v", err)
 	}
-}
-
-func mustAddDirectory(t *testing.T, s *Store) int64 {
-	t.Helper()
-	dir, err := s.AddDirectory(ctx(), "/music", "/music/"+randomSuffix())
-	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
-	}
-	return dir.ID
 }
 
 func TestArtistsNeedingEnrichmentExcludesUnknownArtist(t *testing.T) {

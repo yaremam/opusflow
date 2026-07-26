@@ -5,60 +5,36 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"strconv"
 	"testing"
 
-	"github.com/yaremam/opusflow/backend/internal/db"
 	"github.com/yaremam/opusflow/backend/internal/library"
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
-// testStoreAndService mirrors testService but also hands back the
-// underlying *library.Store, so catalog tests can seed tracks directly
-// (InsertTrack isn't exposed through Service — it's part of the scan
-// write path) before exercising the HTTP layer.
-func testStoreAndService(t *testing.T, roots library.Roots) (*library.Store, *library.Service) {
+func mustInsertTrack(t *testing.T, store *library.Store, importID int64, artist, album, title string, trackNumber, year int) {
 	t.Helper()
-	dsn := os.Getenv("DATABASE_URL")
-	if dsn == "" {
-		t.Skip("DATABASE_URL not set; skipping Postgres integration test")
+	if err := store.InsertTrack(context.Background(), organize.CopiedTrack{
+		ImportID: importID, Path: "/music/" + artist + "/" + album + "/" + title + ".mp3",
+		Title: title, Artist: artist, Album: album, TrackNumber: trackNumber, Year: year,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
 	}
+}
 
-	conn, err := db.Open(dsn)
+func mustCreateImportForTest(t *testing.T, store *library.Store) int64 {
+	t.Helper()
+	imp, err := store.CreateImport(context.Background(), "/music/src")
 	if err != nil {
-		t.Fatalf("Open: %v", err)
+		t.Fatalf("CreateImport: %v", err)
 	}
-	t.Cleanup(func() { conn.Close() })
-	conn.SetMaxOpenConns(1)
-
-	schema := "test_" + randomSuffix()
-	if _, err := conn.Exec("CREATE SCHEMA " + schema); err != nil {
-		t.Fatalf("create schema: %v", err)
-	}
-	t.Cleanup(func() { conn.Exec("DROP SCHEMA " + schema + " CASCADE") })
-	if _, err := conn.Exec("SET search_path TO " + schema); err != nil {
-		t.Fatalf("set search_path: %v", err)
-	}
-	if err := db.Migrate(conn); err != nil {
-		t.Fatalf("Migrate: %v", err)
-	}
-
-	store := library.NewStore(conn)
-	return store, library.NewService(roots, store, noopScanner{})
+	return imp.ID
 }
 
 func TestLibraryArtistsListsAndPaginates(t *testing.T) {
-	root := t.TempDir()
-	store, svc := testStoreAndService(t, library.Roots{root})
-
-	dir, err := svc.AddDirectory(context.Background(), root)
-	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
-	}
-	if err := store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/a", Title: "A", Artist: "Radiohead", Album: "In Rainbows"}); err != nil {
-		t.Fatalf("InsertTrack: %v", err)
-	}
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "A", 1, 2007)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists", nil)
 	rec := httptest.NewRecorder()
@@ -81,13 +57,9 @@ func TestLibraryArtistsListsAndPaginates(t *testing.T) {
 }
 
 func TestLibraryArtistDetailReturnsAlbums(t *testing.T) {
-	root := t.TempDir()
-	store, svc := testStoreAndService(t, library.Roots{root})
-
-	dir, _ := svc.AddDirectory(context.Background(), root)
-	if err := store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/a", Title: "A", Artist: "Radiohead", Album: "In Rainbows", Year: 2007}); err != nil {
-		t.Fatalf("InsertTrack: %v", err)
-	}
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "A", 1, 2007)
 
 	artists, err := svc.ListArtists(context.Background(), library.ListOptions{})
 	if err != nil || len(artists.Items) != 1 {
@@ -123,12 +95,10 @@ func TestLibraryArtistDetailNotFound(t *testing.T) {
 }
 
 func TestLibraryAlbumsFiltersByYear(t *testing.T) {
-	root := t.TempDir()
-	store, svc := testStoreAndService(t, library.Roots{root})
-
-	dir, _ := svc.AddDirectory(context.Background(), root)
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/a", Title: "A", Artist: "Fleetwood Mac", Album: "Rumours", Year: 1977})
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/b", Title: "B", Artist: "Tycho", Album: "Weather", Year: 2019})
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Fleetwood Mac", "Rumours", "A", 1, 1977)
+	mustInsertTrack(t, store, importID, "Tycho", "Weather", "B", 1, 2019)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums?year=1977", nil)
 	rec := httptest.NewRecorder()
@@ -147,12 +117,10 @@ func TestLibraryAlbumsFiltersByYear(t *testing.T) {
 }
 
 func TestLibraryAlbumDetailReturnsTracks(t *testing.T) {
-	root := t.TempDir()
-	store, svc := testStoreAndService(t, library.Roots{root})
-
-	dir, _ := svc.AddDirectory(context.Background(), root)
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/a", Title: "15 Step", Artist: "Radiohead", Album: "In Rainbows", TrackNumber: 1})
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/b", Title: "Bodysnatchers", Artist: "Radiohead", Album: "In Rainbows", TrackNumber: 2})
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "15 Step", 1, 2007)
+	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007)
 
 	albums, err := svc.ListAlbums(context.Background(), library.ListOptions{})
 	if err != nil || len(albums.Items) != 1 {
@@ -188,12 +156,10 @@ func TestLibraryAlbumDetailNotFound(t *testing.T) {
 }
 
 func TestLibrarySongsSearchesByQuery(t *testing.T) {
-	root := t.TempDir()
-	store, svc := testStoreAndService(t, library.Roots{root})
-
-	dir, _ := svc.AddDirectory(context.Background(), root)
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/a", Title: "Sinnerman", Artist: "Nina Simone", Album: "Pastel Blues"})
-	store.InsertTrack(context.Background(), scan.Track{DirectoryID: dir.ID, Path: "/b", Title: "Dreams", Artist: "Fleetwood Mac", Album: "Rumours"})
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Nina Simone", "Pastel Blues", "Sinnerman", 1, 1965)
+	mustInsertTrack(t, store, importID, "Fleetwood Mac", "Rumours", "Dreams", 1, 1977)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs?q=sinner", nil)
 	rec := httptest.NewRecorder()
@@ -208,5 +174,70 @@ func TestLibrarySongsSearchesByQuery(t *testing.T) {
 	}
 	if len(got.Items) != 1 || got.Items[0].Title != "Sinnerman" {
 		t.Fatalf("songs = %+v, want just Sinnerman", got.Items)
+	}
+}
+
+func TestDeleteArtistEndpointRequiresDeleteFilesParam(t *testing.T) {
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(artists.Items[0].ID, 10), nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"?deleteFiles=false", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, err := svc.GetArtist(context.Background(), id); err == nil {
+		t.Fatal("expected artist to be removed")
+	}
+}
+
+func TestDeleteArtistEndpointNotFound(t *testing.T) {
+	_, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/999999?deleteFiles=false", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestDeleteAlbumEndpointRemovesAlbum(t *testing.T) {
+	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"?deleteFiles=true", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
+	}
+	if _, err := svc.GetAlbum(context.Background(), id); err == nil {
+		t.Fatal("expected album to be removed")
 	}
 }

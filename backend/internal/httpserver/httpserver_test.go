@@ -1,7 +1,6 @@
 package httpserver
 
 import (
-	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -10,19 +9,14 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"strconv"
-	"strings"
 	"testing"
 
 	_ "github.com/lib/pq"
 
 	"github.com/yaremam/opusflow/backend/internal/db"
 	"github.com/yaremam/opusflow/backend/internal/library"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
-
-type noopScanner struct{}
-
-func (noopScanner) Scan(context.Context, int64, string) {}
 
 // lazyService builds a *library.Service for tests that never actually hit
 // the database (health, static file serving, roots, browse) — its store
@@ -34,7 +28,7 @@ func lazyService(t *testing.T, roots library.Roots) *library.Service {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { sqlDB.Close() })
-	return library.NewService(roots, library.NewStore(sqlDB), noopScanner{})
+	return library.NewService(roots, t.TempDir(), library.NewStore(sqlDB), organize.CopyJob{})
 }
 
 func randomSuffix() string {
@@ -46,6 +40,14 @@ func randomSuffix() string {
 // testService builds a *library.Service backed by a real, freshly-migrated
 // Postgres schema, skipping the test if DATABASE_URL isn't configured.
 func testService(t *testing.T, roots library.Roots) *library.Service {
+	t.Helper()
+	_, svc := testStoreAndService(t, roots)
+	return svc
+}
+
+// testStoreAndService is testService but also hands back the underlying
+// *library.Store, for tests that need to seed tracks directly.
+func testStoreAndService(t *testing.T, roots library.Roots) (*library.Store, *library.Service) {
 	t.Helper()
 	dsn := os.Getenv("DATABASE_URL")
 	if dsn == "" {
@@ -71,7 +73,8 @@ func testService(t *testing.T, roots library.Roots) *library.Service {
 		t.Fatalf("Migrate: %v", err)
 	}
 
-	return library.NewService(roots, library.NewStore(conn), noopScanner{})
+	store := library.NewStore(conn)
+	return store, library.NewService(roots, t.TempDir(), store, organize.CopyJob{})
 }
 
 func TestHealth(t *testing.T) {
@@ -158,10 +161,10 @@ func TestArtworkRouteAbsentWhenArtworkDirUnset(t *testing.T) {
 	}
 }
 
-func TestLibraryRootsListsConfiguredRoots(t *testing.T) {
+func TestImportRootsListsConfiguredRoots(t *testing.T) {
 	roots := library.Roots{"/music", "/nas-music"}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/library/roots", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/roots", nil)
 	rec := httptest.NewRecorder()
 
 	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
@@ -181,14 +184,14 @@ func TestLibraryRootsListsConfiguredRoots(t *testing.T) {
 	}
 }
 
-func TestLibraryBrowseListsSubdirectories(t *testing.T) {
+func TestImportBrowseListsSubdirectories(t *testing.T) {
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, "Rock"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	roots := library.Roots{root}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/library/browse?path="+root, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 
 	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
@@ -206,12 +209,12 @@ func TestLibraryBrowseListsSubdirectories(t *testing.T) {
 	}
 }
 
-func TestLibraryBrowseRejectsPathOutsideRoots(t *testing.T) {
+func TestImportBrowseRejectsPathOutsideRoots(t *testing.T) {
 	root := t.TempDir()
 	outside := t.TempDir()
 	roots := library.Roots{root}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/library/browse?path="+outside, nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+outside, nil)
 	rec := httptest.NewRecorder()
 
 	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
@@ -221,10 +224,10 @@ func TestLibraryBrowseRejectsPathOutsideRoots(t *testing.T) {
 	}
 }
 
-func TestLibraryBrowseRequiresPathParam(t *testing.T) {
+func TestImportBrowseRequiresPathParam(t *testing.T) {
 	roots := library.Roots{t.TempDir()}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/library/browse", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse", nil)
 	rec := httptest.NewRecorder()
 
 	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
@@ -234,167 +237,16 @@ func TestLibraryBrowseRequiresPathParam(t *testing.T) {
 	}
 }
 
-func TestLibraryBrowseNonexistentPath(t *testing.T) {
+func TestImportBrowseNonexistentPath(t *testing.T) {
 	root := t.TempDir()
 	roots := library.Roots{root}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/library/browse?path="+filepath.Join(root, "nope"), nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+filepath.Join(root, "nope"), nil)
 	rec := httptest.NewRecorder()
 
 	New("", "", "", lazyService(t, roots)).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesListEmpty(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/library/directories", nil)
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-	if body := strings.TrimSpace(rec.Body.String()); body != "[]" {
-		t.Fatalf("body = %q, want []", body)
-	}
-}
-
-func TestLibraryDirectoriesAdd(t *testing.T) {
-	root := t.TempDir()
-	svc := testService(t, library.Roots{root})
-
-	reqBody := `{"path":"` + root + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(reqBody))
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusCreated {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
-	}
-
-	var got library.Directory
-	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
-		t.Fatalf("unmarshal response: %v, body = %s", err, rec.Body.String())
-	}
-	if got.Path != root || got.Root != root || got.Status != library.StatusScanning {
-		t.Fatalf("directory = %+v", got)
-	}
-
-	listReq := httptest.NewRequest(http.MethodGet, "/api/library/directories", nil)
-	listRec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(listRec, listReq)
-
-	var list []library.Directory
-	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
-		t.Fatalf("unmarshal list response: %v, body = %s", err, listRec.Body.String())
-	}
-	if len(list) != 1 || list[0].ID != got.ID {
-		t.Fatalf("list = %+v, want one entry with ID %d", list, got.ID)
-	}
-}
-
-func TestLibraryDirectoriesAddRejectsOutsideRoots(t *testing.T) {
-	root := t.TempDir()
-	outside := t.TempDir()
-	svc := testService(t, library.Roots{root})
-
-	reqBody := `{"path":"` + outside + `"}`
-	req := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(reqBody))
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesAddRejectsDuplicate(t *testing.T) {
-	root := t.TempDir()
-	svc := testService(t, library.Roots{root})
-
-	reqBody := `{"path":"` + root + `"}`
-	first := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(reqBody))
-	New("", "", "", svc).ServeHTTP(httptest.NewRecorder(), first)
-
-	second := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(reqBody))
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, second)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusConflict, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesAddRequiresPath(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesAddRejectsMalformedJSON(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
-
-	req := httptest.NewRequest(http.MethodPost, "/api/library/directories", strings.NewReader(`not json`))
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesRemove(t *testing.T) {
-	root := t.TempDir()
-	svc := testService(t, library.Roots{root})
-
-	dir, err := svc.AddDirectory(context.Background(), root)
-	if err != nil {
-		t.Fatalf("AddDirectory: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/library/directories/"+strconv.FormatInt(dir.ID, 10), nil)
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNoContent {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
-	}
-
-	if _, err := svc.GetDirectory(context.Background(), dir.ID); err == nil {
-		t.Fatal("expected directory to be removed")
-	}
-}
-
-func TestLibraryDirectoriesRemoveNotFound(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/library/directories/999999", nil)
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
-	}
-}
-
-func TestLibraryDirectoriesRemoveInvalidID(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
-
-	req := httptest.NewRequest(http.MethodDelete, "/api/library/directories/not-a-number", nil)
-	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }

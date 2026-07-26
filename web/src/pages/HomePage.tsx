@@ -5,11 +5,11 @@ import {
   formatDuration,
   listAlbums,
   listArtists,
-  listDirectories,
+  listImports,
   listSongs,
   type Album,
   type Artist,
-  type LibraryDirectory,
+  type Import,
   type Song,
 } from '../api/library'
 import ArtTile from '../components/ArtTile'
@@ -31,7 +31,7 @@ interface HomeData {
   totalArtists: number
   totalAlbums: number
   totalSongs: number
-  scanningDirectory: LibraryDirectory | null
+  copyingImport: Import | null
 }
 
 export default function HomePage() {
@@ -44,9 +44,9 @@ export default function HomePage() {
       listArtists({ sort: 'recent', pageSize: PREVIEW_COUNT }),
       listAlbums({ sort: 'recent', pageSize: PREVIEW_COUNT }),
       listSongs({ sort: 'recent', pageSize: PREVIEW_COUNT }),
-      listDirectories(),
+      listImports(),
     ])
-      .then(([artists, albums, songs, directories]) => {
+      .then(([artists, albums, songs, imports]) => {
         if (cancelled) return
         setData({
           artists: artists.items,
@@ -55,7 +55,7 @@ export default function HomePage() {
           totalArtists: artists.totalCount,
           totalAlbums: albums.totalCount,
           totalSongs: songs.totalCount,
-          scanningDirectory: directories.find((d) => d.status === 'scanning') ?? null,
+          copyingImport: imports.find((imp) => imp.status === 'copying') ?? null,
         })
       })
       .catch((err: unknown) => {
@@ -89,9 +89,9 @@ export default function HomePage() {
             </svg>
           </div>
           <h1>No music yet</h1>
-          <p>Add a folder from one of your mounted volumes and opusflow will scan it into your library automatically.</p>
-          <Link className="btn-primary" to="/library">
-            ＋ Add your first directory
+          <p>Import your first album from a mounted folder or straight from this device — opusflow copies and organizes it automatically.</p>
+          <Link className="btn-primary" to="/import">
+            ＋ Import your first album
           </Link>
         </div>
       )}
@@ -113,11 +113,11 @@ export default function HomePage() {
             </div>
           </div>
 
-          {data.scanningDirectory && (
+          {data.copyingImport && (
             <div className="scan-banner">
               <span className="pulse" />
-              "{data.scanningDirectory.path}" is still scanning — {data.scanningDirectory.filesProcessed} of ~
-              {data.scanningDirectory.filesTotal || '?'} files processed.
+              Importing from "{data.copyingImport.sourceDescription}" — {data.copyingImport.filesProcessed} of ~
+              {data.copyingImport.filesTotal || '?'} files copied.
             </div>
           )}
 

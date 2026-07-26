@@ -8,12 +8,16 @@ feature changes a component boundary, adds a table, or reverses an earlier
 decision — it should always describe the system as it is today, not as it was
 designed.
 
-**Status**: three product features shipped — adding a local directory to the
-music library (browse, add, async scan, remove; [TDR 001](tdr/001_add_local_directory_design.md)),
-a Home screen plus Artist/Album/Song browsing
-([TDR 002](tdr/002_home_and_browsing_design.md)), and artist/album artwork
-plus MusicBrainz/Wikipedia-sourced facts and bio
-([TDR 003](tdr/003_artwork_and_info_design.md)) — plus self-hosted deployment
+**Status**: organize-on-import ([TDR 005](tdr/005_organize_on_import_design.md))
+replaced the original add-directory/scan-in-place model
+([TDR 001](tdr/001_add_local_directory_design.md)) — the library is now built
+by importing from a chosen source (a browsed server folder or an upload),
+which copies files into a single organized `LIBRARY_ROOT`, renamed into
+`<Artist>/<Year>.<Album>/<NN>.<Title>` and reviewed before anything is
+copied. On top of that: a Home screen plus Artist/Album/Song browsing
+([TDR 002](tdr/002_home_and_browsing_design.md)), artist/album artwork plus
+MusicBrainz/Wikipedia-sourced facts and bio
+([TDR 003](tdr/003_artwork_and_info_design.md)), and self-hosted deployment
 via a nightly prebuilt image ([TDR 004](tdr/004_self_hosted_deployment_design.md)).
 Mobile is still an untouched Expo starter.
 
@@ -30,15 +34,17 @@ flowchart TB
     end
 
     Postgres[("PostgreSQL")]
-    Volumes[("Host volume mounts<br/>(LIBRARY_ROOTS)")]
+    SourceVolumes[("Import source mounts<br/>(IMPORT_SOURCE_ROOTS, read-only)")]
+    LibraryVolume[("Organized library volume<br/>(LIBRARY_ROOT, read-write)")]
     Artwork[("Artwork cache volume<br/>(ARTWORK_DIR)")]
     External[("MusicBrainz /<br/>Cover Art Archive /<br/>Wikidata + Wikipedia")]
 
     Browser -->|HTTP| Backend
     Backend -->|serves static files,<br/>SPA fallback to index.html| Web
     Phone -->|HTTP, not yet defined| Backend
-    Backend -->|library_directories, tracks,<br/>artists, albums| Postgres
-    Backend -->|browse, scan| Volumes
+    Backend -->|imports, import_errors,<br/>tracks, artists, albums| Postgres
+    Backend -->|browse, read (import)| SourceVolumes
+    Backend -->|write (import),<br/>delete (remove)| LibraryVolume
     Backend -->|read/write resized<br/>artist photos, album covers| Artwork
     Backend -->|HTTPS, rate-limited| External
 ```
@@ -63,7 +69,8 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 | Web frontend | React 19 + Vite + TypeScript + `react-router` | `web/`; router added by [TDR 002](tdr/002_home_and_browsing_design.md) — no separate state-management library yet |
 | Mobile | Expo (React Native) + TypeScript | `mobile/`, default `create-expo-app blank-typescript` template, not yet customized |
 | Database | PostgreSQL 17 | `backend/internal/db` (`lib/pq` driver, hand-rolled embed-based migration runner — no ORM/migration-library dependency); wired up by [TDR 001](tdr/001_add_local_directory_design.md) |
-| Audio tag/duration parsing | `github.com/dhowden/tag` (tags) + hand-rolled per-format duration parsers | `backend/internal/library/scan`; see TDR 001 |
+| Audio tag reading/duration parsing | `github.com/dhowden/tag` (reading) + hand-rolled per-format duration parsers | `backend/internal/library/scan` (format detection + duration only) and `backend/internal/library/organize` (plan-building tag reads); see [TDR 005](tdr/005_organize_on_import_design.md) |
+| Audio tag writing | `github.com/bogem/id3v2` (MP3) + `github.com/go-flac/go-flac` + `flacvorbis` (FLAC) | `backend/internal/library/organize`; scoped to MP3/FLAC only — no mature Go writer exists for M4A/OGG/WAV, see [TDR 005](tdr/005_organize_on_import_design.md) |
 | Artwork/info sourcing | MusicBrainz + Cover Art Archive + Wikidata/Wikipedia (no API key, descriptive `User-Agent`) | `backend/internal/library/enrich`; `golang.org/x/image/draw` for resizing; see [TDR 003](tdr/003_artwork_and_info_design.md) |
 | Package manager (web/mobile) | pnpm workspaces, pinned via corepack (`pnpm@9` — `pnpm@11`+ requires Node 22, this environment has Node 20) | root `pnpm-workspace.yaml` covers `web/` and `mobile/` |
 | Packaging | Docker (see §1) | root `Dockerfile` + `docker-compose.yml` (local build/dev) |
@@ -75,53 +82,79 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   `8080`), `STATIC_DIR` (set to `/app/web` in the Docker image; empty in
   local `go run`, which then serves API-only), `ARTWORK_DIR` (optional, like
   `STATIC_DIR` — unset disables embedded-art saving and the enrichment job
-  entirely rather than erroring), `DATABASE_URL`, and `LIBRARY_ROOTS`
-  (comma-separated absolute paths, one per Docker volume mount — the only
-  filesystem locations the library endpoints may browse or register
-  directories under). Opens Postgres, runs migrations, wires up
-  `library.Service` (and, when `ARTWORK_DIR` is set, an `enrich.Job` run
+  entirely rather than erroring), `DATABASE_URL`, `LIBRARY_ROOT` (single
+  absolute path — the only place a confirmed import ever writes to), and
+  `IMPORT_SOURCE_ROOTS` (comma-separated absolute paths, one per Docker
+  volume mount — the only filesystem locations "browse a server folder" may
+  look under; read-only in practice). Opens Postgres, runs migrations, wires
+  up `library.Service` (and, when `ARTWORK_DIR` is set, an `enrich.Job` run
   once at startup after migrations succeed — TDR 003's backfill trigger)
   before starting the HTTP server.
 - **`backend/internal/httpserver`** — builds the root `http.Handler`:
   `GET /health` (reports `{"status":"ok","revision":"<GIT_SHA>"}` — `revision`
   is omitted when unset, e.g. local `go run`; stamped into the Docker image
   by the nightly pipeline, [TDR 004](tdr/004_self_hosted_deployment_design.md));
-  the library endpoints (below); when `ARTWORK_DIR` is set, a
+  the import and library endpoints (below); when `ARTWORK_DIR` is set, a
   static file server for it under `/artwork/`; and, when `STATIC_DIR` is
   set, a static file server for the built web app with SPA fallback
   (unmatched GETs serve `index.html` rather than 404, so client-side routing
   survives a refresh).
-  - `GET /api/library/roots` — list configured roots
-  - `GET /api/library/browse?path=` — list a path's immediate subdirectories
-  - `GET /api/library/directories` — list registered directories (status,
-    progress, track count, file errors)
-  - `POST /api/library/directories` `{"path": "..."}` — register + async-scan
-  - `DELETE /api/library/directories/{id}` — remove (cascades tracks, then
-    orphaned artists/albums)
+  - `GET /api/imports` — list every recorded import, newest first
+  - `GET /api/imports/roots` — list configured `IMPORT_SOURCE_ROOTS`
+  - `GET /api/imports/browse?path=` — list a path's immediate subdirectories
+  - `POST /api/imports/plan` `{"sourceDir": "..."}` — build a plan by reading
+    tags under a browsed source directory
+  - `POST /api/imports/plan/validate` `{...plan}` — recompute destinations/
+    conflicts/missing-field errors for a reviewer-edited plan
+  - `POST /api/imports/upload` (multipart) — stage an uploaded folder, then
+    build a plan from it the same way
+  - `POST /api/imports` `{"sourceDescription", "plan"}` — validate one last
+    time, then copy in the background; `202` + the new import, or `422` +
+    validation errors if the plan still isn't ready
+  - `GET /api/imports/{id}` — an import's copy progress and any per-file
+    errors
   - `GET /api/library/artists` / `GET /api/library/albums` /
     `GET /api/library/songs` — paginated, sorted (`recent`/`name`), filtered
     (`genre`, `year`, free-text `q`) listings; see
     [TDR 002](tdr/002_home_and_browsing_design.md)
   - `GET /api/library/artists/{id}` — artist detail (with their albums)
+  - `DELETE /api/library/artists/{id}?deleteFiles=true|false` — remove an
+    artist and its albums/tracks; `deleteFiles` is required, never defaulted
   - `GET /api/library/albums/{id}` — album detail (with its track listing)
+  - `DELETE /api/library/albums/{id}?deleteFiles=true|false` — remove an
+    album and its tracks
 - **`backend/internal/db`** — Postgres connection (`Open`) and schema
   migrations (`Migrate`, embedding `internal/db/migrations/*.sql`, tracked in
   a `schema_migrations` table).
 - **`backend/internal/library`** — the library domain: `Roots` (filesystem
-  containment/browsing scoped to `LIBRARY_ROOTS`), `Store` (Postgres
-  persistence for directories/tracks/file errors/artists/albums, plus the
-  enrichment query/update methods satisfying `enrich.Store`), `Service`
-  (orchestrates add/remove/list/browse and artist/album/song listing/detail,
-  starts each scan as a background goroutine so `POST /api/library/directories`
-  returns before the scan finishes, then runs one `enrich.Job` pass under a
-  fresh background context once the scan completes — TDR 003's post-scan
-  trigger).
-- **`backend/internal/library/scan`** — the scanning engine: recursive
-  directory walk, audio format detection by extension (mp3/flac/m4a/aac/
-  ogg/wav), tag extraction (`dhowden/tag`, filename fallback when a file
-  carries no tags, embedded cover art via `Picture()` when present), and
-  per-file error tolerance (a bad file is skipped and recorded, not fatal to
-  the scan).
+  containment/browsing, shared unchanged between TDR 001's directory model
+  and TDR 005's `IMPORT_SOURCE_ROOTS`), `Store` (Postgres persistence for
+  imports/tracks/import errors/artists/albums, direct artist/album deletion
+  with an optional on-disk file delete, plus the enrichment query/update
+  methods satisfying `enrich.Store`), `Service` (orchestrates
+  browse/plan/validate/confirm and artist/album/song listing/detail/delete;
+  `ConfirmImport` starts the copy as a background goroutine so `POST
+  /api/imports` returns before it finishes, then runs one `enrich.Job` pass
+  under a fresh background context once the copy completes — the same
+  post-scan trigger shape TDR 003 introduced).
+- **`backend/internal/library/organize`** — the organize-on-import engine
+  (TDR 005): `BuildPlan` (recursive source walk, tag reads that leave a
+  blank field blank rather than guessing — deliberately distinct from
+  `scan.ExtractTags`'s old filename-fallback behavior), `Validate`
+  (recomputes each track's canonical `<Artist>/<Year>.<Album>/<NN>.<Title>`
+  destination and on-disk conflict status against the plan's current,
+  possibly reviewer-edited values — the server, never the client, decides
+  what confirming would actually do), and `Copy` (copies each file to its
+  destination, writes the plan's corrected fields back into the copy's own
+  MP3/FLAC tags, re-extracts genre/embedded artwork from the original tags
+  for the catalog, and tolerates per-file failure without aborting the rest
+  — the same tolerance `scan.Scanner` used for the model this replaced).
+- **`backend/internal/library/scan`** — now scoped to what `organize` still
+  needs: audio format detection by extension (mp3/flac/m4a/aac/ogg/wav) and
+  per-format duration parsing. The old recursive-scan-in-place engine
+  (`Scanner`, `Track`, filename-fallback tag extraction) was removed with
+  TDR 005; TDR 001's original design remains in that TDR's write-up for
+  history.
 - **`backend/internal/library/scan/duration`** — per-format audio duration:
   exact for WAV/FLAC/MP4, best-effort for OGG (last page granule position)
   and MP3 (Xing/Info VBR header if present, else a bitrate/filesize estimate).
@@ -138,16 +171,27 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   `pending`/`failed`, not scoped to a particular scan, tracking each kind's
   outcome independently.
 - **`web/`** — `react-router` routes wrapped in `src/components/AppLayout.tsx`
-  (persistent Home/Artists/Albums/Songs/Library header nav):
+  (persistent Home/Artists/Albums/Songs/Import header nav):
   `src/pages/HomePage.tsx` (library snapshot + recently-added previews),
   `src/pages/ArtistsPage.tsx` / `AlbumsPage.tsx` / `SongsPage.tsx` (paginated,
   sortable, filterable index pages, sharing fetch/pagination logic via
   `src/hooks/useListPage.ts`), `src/pages/ArtistDetailPage.tsx` /
-  `AlbumDetailPage.tsx`, and `src/pages/LibraryPage.tsx` (directory list with
-  live scan progress, polled while any directory is `scanning`, plus
-  `src/components/DirectoryPicker.tsx` — root selector + breadcrumb folder
-  browser, opened as an in-page modal). `src/components/ArtTile.tsx` (real
-  artwork vs. a refined placeholder glyph) and `src/components/InfoBlock.tsx`
+  `AlbumDetailPage.tsx` (each with a "Remove…" action opening
+  `src/components/RemoveModal.tsx` — TDR 005's keep-vs-delete-files prompt),
+  and `src/pages/ImportPage.tsx` — the organize-on-import flow as one
+  page-level state machine (history list → choose a source → browse/upload →
+  review plan → copying → done), replacing the old directory-list Library
+  page. It composes `src/components/SourceFolderPicker.tsx` (root selector +
+  breadcrumb folder browser, generalized from TDR 001's directory picker so
+  its title/labels fit wherever a source folder needs picking) and
+  `src/components/UploadDropzone.tsx` (drag-and-drop via the File System
+  Entry API, or a `webkitdirectory` file input; per-file progress derived
+  from each file's byte offset within one combined upload request, since the
+  backend accepts the whole folder as a single multipart POST). The review
+  step edits plan fields inline and revalidates against the server on blur —
+  see `validatePlan` in `src/api/library.ts` — never trusting client-computed
+  destinations or conflict state. `src/components/ArtTile.tsx` (real artwork
+  vs. a refined placeholder glyph) and `src/components/InfoBlock.tsx`
   (facts-chip row + optional bio/description) are shared across every page
   that renders artist/album art (TDR 003). `src/api/library.ts` is the typed
   fetch client.
@@ -158,34 +202,42 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 
 Postgres, migrated via `backend/internal/db` (see §3):
 
-- **`library_directories`** — one row per registered directory: `root`,
-  `path` (unique — enforces AC-2's exact-duplicate rejection), `status`
-  (`scanning` / `complete` / `failed`), `files_processed`, `files_total`,
-  `error`, `created_at`.
-- **`tracks`** — one row per imported audio file: `directory_id` (FK,
-  `ON DELETE CASCADE`), `path`, `title`, `artist`, `album`, `track_number`,
-  `year`, `genre`, `duration_seconds`, plus `artist_id`/`album_id` (FKs, see
-  below).
-- **`library_scan_errors`** — one row per file a scan couldn't process:
-  `directory_id` (FK, `ON DELETE CASCADE`), `path`, `error`. Isolated file
-  errors don't change the directory's `status` away from `complete` — only
-  a job-level failure (the registered directory itself becoming unreadable)
-  sets `status = 'failed'`.
+- **`imports`** — one row per confirmed import run: `source_description`
+  (the browsed source path, or "Uploaded from device"), `status`
+  (`copying` / `complete` / `failed`), `files_processed`, `files_total`,
+  `error`, `created_at`. Replaces TDR 001's `library_directories` — an
+  import is a historical record of a copy that happened, not a managed
+  resource with its own remove action (see TDR 005).
+- **`tracks`** — one row per copied audio file: `import_id` (FK,
+  `ON DELETE CASCADE`; renamed from `directory_id`), `path` (now the
+  organized destination path, not the original source path), `title`,
+  `artist`, `album`, `track_number`, `year`, `genre`, `duration_seconds`,
+  plus `artist_id`/`album_id` (FKs, `ON DELETE CASCADE` — added by TDR 005
+  so an artist/album can be deleted directly, not only via its import).
+- **`import_errors`** — one row per file an import couldn't copy:
+  `import_id` (FK, `ON DELETE CASCADE`), `path`, `error`. Replaces TDR 001's
+  `library_scan_errors`; isolated file errors don't change the import's
+  `status` away from `complete` — only every file failing sets
+  `status = 'failed'`.
 - **`artists`** — one row per distinct artist name (including a real,
   empty-name "Unknown Artist" row for untagged tracks), `name` unique. Added
   by [TDR 002](tdr/002_home_and_browsing_design.md); upserted as tracks are
-  imported, deleted once its last track is gone (see `tracks.InsertTrack` /
-  `Store.RemoveDirectory`'s orphan cleanup). [TDR 003](tdr/003_artwork_and_info_design.md)
-  added `musicbrainz_id` (cached once matched), `photo_thumb_path`/
-  `photo_path` + `art_status`, `formed_year`/`country`/`genres` +
-  `facts_status`, and `bio`/`bio_source_url` + `bio_status` — three
-  independent `enrich_status` (`pending`/`found`/`not_found`/`failed`)
-  columns, one per kind, rather than a single combined status.
+  copied in. TDR 001's orphan-sweep-on-directory-removal cleanup is gone —
+  TDR 005 replaced it with direct `DELETE /api/library/artists/{id}`, which
+  cascades to the artist's own albums/tracks (and, with `deleteFiles=true`,
+  their files on disk) rather than a global "no tracks left anywhere" sweep.
+  [TDR 003](tdr/003_artwork_and_info_design.md) added `musicbrainz_id`
+  (cached once matched), `photo_thumb_path`/`photo_path` + `art_status`,
+  `formed_year`/`country`/`genres` + `facts_status`, and `bio`/
+  `bio_source_url` + `bio_status` — three independent `enrich_status`
+  (`pending`/`found`/`not_found`/`failed`) columns, one per kind, rather
+  than a single combined status.
 - **`albums`** — one row per `(title, artist_id)` pair, `year`. Same
-  upsert/orphan-cleanup lifecycle as `artists`, and the same TDR 003
-  extension shape: `musicbrainz_id`, `cover_thumb_path`/`cover_path` +
-  `art_status`, `label`/`country`/`genres` + `facts_status`,
-  `description`/`description_source_url` + `description_status`.
+  upsert/direct-delete lifecycle as `artists` (`DELETE
+  /api/library/albums/{id}`), and the same TDR 003 extension shape:
+  `musicbrainz_id`, `cover_thumb_path`/`cover_path` + `art_status`,
+  `label`/`country`/`genres` + `facts_status`, `description`/
+  `description_source_url` + `description_status`.
 
 ## 5. Feature-by-feature decision log
 
@@ -194,10 +246,11 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Organize-on-import | [005](tdr/005_organize_on_import_design.md) | Replaces add-directory/scan-in-place entirely: import copies files from a chosen source into a single `LIBRARY_ROOT`, renamed into `<Artist>/<Year>.<Album>/<NN>.<Title>`; review-before-copy with server-computed destinations/conflicts; tag write-back scoped to MP3/FLAC; direct artist/album deletion with explicit keep-or-delete-files choice | The original scan-in-place model left files wherever they started, with no consistent on-disk naming — organizing them is the point, not an optional extra step |
 | Self-hosted deployment | [004](tdr/004_self_hosted_deployment_design.md) | Nightly multi-platform image on GHCR (skip-if-unchanged, test-gated); separate `deploy/docker-compose.yml` pulling it, with bundled Postgres and multi-root music bind-mounts | Removes the Go/Node toolchain requirement from the target machine (a NAS); mirrors a proven pattern from a sibling project (docuflow) adapted for opusflow's host-mounted-library model |
 | Artist/album artwork and info | [003](tdr/003_artwork_and_info_design.md) | Embedded-tag art first, MusicBrainz + Cover Art Archive + Wikidata/Wikipedia fallback via a background `enrich.Job`; three independent per-kind statuses; files on disk under `ARTWORK_DIR`, not DB blobs | Free/open/no-API-key sources matching the project's anti-proprietary-protocol stance; a background job (not inline with scanning) respects MusicBrainz's rate limit and doubles as backfill for pre-existing libraries |
-| Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan time, orphan-cleaned on directory removal); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
-| Add local directory to library | [001](tdr/001_add_local_directory_design.md) | Async goroutine-based scan; server-side directory picker scoped to multiple `LIBRARY_ROOTS`; skip-and-continue per-file error handling | Matches real multi-volume households and real-world tagging inconsistency without over-building (no job queue, no router) |
+| Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan/import time); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
+| Add local directory to library *(superseded by [005](tdr/005_organize_on_import_design.md))* | [001](tdr/001_add_local_directory_design.md) | Async goroutine-based scan; server-side directory picker scoped to multiple `LIBRARY_ROOTS`; skip-and-continue per-file error handling | Matches real multi-volume households and real-world tagging inconsistency without over-building (no job queue, no router) — superseded once organizing files on disk became a requirement, not just cataloging them in place |
 
 ## 6. Deferred / future work
 
@@ -213,6 +266,14 @@ an index with the one-line "why" for each, newest first.
 - **VBRI-only MP3 duration** — the duration parser supports the Xing/Info
   VBR header (the common case); an MP3 with only a VBRI header falls back to
   the bitrate/filesize estimate, which is less accurate for that rare case.
-- **Symlink handling during directory scans** — not specifically handled;
-  `filepath.WalkDir` follows the OS's normal (non-recursive-symlink)
+- **Symlink handling during an import's source walk** — not specifically
+  handled; `filepath.WalkDir` follows the OS's normal (non-recursive-symlink)
   traversal semantics.
+- **Cancelling an in-progress import** — once confirmed, a copy runs to
+  completion (or per-file failure) with no way to stop it early; TDR 005
+  didn't carry over TDR 001's scan-cancellation behavior since no
+  acceptance criterion asked for it.
+- **Tag write-back for M4A/OGG/WAV** — TDR 005 scoped writing corrected
+  tags back into the copy to MP3/FLAC only, for lack of a mature Go writer
+  for the others; a copied M4A/OGG/WAV file keeps its original embedded
+  tags even if the reviewer corrected them before confirming.

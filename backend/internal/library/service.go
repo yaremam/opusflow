@@ -4,42 +4,43 @@ import (
 	"context"
 	"log"
 	"path/filepath"
-	"sync"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
-// Scanner starts an asynchronous scan of a registered directory. The real
-// implementation is scan.Scanner; tests substitute a fake.
-type Scanner interface {
-	Scan(ctx context.Context, directoryID int64, path string)
+// Copier executes a confirmed plan, copying every track to its destination
+// and recording the result. The real implementation is organize.CopyJob;
+// tests substitute a fake.
+type Copier interface {
+	Copy(ctx context.Context, store organize.Store, importID int64, plan organize.Plan) organize.RunSummary
 }
 
 // Enricher runs one pass of the background artwork/info enrichment job
 // (TDR 003) — processing every artist/album still owed art, facts, or
-// bio/description, not just ones touched by the scan that triggered it.
+// bio/description, not just ones touched by the import that triggered it.
 // The real implementation is enrich.Job; tests substitute a fake.
-//
-// ctx must be independent of any single scan's lifecycle: Run covers the
-// whole library, not one directory, so a caller must never pass a context
-// a directory-scoped operation (e.g. scan cancellation) can cancel out
-// from under the rest of the run — see AddDirectory, the one call site.
 type Enricher interface {
 	Run(ctx context.Context) enrich.RunSummary
 }
 
-// DirectoryStore is the persistence Service needs — directory management
-// plus browsing the artist/album/song catalog those directories' scans
-// populate — the subset of Store's methods it actually calls. *Store
-// satisfies this as its one production adapter; tests substitute an
-// in-memory fake so orchestration logic (validation ordering, scan-goroutine
-// timing, cancellation, list-options normalization) can be tested without a
-// database.
-type DirectoryStore interface {
-	AddDirectory(ctx context.Context, root, path string) (Directory, error)
-	GetDirectory(ctx context.Context, id int64) (Directory, error)
-	ListDirectories(ctx context.Context) ([]Directory, error)
-	RemoveDirectory(ctx context.Context, id int64) error
+// ImportStore is the persistence Service needs — import management plus
+// browsing the artist/album/song catalog those imports populate, plus
+// organize.Store's methods so it can be handed straight to a Copier.
+// *Store satisfies this as its one production adapter; tests substitute an
+// in-memory fake so orchestration logic (validation, copy-goroutine timing,
+// list-options normalization) can be tested without a database.
+type ImportStore interface {
+	organize.Store
+
+	CreateImport(ctx context.Context, sourceDescription string) (Import, error)
+	GetImport(ctx context.Context, id int64) (Import, error)
+	ListImports(ctx context.Context) ([]Import, error)
+	MarkImportComplete(ctx context.Context, id int64) error
+	MarkImportFailed(ctx context.Context, id int64, errMsg string) error
+
+	DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error
+	DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error
 
 	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
 	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
@@ -76,50 +77,123 @@ func normalizeListOptions(opts ListOptions) ListOptions {
 	return opts
 }
 
-// Service orchestrates library directory management: browsing configured
-// roots, registering and scanning new directories, and removing them.
+// Service orchestrates organize-on-import: browsing configured source
+// roots, building and validating a plan against LIBRARY_ROOT, confirming it
+// (which copies files in the background), and removing catalog entries.
 type Service struct {
-	roots    Roots
-	store    DirectoryStore
-	scanner  Scanner
-	enricher Enricher
-
-	mu          sync.Mutex
-	activeScans map[int64]context.CancelFunc
+	sourceRoots Roots
+	libraryRoot string
+	store       ImportStore
+	copier      Copier
+	enricher    Enricher
 }
 
-// NewService builds a Service.
-func NewService(roots Roots, store DirectoryStore, scanner Scanner) *Service {
-	return &Service{roots: roots, store: store, scanner: scanner, activeScans: make(map[int64]context.CancelFunc)}
+// NewService builds a Service. sourceRoots is where "browse a server
+// folder" is allowed to look (IMPORT_SOURCE_ROOTS); libraryRoot is where
+// confirmed imports get written (LIBRARY_ROOT).
+func NewService(sourceRoots Roots, libraryRoot string, store ImportStore, copier Copier) *Service {
+	return &Service{sourceRoots: sourceRoots, libraryRoot: libraryRoot, store: store, copier: copier}
 }
 
 // SetEnricher wires up the background artwork/info job, run after every
-// scan completes (AC-4). Kept as a setter rather than a NewService
+// import's copy completes. Kept as a setter rather than a NewService
 // parameter so existing callers (tests included) that don't need
 // enrichment aren't forced to construct one; nil (the default) just means
-// AddDirectory's scan-completion hook is a no-op.
+// ConfirmImport's copy-completion hook is a no-op.
 func (s *Service) SetEnricher(enricher Enricher) {
 	s.enricher = enricher
 }
 
-// ListRoots returns the configured library roots.
-func (s *Service) ListRoots() Roots {
-	return s.roots
+// ListSourceRoots returns the configured import source roots.
+func (s *Service) ListSourceRoots() Roots {
+	return s.sourceRoots
 }
 
 // Browse lists the immediate subdirectories of path.
 func (s *Service) Browse(path string) ([]Entry, error) {
-	return s.roots.Browse(path)
+	return s.sourceRoots.Browse(path)
 }
 
-// ListDirectories returns every registered directory.
-func (s *Service) ListDirectories(ctx context.Context) ([]Directory, error) {
-	return s.store.ListDirectories(ctx)
+// BuildPlan reads tags from every recognized audio file under sourceDir and
+// groups them into a per-album plan, computed against LIBRARY_ROOT.
+// sourceDir must be nested under one of the configured IMPORT_SOURCE_ROOTS.
+func (s *Service) BuildPlan(sourceDir string) (organize.Plan, error) {
+	clean := filepath.Clean(sourceDir)
+	if _, err := s.sourceRoots.ValidateDirectory(clean); err != nil {
+		return organize.Plan{}, err
+	}
+	return organize.BuildPlan(s.libraryRoot, clean)
 }
 
-// GetDirectory fetches a single registered directory.
-func (s *Service) GetDirectory(ctx context.Context, id int64) (Directory, error) {
-	return s.store.GetDirectory(ctx, id)
+// BuildPlanFromStaged is BuildPlan without the IMPORT_SOURCE_ROOTS check —
+// for a directory this process itself staged (an upload's temp directory),
+// not one a client asked to browse into.
+func (s *Service) BuildPlanFromStaged(stagedDir string) (organize.Plan, error) {
+	return organize.BuildPlan(s.libraryRoot, stagedDir)
+}
+
+// ValidatePlan recomputes every track's destination and conflict status
+// against the plan's current (possibly reviewer-edited) field values,
+// mutating plan in place — see organize.Validate.
+func (s *Service) ValidatePlan(plan *organize.Plan) []organize.ValidationError {
+	return organize.Validate(s.libraryRoot, plan)
+}
+
+// ConfirmImport validates plan one last time (never trusting a client-sent
+// plan as already valid — see organize.Validate's doc comment) and, if it's
+// ready, records a new import and starts copying it in the background,
+// returning as soon as it's registered — callers must not wait for the copy
+// to finish. errs is non-nil (and imp is zero) if the plan still isn't
+// ready; the import is only created once no ValidationError remains.
+func (s *Service) ConfirmImport(ctx context.Context, sourceDescription string, plan organize.Plan) (imp Import, errs []organize.ValidationError, err error) {
+	if errs := s.ValidatePlan(&plan); len(errs) > 0 {
+		return Import{}, errs, nil
+	}
+
+	imp, err = s.store.CreateImport(ctx, sourceDescription)
+	if err != nil {
+		return Import{}, nil, err
+	}
+
+	go func() {
+		summary := s.copier.Copy(context.Background(), s.store, imp.ID, plan)
+		if summary.FilesProcessed == 0 && summary.FilesFailed > 0 {
+			if err := s.store.MarkImportFailed(context.Background(), imp.ID, "every file failed to copy"); err != nil {
+				log.Printf("library: import %d: marking failed: %v", imp.ID, err)
+			}
+		} else if err := s.store.MarkImportComplete(context.Background(), imp.ID); err != nil {
+			log.Printf("library: import %d: marking complete: %v", imp.ID, err)
+		}
+
+		if s.enricher != nil {
+			sum := s.enricher.Run(context.Background())
+			log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
+		}
+	}()
+
+	return imp, nil, nil
+}
+
+// GetImport fetches a single import's current progress.
+func (s *Service) GetImport(ctx context.Context, id int64) (Import, error) {
+	return s.store.GetImport(ctx, id)
+}
+
+// ListImports returns every recorded import, newest first.
+func (s *Service) ListImports(ctx context.Context) ([]Import, error) {
+	return s.store.ListImports(ctx)
+}
+
+// DeleteArtist removes an artist and everything attributed to them,
+// optionally deleting their files from disk too (AC-13).
+func (s *Service) DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error {
+	return s.store.DeleteArtist(ctx, id, deleteFiles)
+}
+
+// DeleteAlbum removes an album and its tracks, optionally deleting their
+// files from disk too (AC-13).
+func (s *Service) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error {
+	return s.store.DeleteAlbum(ctx, id, deleteFiles)
 }
 
 // ListArtists returns a page of artists matching opts.
@@ -145,64 +219,4 @@ func (s *Service) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 // ListSongs returns a page of songs (tracks) matching opts.
 func (s *Service) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error) {
 	return s.store.ListSongs(ctx, normalizeListOptions(opts))
-}
-
-// AddDirectory registers path as a new library directory and starts
-// scanning it in the background, returning as soon as it's registered —
-// callers must not wait for the scan to finish (AC-3). The scan runs under
-// its own cancellable context, independent of the request's, so it keeps
-// going after this call returns — but RemoveDirectory can still cancel it
-// if the directory is removed before the scan finishes.
-func (s *Service) AddDirectory(ctx context.Context, path string) (Directory, error) {
-	clean := filepath.Clean(path)
-
-	root, err := s.roots.ValidateDirectory(clean)
-	if err != nil {
-		return Directory{}, err
-	}
-
-	dir, err := s.store.AddDirectory(ctx, root, clean)
-	if err != nil {
-		return Directory{}, err
-	}
-
-	scanCtx, cancel := context.WithCancel(context.Background())
-	s.mu.Lock()
-	s.activeScans[dir.ID] = cancel
-	s.mu.Unlock()
-
-	go func() {
-		defer s.endScan(dir.ID)
-		s.scanner.Scan(scanCtx, dir.ID, dir.Path)
-		if s.enricher != nil {
-			// context.Background(), not scanCtx — see Enricher's doc comment.
-			sum := s.enricher.Run(context.Background())
-			log.Printf("library: enrichment: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
-		}
-	}()
-
-	return dir, nil
-}
-
-// endScan drops directoryID's cancel func once its scan goroutine returns,
-// whether it finished normally or was cancelled.
-func (s *Service) endScan(directoryID int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.activeScans, directoryID)
-}
-
-// RemoveDirectory deletes a registered directory and, via cascade, its
-// tracks and file errors. If a scan for this directory is still running, it
-// cancels that scan first so it stops touching a directory that's about to
-// stop existing, rather than continuing to walk the filesystem and write to
-// rows that are already gone.
-func (s *Service) RemoveDirectory(ctx context.Context, id int64) error {
-	s.mu.Lock()
-	if cancel, ok := s.activeScans[id]; ok {
-		cancel()
-	}
-	s.mu.Unlock()
-
-	return s.store.RemoveDirectory(ctx, id)
 }

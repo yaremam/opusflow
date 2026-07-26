@@ -405,25 +405,3 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	}
 	return page, nil
 }
-
-// deleteOrphanedCatalogEntries removes any artist/album row left with zero
-// tracks — called after a directory's tracks cascade-delete, inside the
-// same transaction, so Artist/Album browsing never shows an entry with
-// nothing left in it (AC-12). A global sweep rather than one scoped to the
-// removed directory: correct either way, since the condition ("no track
-// left in the whole library referencing this row") is the same, and it's
-// simpler than threading the set of affected artist/album IDs out of the
-// cascade delete.
-func deleteOrphanedCatalogEntries(ctx context.Context, tx *sql.Tx) error {
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)
-	`); err != nil {
-		return fmt.Errorf("deleting orphaned albums: %w", err)
-	}
-	if _, err := tx.ExecContext(ctx, `
-		DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM tracks)
-	`); err != nil {
-		return fmt.Errorf("deleting orphaned artists: %w", err)
-	}
-	return nil
-}

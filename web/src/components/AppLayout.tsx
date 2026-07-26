@@ -6,7 +6,7 @@ const NAV_LINKS = [
   { to: '/artists', label: 'Artists' },
   { to: '/albums', label: 'Albums' },
   { to: '/songs', label: 'Songs' },
-  { to: '/library', label: 'Library' },
+  { to: '/import', label: 'Import' },
 ]
 
 export default function AppLayout() {

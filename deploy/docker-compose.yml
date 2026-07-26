@@ -20,22 +20,31 @@ services:
       # one, edit both.
       DATABASE_URL: postgres://opusflow:change-me-please@postgres:5432/opusflow?sslmode=disable
       ARTWORK_DIR: /data/artwork
-      # Comma-separated container paths — one per `<host path>:/music/N`
-      # line below, in the same order.
-      LIBRARY_ROOTS: /music/1
+      # Where opusflow writes your organized library — every import copies
+      # files into here, renamed into <Artist>/<Year>.<Album>/ subfolders.
+      LIBRARY_ROOT: /music
+      # Comma-separated container paths — one per `<host path>:/import/N`
+      # line below, in the same order. These are where "browse a server
+      # folder" is allowed to look when importing; only LIBRARY_ROOT above
+      # is ever written to.
+      IMPORT_SOURCE_ROOTS: /import/1
     volumes:
       - artwork:/data/artwork
       #   - /volume1/docker/opusflow/artwork:/data/artwork   # DSM bind-mount variant
       #
-      # ↓ EDIT THIS: point at your music folder's real host path (e.g.
+      # ↓ EDIT THIS: where your organized library lives on the host (e.g.
       # /volume1/music on a Synology). The default below (a folder next to
       # this file) only exists so the stack starts cleanly before you do.
-      - ./music-1:/music/1:ro
-      # More folders? Uncomment a line below, edit its host path, and
-      # append the matching container path to LIBRARY_ROOTS above, e.g.
-      # LIBRARY_ROOTS: /music/1,/music/2
-      #   - /volume1/kids-music:/music/2:ro
-      #   - /volume2/archive-music:/music/3:ro
+      - ./music:/music
+      # ↓ EDIT THIS: point at whatever folder you're importing FROM (e.g. an
+      # existing unsorted music dump). Read-only — an import only ever
+      # copies out of here, never writes back.
+      - ./import-1:/import/1:ro
+      # More source folders? Uncomment a line below, edit its host path,
+      # and append the matching container path to IMPORT_SOURCE_ROOTS above,
+      # e.g. IMPORT_SOURCE_ROOTS: /import/1,/import/2
+      #   - /volume1/kids-music-dump:/import/2:ro
+      #   - /volume2/archive-music-dump:/import/3:ro
     ports:
       # ↓ EDIT THIS if 8090 is already taken on your machine (DSM claims
       # 5000/5001 itself, and some packages default to 8080). Which build

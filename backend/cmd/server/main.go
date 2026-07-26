@@ -13,7 +13,7 @@ import (
 	"github.com/yaremam/opusflow/backend/internal/httpserver"
 	"github.com/yaremam/opusflow/backend/internal/library"
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
-	"github.com/yaremam/opusflow/backend/internal/library/scan"
+	"github.com/yaremam/opusflow/backend/internal/library/organize"
 )
 
 // migrateRetryDelay paces retries of the startup migration against a
@@ -34,7 +34,8 @@ func main() {
 	staticDir := os.Getenv("STATIC_DIR")
 	artworkDir := os.Getenv("ARTWORK_DIR")
 	revision := os.Getenv("GIT_SHA")
-	roots := library.ParseRoots(os.Getenv("LIBRARY_ROOTS"))
+	sourceRoots := library.ParseRoots(os.Getenv("IMPORT_SOURCE_ROOTS"))
+	libraryRoot := os.Getenv("LIBRARY_ROOT")
 
 	conn, err := db.Connect(os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -43,8 +44,7 @@ func main() {
 	defer conn.Close()
 
 	store := library.NewStore(conn)
-	scanner := scan.NewScanner(store)
-	svc := library.NewService(roots, store, scanner)
+	svc := library.NewService(sourceRoots, libraryRoot, store, organize.CopyJob{})
 
 	// ARTWORK_DIR is optional the same way STATIC_DIR is: unset means
 	// "this feature is off" (embedded-art extraction skipped, no

@@ -393,6 +393,9 @@
   color: var(--mist-400);
   margin-top: 0.5rem;
 }
+.detail-remove {
+  margin-top: 0.85rem;
+}
 
 table.track-table {
   width: 100%;
