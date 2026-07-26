@@ -77,7 +77,7 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 | Audio tag reading/duration parsing | `github.com/dhowden/tag` (reading) + hand-rolled per-format duration parsers | `backend/internal/library/scan` (format detection + duration only) and `backend/internal/library/organize` (plan-building tag reads); see [TDR 005](tdr/005_organize_on_import_design.md) |
 | Audio tag writing | `github.com/bogem/id3v2` (MP3) + `github.com/go-flac/go-flac` + `flacvorbis` (FLAC) | `backend/internal/library/organize`; scoped to MP3/FLAC only — no mature Go writer exists for M4A/OGG/WAV, see [TDR 005](tdr/005_organize_on_import_design.md) |
 | Artwork/info sourcing | MusicBrainz + Cover Art Archive + Wikidata/Wikipedia (no API key, descriptive `User-Agent`) | `backend/internal/library/enrich`; `golang.org/x/image/draw` for resizing; see [TDR 003](tdr/003_artwork_and_info_design.md) |
-| Package manager (web/mobile) | pnpm workspaces, pinned via corepack (`pnpm@9` — `pnpm@11`+ requires Node 22, this environment has Node 20) | root `pnpm-workspace.yaml` covers `web/` and `mobile/` |
+| Package manager (web/mobile) | pnpm workspaces, pinned via corepack (`pnpm@9`), Node.js 24 | root `pnpm-workspace.yaml` covers `web/` and `mobile/`; `Dockerfile`'s `node:24-alpine` build stage and the nightly workflow's `setup-node` both pin the same version |
 | Packaging | Docker (see §1) | root `Dockerfile` + `docker-compose.yml` (local build/dev) |
 | Deployment | Nightly multi-platform (amd64+arm64) image on GHCR, `.github/workflows/nightly.yml` | `deploy/docker-compose.yml` pulls it instead of building; see [TDR 004](tdr/004_self_hosted_deployment_design.md) |
 

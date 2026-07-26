@@ -89,8 +89,7 @@ go test ./...
 
 ### Web
 
-Requires Node 20+ and pnpm (`corepack enable && corepack use pnpm@9` — pnpm
-11+ needs Node 22).
+Requires Node 24+ and pnpm (`corepack enable && corepack use pnpm@9`).
 ```sh
 pnpm install
 pnpm --filter web dev

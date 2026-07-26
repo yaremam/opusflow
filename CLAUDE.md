@@ -16,7 +16,8 @@ endpoint), no product features are built yet. See
 - Web frontend: React 19 + Vite + TypeScript (`web/`)
 - Mobile: Expo (React Native) + TypeScript (`mobile/`) — chosen specifically to share component patterns and logic with the web frontend
 - Database: PostgreSQL 17 (declared in `docker-compose.yml`, not yet wired into backend code)
-- Package manager (web/mobile): pnpm workspaces, pinned to `pnpm@9` via corepack — `pnpm@11`+ requires Node 22, this environment has Node 20
+- Package manager (web/mobile): pnpm workspaces, pinned to `pnpm@9` via corepack
+- Node.js 24 (matches `Dockerfile`'s `node:24-alpine` build stage and the nightly workflow's `setup-node`)
 - Packaging: backend + web ship together as **one** Docker image (root `Dockerfile`, multi-stage); the Go binary serves both the API and the built web static files. Mobile is a separate native build, not part of this image.
 
 ## Commands
