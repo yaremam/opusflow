@@ -18,6 +18,13 @@ type Tags struct {
 	TrackNumber int
 	Year        int
 	Genre       string
+
+	// Artwork is the raw bytes of this file's embedded cover art (ID3
+	// APIC / FLAC picture block / MP4 cover atom), or nil if the file
+	// carries none. AC-1: the caller uses the first one found across an
+	// album's tracks, so a file with no artwork isn't itself an error —
+	// most tracks on a tagged album won't carry one at all.
+	Artwork []byte
 }
 
 // ExtractTags reads title/artist/album/track/year/genre tags from f, an
@@ -50,6 +57,11 @@ func ExtractTags(path string, f *os.File) (Tags, error) {
 	}
 	trackNumber, _ := m.Track()
 
+	var artwork []byte
+	if pic := m.Picture(); pic != nil {
+		artwork = pic.Data
+	}
+
 	return Tags{
 		Title:       title,
 		Artist:      m.Artist(),
@@ -57,6 +69,7 @@ func ExtractTags(path string, f *os.File) (Tags, error) {
 		TrackNumber: trackNumber,
 		Year:        m.Year(),
 		Genre:       m.Genre(),
+		Artwork:     artwork,
 	}, nil
 }
 

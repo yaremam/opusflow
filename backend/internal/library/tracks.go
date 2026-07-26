@@ -3,6 +3,7 @@ package library
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/yaremam/opusflow/backend/internal/library/scan"
 )
@@ -41,7 +42,37 @@ func (s *Store) InsertTrack(ctx context.Context, t scan.Track) error {
 		return fmt.Errorf("inserting track: %w", err)
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing track insert: %w", err)
+	}
+
+	// Saving embedded artwork happens after commit, outside the
+	// transaction — it's disk I/O (resizing), not something that needs
+	// the track/artist/album row's atomicity. AC-1: only the first
+	// embedded image found for this album wins, so the UPDATE is
+	// conditioned on the album still being art_status = 'pending' — a
+	// second track's artwork arriving after the first one already landed
+	// (including a concurrent scan of a second directory covering the
+	// same album) is a no-op, not an overwrite. A save/record failure
+	// here is logged, not returned — the track itself imported fine.
+	if s.images != nil && len(t.ArtworkData) > 0 {
+		s.saveEmbeddedAlbumArt(ctx, albumID, t.ArtworkData)
+	}
+	return nil
+}
+
+func (s *Store) saveEmbeddedAlbumArt(ctx context.Context, albumID int64, data []byte) {
+	thumbURL, fullURL, err := s.images.Save("album", albumID, data)
+	if err != nil {
+		log.Printf("library: album %d: saving embedded artwork: %v", albumID, err)
+		return
+	}
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE albums SET art_status = 'found', cover_thumb_path = $2, cover_path = $3
+		WHERE id = $1 AND art_status = 'pending'
+	`, albumID, thumbURL, fullURL); err != nil {
+		log.Printf("library: album %d: recording embedded artwork: %v", albumID, err)
+	}
 }
 
 // RecordFileError records that a single file within a directory's scan
