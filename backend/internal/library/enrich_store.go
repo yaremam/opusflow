@@ -97,8 +97,14 @@ func (s *Store) SetArtistArt(ctx context.Context, id int64, status enrich.Status
 	return nil
 }
 
-// SetArtistFacts records the outcome of an artist facts lookup.
+// SetArtistFacts records the outcome of an artist facts lookup. genres may
+// be nil (Job passes nil for an unresolved/failed lookup) — coerced to an
+// empty slice so pq.Array never hands Postgres a NULL for the NOT NULL
+// genres column; a nil Go slice and "no genres" are the same fact.
 func (s *Store) SetArtistFacts(ctx context.Context, id int64, status enrich.Status, formedYear int, country string, genres []string) error {
+	if genres == nil {
+		genres = []string{}
+	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE artists SET facts_status = $2, formed_year = $3, country = $4, genres = $5 WHERE id = $1
 	`, id, status, formedYear, country, pq.Array(genres))
@@ -139,8 +145,12 @@ func (s *Store) SetAlbumArt(ctx context.Context, id int64, status enrich.Status,
 	return nil
 }
 
-// SetAlbumFacts records the outcome of an album facts lookup.
+// SetAlbumFacts records the outcome of an album facts lookup. See
+// SetArtistFacts's doc comment re: nil genres.
 func (s *Store) SetAlbumFacts(ctx context.Context, id int64, status enrich.Status, label, country string, genres []string) error {
+	if genres == nil {
+		genres = []string{}
+	}
 	_, err := s.db.ExecContext(ctx, `
 		UPDATE albums SET facts_status = $2, label = $3, country = $4, genres = $5 WHERE id = $1
 	`, id, status, label, country, pq.Array(genres))

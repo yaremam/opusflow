@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { listAlbums } from '../api/library'
 import { useListPage } from '../hooks/useListPage'
 import Pager from '../components/Pager'
+import ArtTile from '../components/ArtTile'
 import '../styles/catalog.css'
 
 export default function AlbumsPage() {
@@ -50,12 +51,7 @@ export default function AlbumsPage() {
       <div className="card-grid">
         {page?.items.map((album) => (
           <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-            <div className="art">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" />
-                <circle cx="12" cy="12" r="2.5" stroke="currentColor" strokeWidth="1.6" />
-              </svg>
-            </div>
+            <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" />
             <div className="title">{album.title || 'Unknown Album'}</div>
             <div className="artist">
               {album.artistName || 'Unknown Artist'}

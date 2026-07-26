@@ -2,6 +2,7 @@ import { Link } from 'react-router'
 import { listArtists } from '../api/library'
 import { useListPage } from '../hooks/useListPage'
 import Pager from '../components/Pager'
+import ArtTile from '../components/ArtTile'
 import '../styles/catalog.css'
 
 export default function ArtistsPage() {
@@ -50,7 +51,7 @@ export default function ArtistsPage() {
       <div className="card-grid">
         {page?.items.map((artist) => (
           <Link key={artist.id} className="artist-card" to={`/artists/${artist.id}`}>
-            <span className="avatar">{artist.name ? artist.name[0].toUpperCase() : '?'}</span>
+            <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" />
             <div className="name">{artist.name || 'Unknown Artist'}</div>
             <div className="meta">
               {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'}

@@ -76,6 +76,46 @@ func TestAlbumsNeedingEnrichmentExcludesUnknownAlbum(t *testing.T) {
 	}
 }
 
+func TestSetArtistFactsWithNilGenresDoesNotViolateNotNull(t *testing.T) {
+	// Job passes nil genres for an artist whose MusicBrainz lookup itself
+	// failed or never resolved (markArtistUnresolved's Failed/NotFound
+	// paths) — genres is a NOT NULL TEXT[] column, so this must coerce to
+	// an empty array rather than erroring.
+	s := testStore(t)
+	insertTrackFor(t, s, "Nil Genres Artist", "Album")
+	artist := findArtistByName(t, s, "Nil Genres Artist")
+
+	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Failed, 0, "", nil); err != nil {
+		t.Fatalf("SetArtistFacts with nil genres: %v", err)
+	}
+
+	got, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if got.Genres == nil || len(got.Genres) != 0 {
+		t.Fatalf("Genres = %#v, want a non-nil empty slice", got.Genres)
+	}
+}
+
+func TestSetAlbumFactsWithNilGenresDoesNotViolateNotNull(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Nil Genres Album")
+	album := findAlbumByTitle(t, s, "Nil Genres Album")
+
+	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Failed, "", "", nil); err != nil {
+		t.Fatalf("SetAlbumFacts with nil genres: %v", err)
+	}
+
+	got, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if got.Genres == nil || len(got.Genres) != 0 {
+		t.Fatalf("Genres = %#v, want a non-nil empty slice", got.Genres)
+	}
+}
+
 func TestSetArtistArtRoundTrips(t *testing.T) {
 	s := testStore(t)
 	insertTrackFor(t, s, "Photo Artist", "Album")
