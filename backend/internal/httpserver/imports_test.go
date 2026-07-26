@@ -2,7 +2,6 @@ package httpserver
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
@@ -36,12 +35,22 @@ func taggedMP3Fixture(t *testing.T, dest string) {
 	}
 }
 
+func mustCreateLibraryForTest(t *testing.T, store *library.Store, rootPath string) int64 {
+	t.Helper()
+	lib, err := store.CreateLibrary(t.Context(), "Test Library "+randomSuffix(), rootPath)
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+	return lib.ID
+}
+
 func TestBuildPlanReturnsAlbumsFromSourceDirectory(t *testing.T) {
+	store, svc := testStoreAndService(t)
 	root := t.TempDir()
 	taggedMP3Fixture(t, filepath.Join(root, "song.mp3"))
-	svc := lazyService(t, library.Roots{root})
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	body := `{"sourceDir":"` + root + `"}`
+	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDir":"` + root + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
@@ -65,25 +74,44 @@ func TestBuildPlanReturnsAlbumsFromSourceDirectory(t *testing.T) {
 	}
 }
 
-func TestBuildPlanRejectsPathOutsideRoots(t *testing.T) {
-	root := t.TempDir()
-	outside := t.TempDir()
-	svc := lazyService(t, library.Roots{root})
+func TestBuildPlanRejectsSourceInsideLibrary(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	libRoot := t.TempDir()
+	mustCreateLibraryForTest(t, store, libRoot)
+	otherLibID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	body := `{"sourceDir":"` + outside + `"}`
+	sourceInsideLibRoot := filepath.Join(libRoot, "download")
+	if err := os.MkdirAll(sourceInsideLibRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	body := `{"libraryId":` + strconv.FormatInt(otherLibID, 10) + `,"sourceDir":"` + sourceInsideLibRoot + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusForbidden, rec.Body.String())
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }
 
 func TestBuildPlanRequiresSourceDir(t *testing.T) {
-	svc := lazyService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"libraryId":`+strconv.FormatInt(libID, 10)+`}`))
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestBuildPlanRequiresLibraryID(t *testing.T) {
+	svc := lazyService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"sourceDir":"/tmp"}`))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
 
@@ -93,9 +121,10 @@ func TestBuildPlanRequiresSourceDir(t *testing.T) {
 }
 
 func TestValidatePlanFlagsMissingFields(t *testing.T) {
-	svc := lazyService(t, nil)
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	body := `{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}`
+	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"plan":{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan/validate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
@@ -115,7 +144,8 @@ func TestValidatePlanFlagsMissingFields(t *testing.T) {
 }
 
 func TestUploadImportStagesFilesAndReturnsPlan(t *testing.T) {
-	svc := lazyService(t, nil)
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
 	data, err := os.ReadFile(filepath.Join("..", "library", "organize", "testdata", "tagged.mp3"))
 	if err != nil {
@@ -124,6 +154,9 @@ func TestUploadImportStagesFilesAndReturnsPlan(t *testing.T) {
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("libraryId", strconv.FormatInt(libID, 10)); err != nil {
+		t.Fatal(err)
+	}
 	part, err := mw.CreateFormFile("files", "Test Artist/Test Album/song.mp3")
 	if err != nil {
 		t.Fatal(err)
@@ -154,11 +187,37 @@ func TestUploadImportStagesFilesAndReturnsPlan(t *testing.T) {
 	}
 }
 
-func TestUploadImportRejectsPathTraversalInFilename(t *testing.T) {
-	svc := lazyService(t, nil)
+func TestUploadImportRequiresLibraryID(t *testing.T) {
+	svc := lazyService(t)
 
 	var buf bytes.Buffer
 	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("files", "song.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	part.Write([]byte("data"))
+	mw.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/imports/upload", &buf)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestUploadImportRejectsPathTraversalInFilename(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("libraryId", strconv.FormatInt(libID, 10)); err != nil {
+		t.Fatal(err)
+	}
 	part, err := mw.CreateFormFile("files", "../../etc/passwd")
 	if err != nil {
 		t.Fatal(err)
@@ -184,13 +243,14 @@ func TestUploadImportRejectsPathTraversalInFilename(t *testing.T) {
 }
 
 func TestConfirmImportAcceptsValidPlan(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
 	src := filepath.Join(t.TempDir(), "song.mp3")
 	taggedMP3Fixture(t, src)
 
 	planBody := `{"albums":[{"artist":"Artist","album":"Album","year":2000,"tracks":[{"sourcePath":"` + jsonEscape(src) + `","title":"Title","trackNumber":1}]}]}`
-	body := `{"sourceDescription":"/music/src","plan":` + planBody + `}`
+	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"/music/src","plan":` + planBody + `}`
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(body))
 	rec := httptest.NewRecorder()
@@ -202,9 +262,10 @@ func TestConfirmImportAcceptsValidPlan(t *testing.T) {
 }
 
 func TestConfirmImportRejectsIncompletePlan(t *testing.T) {
-	svc := lazyService(t, nil)
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	body := `{"sourceDescription":"/music/src","plan":{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}}`
+	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"/music/src","plan":{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
@@ -215,9 +276,21 @@ func TestConfirmImportRejectsIncompletePlan(t *testing.T) {
 }
 
 func TestConfirmImportRequiresSourceDescription(t *testing.T) {
-	svc := lazyService(t, nil)
+	svc := lazyService(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(`{"plan":{"albums":[]}}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(`{"libraryId":1,"plan":{"albums":[]}}`))
+	rec := httptest.NewRecorder()
+	New("", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestConfirmImportRequiresLibraryID(t *testing.T) {
+	svc := lazyService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(`{"sourceDescription":"/music/src","plan":{"albums":[]}}`))
 	rec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(rec, req)
 
@@ -227,11 +300,12 @@ func TestConfirmImportRequiresSourceDescription(t *testing.T) {
 }
 
 func TestListImportsReturnsNewestFirst(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
-	if _, err := store.CreateImport(context.Background(), "/music/first"); err != nil {
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
+	if _, err := store.CreateImport(t.Context(), libID, "/music/first"); err != nil {
 		t.Fatalf("CreateImport: %v", err)
 	}
-	if _, err := store.CreateImport(context.Background(), "/music/second"); err != nil {
+	if _, err := store.CreateImport(t.Context(), libID, "/music/second"); err != nil {
 		t.Fatalf("CreateImport: %v", err)
 	}
 
@@ -254,13 +328,13 @@ func TestListImportsReturnsNewestFirst(t *testing.T) {
 }
 
 func TestGetImportReturnsProgress(t *testing.T) {
-	root := t.TempDir()
-	svc := testService(t, library.Roots{root})
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
 
-	src := filepath.Join(root, "src")
+	src := t.TempDir()
 	taggedMP3Fixture(t, filepath.Join(src, "song.mp3"))
 
-	planReq := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"sourceDir":"`+src+`"}`))
+	planReq := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"libraryId":`+strconv.FormatInt(libID, 10)+`,"sourceDir":"`+src+`"}`))
 	planRec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(planRec, planReq)
 	if planRec.Code != http.StatusOK {
@@ -277,7 +351,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	confirmBody := `{"sourceDescription":"` + jsonEscape(src) + `","plan":` + string(planJSON) + `}`
+	confirmBody := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"` + jsonEscape(src) + `","plan":` + string(planJSON) + `}`
 	confirmReq := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(confirmBody))
 	confirmRec := httptest.NewRecorder()
 	New("", "", "", svc).ServeHTTP(confirmRec, confirmReq)
@@ -301,7 +375,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 }
 
 func TestGetImportNotFound(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
+	svc := testService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/999999", nil)
 	rec := httptest.NewRecorder()
@@ -313,7 +387,7 @@ func TestGetImportNotFound(t *testing.T) {
 }
 
 func TestGetImportInvalidID(t *testing.T) {
-	svc := testService(t, library.Roots{t.TempDir()})
+	svc := testService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/not-a-number", nil)
 	rec := httptest.NewRecorder()

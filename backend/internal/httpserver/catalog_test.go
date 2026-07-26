@@ -24,7 +24,8 @@ func mustInsertTrack(t *testing.T, store *library.Store, importID int64, artist,
 
 func mustCreateImportForTest(t *testing.T, store *library.Store) int64 {
 	t.Helper()
-	imp, err := store.CreateImport(context.Background(), "/music/src")
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
+	imp, err := store.CreateImport(context.Background(), libID, "/music/src")
 	if err != nil {
 		t.Fatalf("CreateImport: %v", err)
 	}
@@ -32,7 +33,7 @@ func mustCreateImportForTest(t *testing.T, store *library.Store) int64 {
 }
 
 func TestLibraryArtistsListsAndPaginates(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "A", 1, 2007)
 
@@ -57,7 +58,7 @@ func TestLibraryArtistsListsAndPaginates(t *testing.T) {
 }
 
 func TestLibraryArtistDetailReturnsAlbums(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "A", 1, 2007)
 
@@ -83,7 +84,7 @@ func TestLibraryArtistDetailReturnsAlbums(t *testing.T) {
 }
 
 func TestLibraryArtistDetailNotFound(t *testing.T) {
-	_, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	_, svc := testStoreAndService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists/999999", nil)
 	rec := httptest.NewRecorder()
@@ -95,7 +96,7 @@ func TestLibraryArtistDetailNotFound(t *testing.T) {
 }
 
 func TestLibraryAlbumsFiltersByYear(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Fleetwood Mac", "Rumours", "A", 1, 1977)
 	mustInsertTrack(t, store, importID, "Tycho", "Weather", "B", 1, 2019)
@@ -117,7 +118,7 @@ func TestLibraryAlbumsFiltersByYear(t *testing.T) {
 }
 
 func TestLibraryAlbumDetailReturnsTracks(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "15 Step", 1, 2007)
 	mustInsertTrack(t, store, importID, "Radiohead", "In Rainbows", "Bodysnatchers", 2, 2007)
@@ -144,7 +145,7 @@ func TestLibraryAlbumDetailReturnsTracks(t *testing.T) {
 }
 
 func TestLibraryAlbumDetailNotFound(t *testing.T) {
-	_, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	_, svc := testStoreAndService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums/999999", nil)
 	rec := httptest.NewRecorder()
@@ -156,7 +157,7 @@ func TestLibraryAlbumDetailNotFound(t *testing.T) {
 }
 
 func TestLibrarySongsSearchesByQuery(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Nina Simone", "Pastel Blues", "Sinnerman", 1, 1965)
 	mustInsertTrack(t, store, importID, "Fleetwood Mac", "Rumours", "Dreams", 1, 1977)
@@ -178,7 +179,7 @@ func TestLibrarySongsSearchesByQuery(t *testing.T) {
 }
 
 func TestDeleteArtistEndpointRequiresDeleteFilesParam(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
 	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
@@ -193,7 +194,7 @@ func TestDeleteArtistEndpointRequiresDeleteFilesParam(t *testing.T) {
 }
 
 func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
 	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
@@ -212,7 +213,7 @@ func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
 }
 
 func TestDeleteArtistEndpointNotFound(t *testing.T) {
-	_, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	_, svc := testStoreAndService(t)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/999999?deleteFiles=false", nil)
 	rec := httptest.NewRecorder()
@@ -224,7 +225,7 @@ func TestDeleteArtistEndpointNotFound(t *testing.T) {
 }
 
 func TestDeleteAlbumEndpointRemovesAlbum(t *testing.T) {
-	store, svc := testStoreAndService(t, library.Roots{t.TempDir()})
+	store, svc := testStoreAndService(t)
 	importID := mustCreateImportForTest(t, store)
 	mustInsertTrack(t, store, importID, "Solo Artist", "Solo Album", "Song", 1, 2020)
 	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})

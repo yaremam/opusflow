@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"time"
 
@@ -34,17 +35,15 @@ func main() {
 	staticDir := os.Getenv("STATIC_DIR")
 	artworkDir := os.Getenv("ARTWORK_DIR")
 	revision := os.Getenv("GIT_SHA")
-	sourceRoots := library.ParseRoots(os.Getenv("IMPORT_SOURCE_ROOTS"))
-	libraryRoot := os.Getenv("LIBRARY_ROOT")
 
-	conn, err := db.Connect(os.Getenv("DATABASE_URL"))
+	conn, err := db.Connect(databaseURL())
 	if err != nil {
 		log.Fatalf("connecting to database: %v", err)
 	}
 	defer conn.Close()
 
 	store := library.NewStore(conn)
-	svc := library.NewService(sourceRoots, libraryRoot, store, organize.CopyJob{})
+	svc := library.NewService(store, organize.CopyJob{})
 
 	// ARTWORK_DIR is optional the same way STATIC_DIR is: unset means
 	// "this feature is off" (embedded-art extraction skipped, no
@@ -83,6 +82,49 @@ func main() {
 	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, revision, svc)); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// databaseURL returns DATABASE_URL as-is if it's set — an explicit
+// connection string, for connecting to a Postgres this compose file doesn't
+// manage. Otherwise it builds one from POSTGRES_USER/POSTGRES_DB
+// (defaulting POSTGRES_HOST to "postgres", the compose service name, and
+// POSTGRES_PORT to 5432). POSTGRES_PASSWORD is optional: unset entirely in
+// deploy/docker-compose.yml, since postgres isn't reachable from outside
+// the compose network and is configured there for trust authentication
+// (POSTGRES_HOST_AUTH_METHOD=trust) rather than a password — set it only
+// when pointing at a Postgres that actually requires one. Built via
+// net/url.URL rather than string formatting so a user/password containing
+// URL-special characters round-trips correctly.
+func databaseURL() string {
+	if v := os.Getenv("DATABASE_URL"); v != "" {
+		return v
+	}
+
+	host := os.Getenv("POSTGRES_HOST")
+	if host == "" {
+		host = "postgres"
+	}
+	port := os.Getenv("POSTGRES_PORT")
+	if port == "" {
+		port = "5432"
+	}
+
+	user := os.Getenv("POSTGRES_USER")
+	userinfo := url.User(user)
+	if password := os.Getenv("POSTGRES_PASSWORD"); password != "" {
+		userinfo = url.UserPassword(user, password)
+	}
+
+	u := url.URL{
+		Scheme: "postgres",
+		User:   userinfo,
+		Host:   host + ":" + port,
+		Path:   "/" + os.Getenv("POSTGRES_DB"),
+	}
+	q := u.Query()
+	q.Set("sslmode", "disable")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func migrateWithRetry(conn *sql.DB) {

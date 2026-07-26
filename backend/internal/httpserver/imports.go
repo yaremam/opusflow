@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -24,27 +25,15 @@ type planResponse struct {
 	Errors []organize.ValidationError `json:"errors"`
 }
 
-func newPlanResponse(svc *library.Service, plan organize.Plan) planResponse {
-	errs := svc.ValidatePlan(&plan)
+func newPlanResponse(ctx context.Context, svc *library.Service, libraryID int64, plan organize.Plan) (planResponse, error) {
+	errs, err := svc.ValidatePlan(ctx, libraryID, &plan)
+	if err != nil {
+		return planResponse{}, err
+	}
 	if errs == nil {
 		errs = []organize.ValidationError{}
 	}
-	return planResponse{Plan: plan, Errors: errs}
-}
-
-func handleImportRoots(svc *library.Service) http.HandlerFunc {
-	type rootResponse struct {
-		Path string `json:"path"`
-	}
-
-	return func(w http.ResponseWriter, r *http.Request) {
-		roots := svc.ListSourceRoots()
-		resp := make([]rootResponse, len(roots))
-		for i, p := range roots {
-			resp[i] = rootResponse{Path: p}
-		}
-		writeJSON(w, http.StatusOK, resp)
-	}
+	return planResponse{Plan: plan, Errors: errs}, nil
 }
 
 func handleImportBrowse(svc *library.Service) http.HandlerFunc {
@@ -69,6 +58,7 @@ func handleImportBrowse(svc *library.Service) http.HandlerFunc {
 
 func handleBuildPlan(svc *library.Service) http.HandlerFunc {
 	type buildRequest struct {
+		LibraryID int64  `json:"libraryId"`
 		SourceDir string `json:"sourceDir"`
 	}
 
@@ -82,24 +72,48 @@ func handleBuildPlan(svc *library.Service) http.HandlerFunc {
 			http.Error(w, "sourceDir is required", http.StatusBadRequest)
 			return
 		}
+		if req.LibraryID == 0 {
+			http.Error(w, "libraryId is required", http.StatusBadRequest)
+			return
+		}
 
-		plan, err := svc.BuildPlan(req.SourceDir)
+		plan, err := svc.BuildPlan(r.Context(), req.LibraryID, req.SourceDir)
 		if err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, newPlanResponse(svc, plan))
+		resp, err := newPlanResponse(r.Context(), svc, req.LibraryID, plan)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
 func handleValidatePlan(svc *library.Service) http.HandlerFunc {
+	type validateRequest struct {
+		LibraryID int64         `json:"libraryId"`
+		Plan      organize.Plan `json:"plan"`
+	}
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		var plan organize.Plan
-		if err := json.NewDecoder(r.Body).Decode(&plan); err != nil {
+		var req validateRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "invalid JSON body", http.StatusBadRequest)
 			return
 		}
-		writeJSON(w, http.StatusOK, newPlanResponse(svc, plan))
+		if req.LibraryID == 0 {
+			http.Error(w, "libraryId is required", http.StatusBadRequest)
+			return
+		}
+
+		resp, err := newPlanResponse(r.Context(), svc, req.LibraryID, req.Plan)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -113,6 +127,12 @@ func handleUploadImport(svc *library.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if err := r.ParseMultipartForm(maxUploadMemory); err != nil {
 			http.Error(w, "invalid multipart form", http.StatusBadRequest)
+			return
+		}
+
+		libraryID, err := strconv.ParseInt(r.FormValue("libraryId"), 10, 64)
+		if err != nil {
+			http.Error(w, "libraryId is required", http.StatusBadRequest)
 			return
 		}
 
@@ -135,12 +155,17 @@ func handleUploadImport(svc *library.Service) http.HandlerFunc {
 			}
 		}
 
-		plan, err := svc.BuildPlanFromStaged(stagingDir)
+		plan, err := svc.BuildPlanFromStaged(r.Context(), libraryID, stagingDir)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, newPlanResponse(svc, plan))
+		resp, err := newPlanResponse(r.Context(), svc, libraryID, plan)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, resp)
 	}
 }
 
@@ -178,6 +203,7 @@ func stageUploadedFile(dir string, fh *multipart.FileHeader) error {
 
 func handleConfirmImport(svc *library.Service) http.HandlerFunc {
 	type confirmRequest struct {
+		LibraryID         int64         `json:"libraryId"`
 		SourceDescription string        `json:"sourceDescription"`
 		Plan              organize.Plan `json:"plan"`
 	}
@@ -192,8 +218,12 @@ func handleConfirmImport(svc *library.Service) http.HandlerFunc {
 			http.Error(w, "sourceDescription is required", http.StatusBadRequest)
 			return
 		}
+		if req.LibraryID == 0 {
+			http.Error(w, "libraryId is required", http.StatusBadRequest)
+			return
+		}
 
-		imp, errs, err := svc.ConfirmImport(r.Context(), req.SourceDescription, req.Plan)
+		imp, errs, err := svc.ConfirmImport(r.Context(), req.LibraryID, req.SourceDescription, req.Plan)
 		if err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
@@ -243,10 +273,12 @@ func handleGetImport(svc *library.Service) http.HandlerFunc {
 // its own default for whatever it didn't recognize.
 func libraryErrorStatus(err error) int {
 	switch {
-	case errors.Is(err, library.ErrOutsideRoots):
-		return http.StatusForbidden
 	case errors.Is(err, library.ErrNotADirectory):
 		return http.StatusBadRequest
+	case errors.Is(err, library.ErrSourceInsideLibrary):
+		return http.StatusBadRequest
+	case errors.Is(err, library.ErrLibraryNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, library.ErrImportNotFound):
 		return http.StatusNotFound
 	case errors.Is(err, library.ErrArtistNotFound):

@@ -2,6 +2,7 @@ package library
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -26,6 +27,95 @@ func (s *Store) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) err
 		`SELECT path FROM tracks WHERE album_id = $1`,
 		`DELETE FROM albums WHERE id = $1`,
 		id, ErrAlbumNotFound)
+}
+
+// DeleteLibrary removes a library and, via ON DELETE CASCADE, every import
+// (and, via the existing tracks.import_id/import_errors.import_id FKs,
+// every track and file error) that came from it. Unlike DeleteArtist/
+// DeleteAlbum, this can leave an artist/album with zero tracks behind — a
+// library's tracks are never its own dedicated rows, they're shared catalog
+// rows also reachable from any other library — so this sweeps those
+// orphans away too, inside the same transaction. deleteFiles behaves the
+// same as DeleteArtist/DeleteAlbum: an explicit, required choice, never a
+// silent default.
+func (s *Store) DeleteLibrary(ctx context.Context, id int64, deleteFiles bool) error {
+	var paths []string
+	if deleteFiles {
+		rows, err := s.db.QueryContext(ctx, `
+			SELECT t.path FROM tracks t JOIN imports i ON i.id = t.import_id WHERE i.library_id = $1
+		`, id)
+		if err != nil {
+			return fmt.Errorf("listing track paths: %w", err)
+		}
+		for rows.Next() {
+			var p string
+			if err := rows.Scan(&p); err != nil {
+				rows.Close()
+				return err
+			}
+			paths = append(paths, p)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return err
+		}
+		rows.Close()
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	res, err := tx.ExecContext(ctx, `DELETE FROM libraries WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("deleting library: %w", err)
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return ErrLibraryNotFound
+	}
+
+	if err := deleteOrphanedCatalogEntries(ctx, tx); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing library delete: %w", err)
+	}
+
+	for _, p := range paths {
+		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
+			log.Printf("library: deleting file %q: %v", p, err)
+		}
+	}
+	return nil
+}
+
+// deleteOrphanedCatalogEntries removes any artist/album row left with zero
+// tracks — called only from DeleteLibrary, inside its transaction, never
+// automatically from anywhere else (unlike TDR 001's original scan-removal
+// behavior, deliberately not reinstated in general by TDR 005). A global
+// sweep rather than one scoped to the deleted library: correct either way,
+// since the condition ("no track left in the whole library referencing this
+// row") is the same, and it's simpler than threading the set of affected
+// artist/album IDs out of the cascade delete.
+func deleteOrphanedCatalogEntries(ctx context.Context, tx *sql.Tx) error {
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM albums WHERE id NOT IN (SELECT DISTINCT album_id FROM tracks)
+	`); err != nil {
+		return fmt.Errorf("deleting orphaned albums: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		DELETE FROM artists WHERE id NOT IN (SELECT DISTINCT artist_id FROM tracks)
+	`); err != nil {
+		return fmt.Errorf("deleting orphaned artists: %w", err)
+	}
+	return nil
 }
 
 // deleteWithFiles is the shared shape behind DeleteArtist/DeleteAlbum: list

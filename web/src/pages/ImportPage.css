@@ -102,6 +102,54 @@
   padding: 0.5rem 0.65rem;
 }
 
+/* choose-a-library */
+.lib-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem;
+}
+.lib-card {
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.1rem 1.2rem;
+  text-align: left;
+  color: var(--paper-50);
+  font: inherit;
+}
+.lib-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.lib-card .name {
+  font-weight: 700;
+  font-size: 0.98rem;
+}
+.lib-card .path {
+  font-size: 0.78rem;
+  color: var(--mist-400);
+  margin-top: 0.35rem;
+  overflow-wrap: anywhere;
+}
+.lib-card .meta {
+  font-size: 0.78rem;
+  color: var(--mist-400);
+  margin-top: 0.6rem;
+}
+.lib-card.new {
+  border-style: dashed;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  color: var(--accent-strong);
+  text-align: center;
+}
+.lib-card.new .glyph {
+  font-size: 1.4rem;
+}
+
 /* choose-a-source */
 .source-grid {
   display: grid;

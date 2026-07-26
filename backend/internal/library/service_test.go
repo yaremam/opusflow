@@ -23,17 +23,71 @@ type fakeImportStore struct {
 	errors         []string
 	deletedArtists []int64
 	deletedAlbums  []int64
+
+	nextLibID   int64
+	libraries   map[int64]Library
+	deletedLibs []int64
 }
 
 func newFakeImportStore() *fakeImportStore {
-	return &fakeImportStore{imports: make(map[int64]Import)}
+	return &fakeImportStore{imports: make(map[int64]Import), libraries: make(map[int64]Library)}
 }
 
-func (f *fakeImportStore) CreateImport(_ context.Context, sourceDescription string) (Import, error) {
+// seedLibrary creates a library directly in the fake store (no directory
+// validation, unlike the real Store — that's covered by libraries_test.go
+// against real Postgres), returning its ID for tests that just need a
+// valid libraryID to build/confirm a plan against.
+func (f *fakeImportStore) seedLibrary(rootPath string) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextLibID++
+	f.libraries[f.nextLibID] = Library{ID: f.nextLibID, Name: "Test Library", RootPath: rootPath, CreatedAt: time.Now()}
+	return f.nextLibID
+}
+
+func (f *fakeImportStore) CreateLibrary(_ context.Context, name, rootPath string) (Library, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextLibID++
+	lib := Library{ID: f.nextLibID, Name: name, RootPath: rootPath, CreatedAt: time.Now()}
+	f.libraries[lib.ID] = lib
+	return lib, nil
+}
+
+func (f *fakeImportStore) ListLibraries(_ context.Context) ([]Library, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	libs := make([]Library, 0, len(f.libraries))
+	for id := int64(1); id <= f.nextLibID; id++ {
+		if lib, ok := f.libraries[id]; ok {
+			libs = append(libs, lib)
+		}
+	}
+	return libs, nil
+}
+
+func (f *fakeImportStore) GetLibrary(_ context.Context, id int64) (Library, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	lib, ok := f.libraries[id]
+	if !ok {
+		return Library{}, ErrLibraryNotFound
+	}
+	return lib, nil
+}
+
+func (f *fakeImportStore) DeleteLibrary(_ context.Context, id int64, deleteFiles bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletedLibs = append(f.deletedLibs, id)
+	return nil
+}
+
+func (f *fakeImportStore) CreateImport(_ context.Context, libraryID int64, sourceDescription string) (Import, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.nextID++
-	imp := Import{ID: f.nextID, SourceDescription: sourceDescription, Status: ImportStatusCopying, FileErrors: []FileError{}, CreatedAt: time.Now()}
+	imp := Import{ID: f.nextID, LibraryID: libraryID, SourceDescription: sourceDescription, Status: ImportStatusCopying, FileErrors: []FileError{}, CreatedAt: time.Now()}
 	f.imports[imp.ID] = imp
 	return imp, nil
 }
@@ -219,12 +273,13 @@ func validPlan() organize.Plan {
 
 func TestConfirmImportReturnsBeforeCopyCompletes(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := &blockingCopier{block: make(chan struct{})}
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+		_, _, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan())
 		done <- err
 	}()
 
@@ -242,10 +297,11 @@ func TestConfirmImportReturnsBeforeCopyCompletes(t *testing.T) {
 
 func TestConfirmImportSuccess(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := newRecordingCopier()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
-	imp, errs, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+	imp, errs, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan())
 	if err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
@@ -254,6 +310,9 @@ func TestConfirmImportSuccess(t *testing.T) {
 	}
 	if imp.SourceDescription != "/music/src" {
 		t.Fatalf("SourceDescription = %q", imp.SourceDescription)
+	}
+	if imp.LibraryID != libID {
+		t.Fatalf("LibraryID = %d, want %d", imp.LibraryID, libID)
 	}
 
 	copier.waitForCall(t)
@@ -264,15 +323,16 @@ func TestConfirmImportSuccess(t *testing.T) {
 
 func TestConfirmImportRejectsInvalidPlan(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := newRecordingCopier()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
 	incomplete := organize.Plan{Albums: []organize.Album{{
 		Artist: "", Album: "Album", Year: 2000,
 		Tracks: []organize.Track{{SourcePath: "/src/one.mp3"}},
 	}}}
 
-	imp, errs, err := svc.ConfirmImport(ctx(), "/music/src", incomplete)
+	imp, errs, err := svc.ConfirmImport(ctx(), libID, "/music/src", incomplete)
 	if err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
@@ -287,13 +347,25 @@ func TestConfirmImportRejectsInvalidPlan(t *testing.T) {
 	}
 }
 
-func TestConfirmImportMarksCompleteAfterCopySucceeds(t *testing.T) {
+func TestConfirmImportRejectsUnknownLibrary(t *testing.T) {
 	store := newFakeImportStore()
 	copier := newRecordingCopier()
-	copier.summary = organize.RunSummary{FilesProcessed: 1, FilesFailed: 1}
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
-	imp, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+	_, _, err := svc.ConfirmImport(ctx(), 999999, "/music/src", validPlan())
+	if !errors.Is(err, ErrLibraryNotFound) {
+		t.Fatalf("ConfirmImport error = %v, want ErrLibraryNotFound", err)
+	}
+}
+
+func TestConfirmImportMarksCompleteAfterCopySucceeds(t *testing.T) {
+	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
+	copier := newRecordingCopier()
+	copier.summary = organize.RunSummary{FilesProcessed: 1, FilesFailed: 1}
+	svc := NewService(store, copier)
+
+	imp, _, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan())
 	if err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
@@ -304,11 +376,12 @@ func TestConfirmImportMarksCompleteAfterCopySucceeds(t *testing.T) {
 
 func TestConfirmImportMarksFailedWhenEveryFileFails(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := newRecordingCopier()
 	copier.summary = organize.RunSummary{FilesProcessed: 0, FilesFailed: 1}
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
-	imp, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan())
+	imp, _, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan())
 	if err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
@@ -338,12 +411,13 @@ func waitForImportStatus(t *testing.T, svc *Service, id int64, want ImportStatus
 
 func TestConfirmImportRunsEnrichmentAfterCopyCompletes(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := newRecordingCopier()
 	enricher := newRecordingEnricher()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 	svc.SetEnricher(enricher)
 
-	if _, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan()); err != nil {
+	if _, _, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan()); err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
 
@@ -355,35 +429,41 @@ func TestConfirmImportRunsEnrichmentAfterCopyCompletes(t *testing.T) {
 
 func TestConfirmImportWithoutEnricherDoesNotPanic(t *testing.T) {
 	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
 	copier := newRecordingCopier()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, copier)
+	svc := NewService(store, copier)
 
-	if _, _, err := svc.ConfirmImport(ctx(), "/music/src", validPlan()); err != nil {
+	if _, _, err := svc.ConfirmImport(ctx(), libID, "/music/src", validPlan()); err != nil {
 		t.Fatalf("ConfirmImport: %v", err)
 	}
 	copier.waitForCall(t)
 }
 
-func TestBuildPlanRejectsPathOutsideRoots(t *testing.T) {
-	root := t.TempDir()
-	outside := t.TempDir()
-	svc := NewService(Roots{root}, t.TempDir(), newFakeImportStore(), newRecordingCopier())
+func TestBuildPlanRejectsSourceInsideLibrary(t *testing.T) {
+	store := newFakeImportStore()
+	libRoot := t.TempDir()
+	store.seedLibrary(libRoot)
+	otherLibID := store.seedLibrary(t.TempDir())
+	svc := NewService(store, newRecordingCopier())
 
-	_, err := svc.BuildPlan(outside)
-	if !errors.Is(err, ErrOutsideRoots) {
-		t.Fatalf("BuildPlan error = %v, want ErrOutsideRoots", err)
+	sourceInsideLibRoot := filepath.Join(libRoot, "some-download")
+	if err := os.MkdirAll(sourceInsideLibRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := svc.BuildPlan(ctx(), otherLibID, sourceInsideLibRoot)
+	if !errors.Is(err, ErrSourceInsideLibrary) {
+		t.Fatalf("BuildPlan error = %v, want ErrSourceInsideLibrary", err)
 	}
 }
 
 func TestBuildPlanReadsTagsFromSourceDirectory(t *testing.T) {
-	root := t.TempDir()
-	sub := filepath.Join(root, "Jazz")
-	if err := os.Mkdir(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	svc := NewService(Roots{root}, t.TempDir(), newFakeImportStore(), newRecordingCopier())
+	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
+	sub := t.TempDir()
+	svc := NewService(store, newRecordingCopier())
 
-	plan, err := svc.BuildPlan(sub)
+	plan, err := svc.BuildPlan(ctx(), libID, sub)
 	if err != nil {
 		t.Fatalf("BuildPlan: %v", err)
 	}
@@ -392,9 +472,19 @@ func TestBuildPlanReadsTagsFromSourceDirectory(t *testing.T) {
 	}
 }
 
+func TestBuildPlanRejectsUnknownLibrary(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	_, err := svc.BuildPlan(ctx(), 999999, t.TempDir())
+	if !errors.Is(err, ErrLibraryNotFound) {
+		t.Fatalf("BuildPlan error = %v, want ErrLibraryNotFound", err)
+	}
+}
+
 func TestDeleteArtistDelegatesToStore(t *testing.T) {
 	store := newFakeImportStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	if err := svc.DeleteArtist(ctx(), 42, true); err != nil {
 		t.Fatalf("DeleteArtist: %v", err)
@@ -406,12 +496,53 @@ func TestDeleteArtistDelegatesToStore(t *testing.T) {
 
 func TestDeleteAlbumDelegatesToStore(t *testing.T) {
 	store := newFakeImportStore()
-	svc := NewService(Roots{t.TempDir()}, t.TempDir(), store, newRecordingCopier())
+	svc := NewService(store, newRecordingCopier())
 
 	if err := svc.DeleteAlbum(ctx(), 7, false); err != nil {
 		t.Fatalf("DeleteAlbum: %v", err)
 	}
 	if len(store.deletedAlbums) != 1 || store.deletedAlbums[0] != 7 {
 		t.Fatalf("deletedAlbums = %+v, want [7]", store.deletedAlbums)
+	}
+}
+
+func TestDeleteLibraryDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.DeleteLibrary(ctx(), 3, true); err != nil {
+		t.Fatalf("DeleteLibrary: %v", err)
+	}
+	if len(store.deletedLibs) != 1 || store.deletedLibs[0] != 3 {
+		t.Fatalf("deletedLibs = %+v, want [3]", store.deletedLibs)
+	}
+}
+
+func TestCreateLibraryDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+	root := t.TempDir()
+
+	lib, err := svc.CreateLibrary(ctx(), "Main Collection", root)
+	if err != nil {
+		t.Fatalf("CreateLibrary: %v", err)
+	}
+	if lib.Name != "Main Collection" || lib.RootPath != root {
+		t.Fatalf("lib = %+v", lib)
+	}
+}
+
+func TestListLibrariesDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	store.seedLibrary(t.TempDir())
+	store.seedLibrary(t.TempDir())
+	svc := NewService(store, newRecordingCopier())
+
+	libs, err := svc.ListLibraries(ctx())
+	if err != nil {
+		t.Fatalf("ListLibraries: %v", err)
+	}
+	if len(libs) != 2 {
+		t.Fatalf("libs = %+v, want 2", libs)
 	}
 }
