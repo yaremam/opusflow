@@ -22,5 +22,17 @@ WORKDIR /app
 COPY --from=backend-build /out/server ./server
 COPY --from=web-build /app/web/dist ./web
 ENV STATIC_DIR=/app/web
+
+# Build revision, stamped by the nightly pipeline (TDR 004). Kept as a
+# runtime env var (surfaced by `GET /health`) plus an OCI label — the
+# nightly workflow reads `revision` back off the published image to decide
+# whether a new commit exists to build. Declared this late so the varying
+# ARG only busts this final metadata layer, never the compile or copy layers.
+ARG GIT_SHA=dev
+ENV GIT_SHA=${GIT_SHA}
+LABEL org.opencontainers.image.source="https://github.com/yaremam/opusflow" \
+      org.opencontainers.image.description="opusflow — self-hosted music platform" \
+      org.opencontainers.image.revision="${GIT_SHA}"
+
 EXPOSE 8080
 ENTRYPOINT ["/app/server"]

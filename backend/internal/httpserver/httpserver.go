@@ -15,10 +15,12 @@ import (
 // back to its index.html for any unmatched GET so client-side routing keeps
 // working after a refresh. When artworkDir is non-empty, fetched/extracted
 // artist photos and album covers (TDR 003) are served from it under
-// /artwork/. svc backs the library endpoints.
-func New(staticDir, artworkDir string, svc *library.Service) http.Handler {
+// /artwork/. revision (TDR 004's GIT_SHA) is reported by /health so a
+// deployed instance can be identified; empty is a normal value (unset in
+// local `go run`, not an error). svc backs the library endpoints.
+func New(staticDir, artworkDir, revision string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleHealth)
+	mux.HandleFunc("GET /health", handleHealth(revision))
 	mux.HandleFunc("GET /api/library/roots", handleLibraryRoots(svc))
 	mux.HandleFunc("GET /api/library/browse", handleLibraryBrowse(svc))
 	mux.HandleFunc("GET /api/library/directories", handleListDirectories(svc))
@@ -42,13 +44,16 @@ func New(staticDir, artworkDir string, svc *library.Service) http.Handler {
 }
 
 type healthResponse struct {
-	Status string `json:"status"`
+	Status   string `json:"status"`
+	Revision string `json:"revision,omitempty"`
 }
 
-func handleHealth(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(healthResponse{Status: "ok"})
+func handleHealth(revision string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(healthResponse{Status: "ok", Revision: revision})
+	}
 }
 
 func spaHandler(staticDir string) http.Handler {

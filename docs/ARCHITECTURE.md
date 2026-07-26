@@ -13,8 +13,9 @@ music library (browse, add, async scan, remove; [TDR 001](tdr/001_add_local_dire
 a Home screen plus Artist/Album/Song browsing
 ([TDR 002](tdr/002_home_and_browsing_design.md)), and artist/album artwork
 plus MusicBrainz/Wikipedia-sourced facts and bio
-([TDR 003](tdr/003_artwork_and_info_design.md)). Mobile is still an
-untouched Expo starter.
+([TDR 003](tdr/003_artwork_and_info_design.md)) — plus self-hosted deployment
+via a nightly prebuilt image ([TDR 004](tdr/004_self_hosted_deployment_design.md)).
+Mobile is still an untouched Expo starter.
 
 ## 1. System context
 
@@ -49,6 +50,11 @@ The Go binary serves the API and the static web build from the same process —
 there is no separate web server/container. The mobile app is a native
 Android/iOS build (via Expo), not part of this image.
 
+That same image is also published, prebuilt, to `ghcr.io/yaremam/opusflow`
+by a nightly CI pipeline ([TDR 004](tdr/004_self_hosted_deployment_design.md)),
+for self-hosting without a Go/Node toolchain on the target machine — see
+[`deploy/`](../deploy/) and [`docs/deploy/synology.md`](deploy/synology.md).
+
 ## 2. Core stack
 
 | Concern | Choice | Notes |
@@ -60,7 +66,8 @@ Android/iOS build (via Expo), not part of this image.
 | Audio tag/duration parsing | `github.com/dhowden/tag` (tags) + hand-rolled per-format duration parsers | `backend/internal/library/scan`; see TDR 001 |
 | Artwork/info sourcing | MusicBrainz + Cover Art Archive + Wikidata/Wikipedia (no API key, descriptive `User-Agent`) | `backend/internal/library/enrich`; `golang.org/x/image/draw` for resizing; see [TDR 003](tdr/003_artwork_and_info_design.md) |
 | Package manager (web/mobile) | pnpm workspaces, pinned via corepack (`pnpm@9` — `pnpm@11`+ requires Node 22, this environment has Node 20) | root `pnpm-workspace.yaml` covers `web/` and `mobile/` |
-| Packaging | Docker (see §1) | root `Dockerfile` + `docker-compose.yml` |
+| Packaging | Docker (see §1) | root `Dockerfile` + `docker-compose.yml` (local build/dev) |
+| Deployment | Nightly multi-platform (amd64+arm64) image on GHCR, `.github/workflows/nightly.yml` | `deploy/docker-compose.yml` pulls it instead of building; see [TDR 004](tdr/004_self_hosted_deployment_design.md) |
 
 ## 3. Components
 
@@ -76,7 +83,10 @@ Android/iOS build (via Expo), not part of this image.
   once at startup after migrations succeed — TDR 003's backfill trigger)
   before starting the HTTP server.
 - **`backend/internal/httpserver`** — builds the root `http.Handler`:
-  `GET /health`; the library endpoints (below); when `ARTWORK_DIR` is set, a
+  `GET /health` (reports `{"status":"ok","revision":"<GIT_SHA>"}` — `revision`
+  is omitted when unset, e.g. local `go run`; stamped into the Docker image
+  by the nightly pipeline, [TDR 004](tdr/004_self_hosted_deployment_design.md));
+  the library endpoints (below); when `ARTWORK_DIR` is set, a
   static file server for it under `/artwork/`; and, when `STATIC_DIR` is
   set, a static file server for the built web app with SPA fallback
   (unmatched GETs serve `index.html` rather than 404, so client-side routing
@@ -184,6 +194,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Self-hosted deployment | [004](tdr/004_self_hosted_deployment_design.md) | Nightly multi-platform image on GHCR (skip-if-unchanged, test-gated); separate `deploy/docker-compose.yml` pulling it, with bundled Postgres and multi-root music bind-mounts | Removes the Go/Node toolchain requirement from the target machine (a NAS); mirrors a proven pattern from a sibling project (docuflow) adapted for opusflow's host-mounted-library model |
 | Artist/album artwork and info | [003](tdr/003_artwork_and_info_design.md) | Embedded-tag art first, MusicBrainz + Cover Art Archive + Wikidata/Wikipedia fallback via a background `enrich.Job`; three independent per-kind statuses; files on disk under `ARTWORK_DIR`, not DB blobs | Free/open/no-API-key sources matching the project's anti-proprietary-protocol stance; a background job (not inline with scanning) respects MusicBrainz's rate limit and doubles as backfill for pre-existing libraries |
 | Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan time, orphan-cleaned on directory removal); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
 | Add local directory to library | [001](tdr/001_add_local_directory_design.md) | Async goroutine-based scan; server-side directory picker scoped to multiple `LIBRARY_ROOTS`; skip-and-continue per-file error handling | Matches real multi-volume households and real-world tagging inconsistency without over-building (no job queue, no router) |
