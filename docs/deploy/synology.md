@@ -15,14 +15,13 @@ directly in that file before deploying.
 
 - `opusflow` — holds the project (Container Manager needs a path to store
   its resolved compose file under, even when you paste the YAML directly).
-- `music` — where opusflow will keep your *organized* library. Empty is
-  fine; opusflow writes into it as you import. Note the full path DSM shows
-  for it, typically `/volume1/music`.
-- `music-import` — if you have existing audio files to bring in, copy them
-  onto this folder via **File Station** (or however you normally move files
-  onto the NAS). This is only a source you import *from* — opusflow never
-  writes here. Skip this folder if you'll only ever use the "upload from
-  device" import option.
+- `opusflow-data` — everything opusflow reads from or writes to lives
+  somewhere under this one folder: organized libraries (created from
+  within the app itself — see step 3) and anything you want to import
+  *from*. If you have existing audio files to bring in, copy them onto a
+  subfolder here via **File Station** (or however you normally move files
+  onto the NAS); skip this if you'll only ever use "upload from device".
+  Note the full path DSM shows for it, typically `/volume1/opusflow-data`.
 
 ## 2. Create the project
 
@@ -35,27 +34,22 @@ directly in that file before deploying.
 4. Paste in the full contents of
    [`deploy/docker-compose.yml`](../../deploy/docker-compose.yml) (open it on
    any machine, copy it, paste here — no download/upload step needed).
-5. Before continuing, edit these lines directly in the pasted text:
-   - `- ./music:/music` → the real host path from step 1 for your organized
-     library, e.g. `- /volume1/music:/music`. This is where opusflow writes
-     files as you import them.
-   - `- ./import-1:/import/1:ro` → the real host path for the folder you're
-     importing from, e.g. `- /volume1/music-import:/import/1:ro`. If you
-     don't have anything to import from the NAS itself (only "upload from
-     device"), you can leave this pointed at the placeholder or remove the
-     line entirely along with `IMPORT_SOURCE_ROOTS`.
+5. Before continuing, edit these lines directly in the pasted text — none of
+   the three have a default, so leaving any of them unedited makes
+   **Action → Build** fail with a message naming exactly which one is missing:
+   - `- ${OPUSFLOW_DATA_DIR:?...}:/data` → replace the whole `${...}` token
+     with the real host path from step 1, e.g. `- /volume1/opusflow-data:/data`.
+     Everything opusflow reads or writes — organized libraries and anything
+     you import from — lives somewhere under this one mount.
+   - `- ${OPUSFLOW_PGDATA_DIR:?...}:/var/lib/postgresql/data` → replace with
+     where the Postgres database itself lives, e.g.
+     `- /volume1/docker/opusflow/pgdata:/var/lib/postgresql/data`.
+   - `- ${OPUSFLOW_ARTWORK_DIR:?...}:/artwork` → replace with where fetched
+     artist photos and album covers are cached, e.g.
+     `- /volume1/docker/opusflow/artwork:/artwork`.
    - `- "8090:8080"` → change the `8090` if that port is already taken on
      your NAS (DSM itself claims `5000`/`5001`, and some packages default to
      `8080`). This is the port mapping — the app answers on this host port.
-   - `POSTGRES_PASSWORD: change-me-please` **and** the matching
-     `change-me-please` inside `DATABASE_URL` a few lines up — change both to
-     the same new value. They must match exactly or the app can't reach its
-     own database.
-   - More than one folder to import from? Uncomment one of the
-     `#   - /volume1/...` lines under `volumes:`, point it at the extra
-     folder, and extend `IMPORT_SOURCE_ROOTS: /import/1` to
-     `/import/1,/import/2` (add `/import/3` etc. as needed) — the list must
-     match the mounted paths in order.
 6. Skip the optional "Web Station portal" step unless you already use one.
 7. Confirm. Container Manager pulls the `app` and `postgres` images and
    starts both containers — first pull takes a few minutes depending on your
@@ -69,9 +63,11 @@ Once the project shows both containers as **Running**:
   `{"status":"ok","revision":"<git sha>"}`. The `revision` field tells you
   exactly which nightly build is running; include it if you ever report a
   problem.
-- Visit `http://<your-nas-ip>:<port>` in a browser for the app itself. Your
-  library starts empty — use the **Import** page to browse a mounted source
-  folder (or upload from your device) and copy files in. Check
+- Visit `http://<your-nas-ip>:<port>` in a browser for the app itself. Nothing
+  exists yet — open the **Libraries** page and create your first library
+  (give it a name, then browse to a folder under `/data` for it to live in),
+  then use the **Import** page to browse a source folder under `/data` (or
+  upload from your device) and copy files into it. Check
   **Container Manager → Project → opusflow → Logs** on the `app` container
   if an import seems stuck for a large batch of files.
 
@@ -86,18 +82,21 @@ to confirm the update actually landed.
 ## Changing settings later
 
 **Container Manager → Project → opusflow → Action → Edit Project** reopens
-the same compose text editor from step 2 — edit the port, folder path, or
-password lines there, then **Action → Build** to apply the change.
+the same compose text editor from step 2 — edit the port or folder path
+lines there, then **Action → Build** to apply the change.
 
 ## Troubleshooting
 
+- **Build fails with "required variable ... is missing a value"**: one of the
+  three `${OPUSFLOW_..._DIR:?...}` volume lines (see step 5) still has its
+  placeholder token instead of a real host path — edit it and **Action →
+  Build** again.
 - **Port already in use**: edit the `"8090:8080"` line (see above), then
   **Action → Build**.
 - **`app` container keeps restarting**: check its logs — the most common
   cause is `postgres` not yet healthy on first boot (the `app` service waits
-  for it automatically), or the two `change-me-please` values no longer
-  matching after an edit.
-- **Import can't see your source folder**: confirm the source bind-mount's
-  host path (left side of the `:/import/1:ro` line) actually exists on the
-  NAS and contains audio files — a typo there silently mounts nothing, and
-  the Import page's folder browser will just look empty.
+  for it automatically).
+- **Import or Libraries can't see your files**: confirm the `:/data` bind-mount's
+  host path actually exists on the NAS and contains your folders — a typo
+  there silently mounts an empty directory, and the folder browser will
+  just look empty.
