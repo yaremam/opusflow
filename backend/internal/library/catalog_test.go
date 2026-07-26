@@ -376,6 +376,90 @@ func TestDeleteArtistDeletesFilesWhenRequested(t *testing.T) {
 	}
 }
 
+// TestDeleteArtistDeletesFilesWhenRequestedRemovesEmptyDirectories guards
+// GitHub issue #7: deleting an artist with deleteFiles removed the track
+// files but left the now-empty <Artist>/<Year>.<Album>/ and <Artist>/
+// directories organize's canonical layout creates around them.
+func TestDeleteArtistDeletesFilesWhenRequestedRemovesEmptyDirectories(t *testing.T) {
+	s := testStore(t)
+	libRoot := t.TempDir()
+	albumDir := filepath.Join(libRoot, "Dir Cleanup Artist", "2000.Dir Cleanup Album")
+	if err := os.MkdirAll(albumDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(albumDir, "01.Song.mp3")
+	if err := os.WriteFile(file, []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{ImportID: importID, Path: file, Title: "Song", Artist: "Dir Cleanup Artist", Album: "Dir Cleanup Album"}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	artist := findArtistByName(t, s, "Dir Cleanup Artist")
+	if err := s.DeleteArtist(ctx(), artist.ID, true); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
+	}
+
+	if _, err := os.Stat(albumDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected album directory %s to be removed, stat error: %v", albumDir, err)
+	}
+	artistDir := filepath.Dir(albumDir)
+	if _, err := os.Stat(artistDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected artist directory %s to be removed, stat error: %v", artistDir, err)
+	}
+	if _, err := os.Stat(libRoot); err != nil {
+		t.Fatalf("expected library root %s to survive, stat error: %v", libRoot, err)
+	}
+}
+
+// TestDeleteAlbumDeletesFilesWhenRequestedKeepsArtistDirWithOtherAlbums
+// guards the same cleanup for DeleteAlbum, and confirms it never removes
+// the artist directory while a sibling album is still there.
+func TestDeleteAlbumDeletesFilesWhenRequestedKeepsArtistDirWithOtherAlbums(t *testing.T) {
+	s := testStore(t)
+	libRoot := t.TempDir()
+	artistDir := filepath.Join(libRoot, "Multi Album Artist")
+	albumDir := filepath.Join(artistDir, "2000.Removed Album")
+	otherAlbumDir := filepath.Join(artistDir, "2001.Kept Album")
+	if err := os.MkdirAll(albumDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(otherAlbumDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(albumDir, "01.Song.mp3")
+	if err := os.WriteFile(file, []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	otherFile := filepath.Join(otherAlbumDir, "01.Song.mp3")
+	if err := os.WriteFile(otherFile, []byte("audio"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{ImportID: importID, Path: file, Title: "Song", Artist: "Multi Album Artist", Album: "Removed Album"}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{ImportID: importID, Path: otherFile, Title: "Song", Artist: "Multi Album Artist", Album: "Kept Album"}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	album := findAlbumByTitle(t, s, "Removed Album")
+	if err := s.DeleteAlbum(ctx(), album.ID, true); err != nil {
+		t.Fatalf("DeleteAlbum: %v", err)
+	}
+
+	if _, err := os.Stat(albumDir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("expected removed album directory %s to be gone, stat error: %v", albumDir, err)
+	}
+	if _, err := os.Stat(artistDir); err != nil {
+		t.Fatalf("expected artist directory %s to survive (other album still there), stat error: %v", artistDir, err)
+	}
+	if _, err := os.Stat(otherAlbumDir); err != nil {
+		t.Fatalf("expected other album directory %s to survive, stat error: %v", otherAlbumDir, err)
+	}
+}
+
 func TestDeleteAlbumKeepsArtistAndOtherAlbums(t *testing.T) {
 	s := testStore(t)
 	importID := mustCreateImport(t, s)
