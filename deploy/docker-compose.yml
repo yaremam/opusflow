@@ -1,0 +1,66 @@
+# Self-hosting stack (TDR 004): runs the prebuilt nightly image from GHCR —
+# no repo clone, no Go/Node toolchain, no `build:`, no separate .env file.
+# Every value you might need to change lives directly in this one file,
+# marked "EDIT THIS" below — paste it as-is into Synology DSM's Container
+# Manager ("Projects" → Create → paste docker-compose.yml), edit those
+# lines, and deploy. See ../docs/deploy/synology.md for a full walkthrough.
+#
+#   docker compose up -d          # start everything
+#   docker compose pull && docker compose up -d   # update to newest nightly
+
+services:
+  app:
+    image: ghcr.io/yaremam/opusflow:nightly
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # Password must match POSTGRES_PASSWORD below exactly — if you edit
+      # one, edit both.
+      DATABASE_URL: postgres://opusflow:change-me-please@postgres:5432/opusflow?sslmode=disable
+      ARTWORK_DIR: /data/artwork
+      # Comma-separated container paths — one per `<host path>:/music/N`
+      # line below, in the same order.
+      LIBRARY_ROOTS: /music/1
+    volumes:
+      - artwork:/data/artwork
+      #   - /volume1/docker/opusflow/artwork:/data/artwork   # DSM bind-mount variant
+      #
+      # ↓ EDIT THIS: point at your music folder's real host path (e.g.
+      # /volume1/music on a Synology). The default below (a folder next to
+      # this file) only exists so the stack starts cleanly before you do.
+      - ./music-1:/music/1:ro
+      # More folders? Uncomment a line below, edit its host path, and
+      # append the matching container path to LIBRARY_ROOTS above, e.g.
+      # LIBRARY_ROOTS: /music/1,/music/2
+      #   - /volume1/kids-music:/music/2:ro
+      #   - /volume2/archive-music:/music/3:ro
+    ports:
+      # ↓ EDIT THIS if 8090 is already taken on your machine (DSM claims
+      # 5000/5001 itself, and some packages default to 8080). Which build
+      # is running: http://<host>:<port>/health reports the git revision —
+      # include it when reporting a misbehaving nightly.
+      - "8090:8080"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: opusflow
+      # ↓ EDIT THIS, and update DATABASE_URL above to match exactly.
+      POSTGRES_PASSWORD: change-me-please
+      POSTGRES_DB: opusflow
+    volumes:
+      # Named volume by default; on DSM you can bind-mount instead, e.g.
+      #   - /volume1/docker/opusflow/pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U opusflow -d opusflow"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:
+  artwork:

@@ -33,6 +33,7 @@ func main() {
 	}
 	staticDir := os.Getenv("STATIC_DIR")
 	artworkDir := os.Getenv("ARTWORK_DIR")
+	revision := os.Getenv("GIT_SHA")
 	roots := library.ParseRoots(os.Getenv("LIBRARY_ROOTS"))
 
 	conn, err := db.Connect(os.Getenv("DATABASE_URL"))
@@ -79,7 +80,7 @@ func main() {
 	}()
 
 	log.Printf("listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, svc)); err != nil {
+	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, revision, svc)); err != nil {
 		log.Fatal(err)
 	}
 }

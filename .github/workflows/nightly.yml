@@ -1,0 +1,134 @@
+# Nightly image pipeline (TDR 004): test main, then publish
+# ghcr.io/yaremam/opusflow. See docs/backlog/004_self_hosted_deployment.md
+# and docs/tdr/004_self_hosted_deployment_design.md.
+name: nightly
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+# A manual dispatch racing the cron would push the same tags twice;
+# serialize instead (don't cancel — a publish should never be interrupted).
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  # Skip the whole run (cheaply, without a Go/Node toolchain) when main
+  # hasn't moved since the last published nightly — compared against the
+  # `org.opencontainers.image.revision` label the Dockerfile stamps.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      build: ${{ steps.check.outputs.build }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: check
+        name: Compare HEAD against the published nightly's revision label
+        run: |
+          sha="$GITHUB_SHA"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # skopeo is preinstalled on ubuntu-latest runners; the package is
+          # public, so no auth is needed to read the label. First run (no
+          # image published yet) or any inspect hiccup falls through to
+          # "none" and therefore to building — never to a silent skip.
+          published=$(skopeo inspect "docker://$IMAGE:nightly" --format '{{ index .Labels "org.opencontainers.image.revision" }}' 2>/dev/null || echo "none")
+          if [ "$published" = "$sha" ]; then
+            echo "nightly is already at $sha — nothing to do"
+            echo "build=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "published nightly is at '$published', HEAD is $sha — building"
+            echo "build=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # CLAUDE.md's TDD/CI expectations: nothing ships unless the backend test
+  # suite passes and the web app builds and lints cleanly on this exact
+  # commit.
+  test:
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: opusflow
+          POSTGRES_PASSWORD: opusflow
+          POSTGRES_DB: opusflow
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U opusflow -d opusflow"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://opusflow:opusflow@localhost:5432/opusflow?sslmode=disable
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+      - name: go vet
+        working-directory: backend
+        run: go vet ./...
+      - name: go test
+        working-directory: backend
+        run: go test ./...
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - name: Install web dependencies
+        run: pnpm install --filter web --frozen-lockfile
+      - name: web build
+        run: pnpm --filter web build
+      - name: web lint
+        run: pnpm --filter web lint
+
+  publish:
+    needs: [changes, test]
+    if: needs.changes.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
+      # Needed to cross-build the arm64 half of the image on an amd64
+      # runner — buildx alone only covers the runner's native platform.
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute tags
+        id: tags
+        run: |
+          echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+          echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+      # amd64 + arm64: no single known deploy target the way docuflow has
+      # one, so one image reference needs to run on whichever machine ends
+      # up hosting it (see TDR 004). `latest` is deliberately not tagged —
+      # reserved for real releases.
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            GIT_SHA=${{ needs.changes.outputs.sha }}
+          tags: |
+            ${{ env.IMAGE }}:nightly
+            ${{ env.IMAGE }}:nightly-${{ steps.tags.outputs.date }}
+            ${{ env.IMAGE }}:sha-${{ steps.tags.outputs.short }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
