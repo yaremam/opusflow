@@ -126,6 +126,45 @@ func TestCopyWritesBackCorrectedTagsToMP3(t *testing.T) {
 	}
 }
 
+// TestWriteMP3TagsSurvivesUnparsableExistingTag reproduces a real-world
+// encoder quirk: an ID3v2.3 tag whose one frame declares a body size that
+// overruns the tag's own declared byte budget. id3v2's strict frame-by-frame
+// parser refuses to even open a file like this (ErrBodyOverflow, "frame
+// went over tag area") — writeMP3Tags must recover rather than fail the
+// whole file, since the source file itself can't be fixed.
+func TestWriteMP3TagsSurvivesUnparsableExistingTag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "corrupt.mp3")
+
+	header := []byte{'I', 'D', '3', 3, 0, 0, 0, 0, 0, 10}   // v2.3, declared size = 10 bytes
+	frame := []byte{'T', 'I', 'T', '2', 0, 0, 1, 244, 0, 0} // bodySize = 500, way over budget
+	if err := os.WriteFile(path, append(header, frame...), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	al := Album{Artist: "Artist", Album: "Album", Year: 2001}
+	tr := Track{Title: "Title", TrackNumber: 7}
+	if err := writeMP3Tags(path, al, tr); err != nil {
+		t.Fatalf("writeMP3Tags: %v", err)
+	}
+
+	f, err := os.Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		t.Fatalf("read back tags: %v", err)
+	}
+	if m.Title() != "Title" || m.Artist() != "Artist" || m.Album() != "Album" {
+		t.Fatalf("tags = %+v/%+v/%+v, want corrected values", m.Title(), m.Artist(), m.Album())
+	}
+	if got, _ := m.Track(); got != 7 {
+		t.Fatalf("track number = %d, want 7", got)
+	}
+}
+
 func TestCopyWritesBackCorrectedTagsToFLAC(t *testing.T) {
 	root := t.TempDir()
 	dest := filepath.Join(root, "Corrected Artist", "1999.Corrected Album", "05.Corrected Title.flac")

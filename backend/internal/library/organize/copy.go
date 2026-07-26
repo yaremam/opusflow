@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,8 +83,9 @@ func Copy(ctx context.Context, store Store, importID int64, plan Plan) RunSummar
 			processed++
 			if err != nil {
 				summary.FilesFailed++
+				log.Printf("library: import %d: %s: %v", importID, tr.SourcePath, err)
 				if rerr := store.RecordImportError(ctx, importID, tr.SourcePath, err.Error()); rerr != nil {
-					_ = rerr
+					log.Printf("library: import %d: recording error for %s: %v", importID, tr.SourcePath, rerr)
 				}
 			} else {
 				summary.FilesProcessed++
@@ -187,7 +189,18 @@ func readGenreAndArtwork(path string) (genre string, artwork []byte, err error) 
 func writeMP3Tags(path string, al Album, tr Track) error {
 	tg, err := id3v2.Open(path, id3v2.Options{Parse: true})
 	if err != nil {
-		return err
+		// Some real-world encoders write a frame whose declared size
+		// doesn't reconcile with the tag's own declared byte budget —
+		// id3v2's strict frame-by-frame parser refuses to open the file at
+		// all (e.g. ErrBodyOverflow). The source file itself can't be
+		// fixed, so retry without parsing existing frames and write a
+		// fresh tag with just the fields below rather than failing the
+		// whole import.
+		tg.Close()
+		tg, err = id3v2.Open(path, id3v2.Options{Parse: false})
+		if err != nil {
+			return err
+		}
 	}
 	defer tg.Close()
 
