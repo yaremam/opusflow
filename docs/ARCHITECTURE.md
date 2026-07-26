@@ -232,7 +232,9 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   outcome independently.
 - **`web/`** — `react-router` routes wrapped in `src/components/AppLayout.tsx`
   (persistent Home/Artists/Albums/Songs/Import/Libraries header nav):
-  `src/pages/HomePage.tsx` (library snapshot + recently-added previews),
+  `src/pages/HomePage.tsx` (library snapshot + recently-added previews, with
+  a grid/table toggle over the artists/albums previews — TDR 008,
+  remembered in `localStorage`, the app's first persisted UI preference),
   `src/pages/ArtistsPage.tsx` / `AlbumsPage.tsx` / `SongsPage.tsx` (paginated,
   sortable, filterable index pages, sharing fetch/pagination logic via
   `src/hooks/useListPage.ts`), `src/pages/ArtistDetailPage.tsx` /
@@ -319,6 +321,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Home page table view | [008](tdr/008_home_page_table_view_design.md) | A shared "▦ Grid / ☰ Table" toggle above the home page's Recently added artists/albums sections; table columns (Artist/Albums/Songs, Album/Artist/Year) sourced entirely from fields the existing API responses already carry; choice remembered in `localStorage`, no backend change | GitHub issue #8; a large library benefits from scanning more rows at once with more detail per row than the card/chip grid shows, without giving up the grid for people who prefer it |
 | Artwork status, manual retry & upload | [007](tdr/007_artwork_retry_and_upload_design.md) | Art status (pending/found/not_found/failed) exposed via the API and surfaced as a badge/pill wherever it's rendered; "Retry lookup" resets status to pending and wakes the background job immediately, always available even on a `found` item; "Upload photo/cover" bypasses MusicBrainz/Cover Art Archive entirely, synchronous, always available; `SetArtistArt`/`SetAlbumArt` fixed to only overwrite path columns on a `Found` write | The API previously couldn't distinguish "still looking" from "gave up," and a `failed`/`not_found` item had no way to be nudged short of a new import; scoped to Art only, Facts/Bio/Description unchanged |
 | Multiple libraries | [006](tdr/006_multiple_libraries_design.md) | `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS` env vars removed; a library (name + root folder, now creatable on the spot rather than needing to pre-exist) is created/deleted from within the app, several can exist; catalog browsing stays unified across all of them; filesystem browsing confined to `DATA_DIR` when configured (unrestricted from `/` otherwise — amended post-TDR-006, see `DATA_DIR` above); deleting a library cascades with the same keep-or-delete-files choice as artist/album removal | A fixed, deploy-time destination folder was inflexible for more than one logical collection, and coupled a purely operational choice to a redeploy rather than something changeable in the app |
 | Organize-on-import *(its single-`LIBRARY_ROOT` destination superseded by [006](tdr/006_multiple_libraries_design.md))* | [005](tdr/005_organize_on_import_design.md) | Replaces add-directory/scan-in-place entirely: import copies files from a chosen source into a single `LIBRARY_ROOT`, renamed into `<Artist>/<Year>.<Album>/<NN>.<Title>`; review-before-copy with server-computed destinations/conflicts; tag write-back scoped to MP3/FLAC; direct artist/album deletion with explicit keep-or-delete-files choice | The original scan-in-place model left files wherever they started, with no consistent on-disk naming — organizing them is the point, not an optional extra step |

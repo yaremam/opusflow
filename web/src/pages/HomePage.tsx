@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useNavigate } from 'react-router'
 import {
   errorMessage,
   formatDuration,
@@ -16,6 +16,16 @@ import ArtTile from '../components/ArtTile'
 import '../styles/catalog.css'
 
 const PREVIEW_COUNT = 8
+
+// VIEW_MODE_KEY is the first bit of client-side UI state this app persists
+// (TDR 008) — grid/table is a standing preference, not per-visit page
+// state, so it's remembered across visits rather than resetting every load.
+const VIEW_MODE_KEY = 'opusflow.homeViewMode'
+type ViewMode = 'grid' | 'table'
+
+function loadViewMode(): ViewMode {
+  return localStorage.getItem(VIEW_MODE_KEY) === 'table' ? 'table' : 'grid'
+}
 
 function greeting(): string {
   const hour = new Date().getHours()
@@ -35,8 +45,15 @@ interface HomeData {
 }
 
 export default function HomePage() {
+  const navigate = useNavigate()
   const [data, setData] = useState<HomeData | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [viewMode, setViewMode] = useState<ViewMode>(loadViewMode)
+
+  function setView(mode: ViewMode) {
+    setViewMode(mode)
+    localStorage.setItem(VIEW_MODE_KEY, mode)
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -126,32 +143,102 @@ export default function HomePage() {
             </div>
           )}
 
+          <div className="toolbar-row">
+            <span className="hint">Recently added, newest first</span>
+            <div className="view-toggle">
+              <button type="button" className={viewMode === 'grid' ? 'active' : ''} onClick={() => setView('grid')}>
+                ▦ Grid
+              </button>
+              <button type="button" className={viewMode === 'table' ? 'active' : ''} onClick={() => setView('table')}>
+                ☰ Table
+              </button>
+            </div>
+          </div>
+
           <div className="section-head">
             <h2>Recently added artists</h2>
             <Link to="/artists">See all artists →</Link>
           </div>
-          <div className="chip-row">
-            {data.artists.map((artist) => (
-              <Link key={artist.id} className="artist-chip" to={`/artists/${artist.id}`}>
-                <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" artStatus={artist.artStatus} />
-                <span className="name">{artist.name || 'Unknown Artist'}</span>
-              </Link>
-            ))}
-          </div>
+          {viewMode === 'grid' ? (
+            <div className="chip-row">
+              {data.artists.map((artist) => (
+                <Link key={artist.id} className="artist-chip" to={`/artists/${artist.id}`}>
+                  <ArtTile src={artist.photoThumbUrl} alt="" className="avatar" kind="artist" artStatus={artist.artStatus} />
+                  <span className="name">{artist.name || 'Unknown Artist'}</span>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Artist</th>
+                  <th className="num">Albums</th>
+                  <th className="num">Songs</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.artists.map((artist) => (
+                  <tr key={artist.id} className="row-link" onClick={() => navigate(`/artists/${artist.id}`)}>
+                    <td>
+                      <div className="row-thumb">
+                        <ArtTile
+                          src={artist.photoThumbUrl}
+                          alt=""
+                          className="avatar sm"
+                          kind="artist"
+                          artStatus={artist.artStatus}
+                        />
+                        <span className="name">{artist.name || 'Unknown Artist'}</span>
+                      </div>
+                    </td>
+                    <td className="num">{artist.albumCount}</td>
+                    <td className="num">{artist.trackCount}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           <div className="section-head">
             <h2>Recently added albums</h2>
             <Link to="/albums">See all albums →</Link>
           </div>
-          <div className="card-grid">
-            {data.albums.map((album) => (
-              <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
-                <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" artStatus={album.artStatus} />
-                <div className="title">{album.title || 'Unknown Album'}</div>
-                <div className="artist">{album.artistName || 'Unknown Artist'}</div>
-              </Link>
-            ))}
-          </div>
+          {viewMode === 'grid' ? (
+            <div className="card-grid">
+              {data.albums.map((album) => (
+                <Link key={album.id} className="album-card" to={`/albums/${album.id}`}>
+                  <ArtTile src={album.coverThumbUrl} alt="" className="art" kind="album" artStatus={album.artStatus} />
+                  <div className="title">{album.title || 'Unknown Album'}</div>
+                  <div className="artist">{album.artistName || 'Unknown Artist'}</div>
+                </Link>
+              ))}
+            </div>
+          ) : (
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Album</th>
+                  <th>Artist</th>
+                  <th className="num">Year</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.albums.map((album) => (
+                  <tr key={album.id} className="row-link" onClick={() => navigate(`/albums/${album.id}`)}>
+                    <td>
+                      <div className="row-thumb">
+                        <ArtTile src={album.coverThumbUrl} alt="" className="art sm" kind="album" artStatus={album.artStatus} />
+                        <span className="name">{album.title || 'Unknown Album'}</span>
+                      </div>
+                    </td>
+                    <td>{album.artistName || 'Unknown Artist'}</td>
+                    <td className="num">{album.year > 0 ? album.year : ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
 
           <div className="section-head">
             <h2>Recently added songs</h2>
