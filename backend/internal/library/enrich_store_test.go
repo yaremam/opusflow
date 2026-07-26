@@ -1,0 +1,223 @@
+package library
+
+import (
+	"testing"
+
+	"github.com/yaremam/opusflow/backend/internal/library/enrich"
+	"github.com/yaremam/opusflow/backend/internal/library/scan"
+)
+
+// insertTrackFor is a small helper: InsertTrack upserts the artist/album
+// rows a test needs, exercising the same path a real scan uses.
+func insertTrackFor(t *testing.T, s *Store, artist, album string) {
+	t.Helper()
+	if err := s.InsertTrack(ctx(), scan.Track{
+		DirectoryID: mustAddDirectory(t, s),
+		Path:        "/music/" + artist + "/" + album + "/track.mp3",
+		Title:       "Track",
+		Artist:      artist,
+		Album:       album,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+}
+
+func mustAddDirectory(t *testing.T, s *Store) int64 {
+	t.Helper()
+	dir, err := s.AddDirectory(ctx(), "/music", "/music/"+randomSuffix())
+	if err != nil {
+		t.Fatalf("AddDirectory: %v", err)
+	}
+	return dir.ID
+}
+
+func TestArtistsNeedingEnrichmentExcludesUnknownArtist(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Real Artist", "Some Album")
+	insertTrackFor(t, s, "", "") // Unknown Artist / Unknown Album
+
+	targets, err := s.ArtistsNeedingEnrichment(ctx(), 100)
+	if err != nil {
+		t.Fatalf("ArtistsNeedingEnrichment: %v", err)
+	}
+	for _, target := range targets {
+		if target.Name == "" {
+			t.Fatalf("expected Unknown Artist to be excluded, got %+v", target)
+		}
+	}
+
+	found := false
+	for _, target := range targets {
+		if target.Name == "Real Artist" {
+			found = true
+			if target.ArtStatus != enrich.Pending || target.FactsStatus != enrich.Pending || target.BioStatus != enrich.Pending {
+				t.Fatalf("expected all-pending for a freshly-inserted artist, got %+v", target)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("expected Real Artist in the needing-enrichment list")
+	}
+}
+
+func TestAlbumsNeedingEnrichmentExcludesUnknownAlbum(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Real Artist", "Real Album")
+	insertTrackFor(t, s, "Real Artist", "")
+
+	targets, err := s.AlbumsNeedingEnrichment(ctx(), 100)
+	if err != nil {
+		t.Fatalf("AlbumsNeedingEnrichment: %v", err)
+	}
+	for _, target := range targets {
+		if target.Title == "" {
+			t.Fatalf("expected Unknown Album to be excluded, got %+v", target)
+		}
+	}
+}
+
+func TestSetArtistArtRoundTrips(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Photo Artist", "Album")
+	artist := findArtistByName(t, s, "Photo Artist")
+
+	if err := s.SetArtistMusicBrainzID(ctx(), artist.ID, "mbid-123"); err != nil {
+		t.Fatalf("SetArtistMusicBrainzID: %v", err)
+	}
+	if err := s.SetArtistArt(ctx(), artist.ID, enrich.Found, "/artwork/artist/1/thumb.jpg", "/artwork/artist/1/full.jpg"); err != nil {
+		t.Fatalf("SetArtistArt: %v", err)
+	}
+
+	got, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if got.PhotoThumbURL != "/artwork/artist/1/thumb.jpg" || got.PhotoURL != "/artwork/artist/1/full.jpg" {
+		t.Fatalf("got photo URLs %q / %q", got.PhotoThumbURL, got.PhotoURL)
+	}
+
+	targets, err := s.ArtistsNeedingEnrichment(ctx(), 100)
+	if err != nil {
+		t.Fatalf("ArtistsNeedingEnrichment: %v", err)
+	}
+	for _, target := range targets {
+		if target.ID == artist.ID && target.MusicBrainzID != "mbid-123" {
+			t.Fatalf("expected cached MBID, got %+v", target)
+		}
+		if target.ID == artist.ID && target.ArtStatus != enrich.Found {
+			t.Fatalf("expected ArtStatus found after SetArtistArt, got %+v", target)
+		}
+	}
+}
+
+func TestSetArtistFactsAndBioRoundTrip(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Facts Artist", "Album")
+	artist := findArtistByName(t, s, "Facts Artist")
+
+	if err := s.SetArtistFacts(ctx(), artist.ID, enrich.Found, 1999, "UK", []string{"Dream pop", "Shoegaze"}); err != nil {
+		t.Fatalf("SetArtistFacts: %v", err)
+	}
+	if err := s.SetArtistBio(ctx(), artist.ID, enrich.NotFound, "", ""); err != nil {
+		t.Fatalf("SetArtistBio: %v", err)
+	}
+
+	got, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if got.FormedYear != 1999 || got.Country != "UK" {
+		t.Fatalf("got facts %+v", got.Artist)
+	}
+	if len(got.Genres) != 2 || got.Genres[0] != "Dream pop" || got.Genres[1] != "Shoegaze" {
+		t.Fatalf("got genres %+v", got.Genres)
+	}
+	if got.Bio != "" {
+		t.Fatalf("expected empty bio after not_found, got %q", got.Bio)
+	}
+
+	// Facts (found) and bio (not_found) are both settled, but art was never
+	// touched by this test — it must still show pending, and the artist
+	// must still surface from the needing-enrichment query on that basis
+	// alone. Each of the three kinds tracks its own status independently
+	// (AC-8) rather than art/facts/bio all moving together.
+	targets, err := s.ArtistsNeedingEnrichment(ctx(), 100)
+	if err != nil {
+		t.Fatalf("ArtistsNeedingEnrichment: %v", err)
+	}
+	var target *enrich.ArtistTarget
+	for i := range targets {
+		if targets[i].ID == artist.ID {
+			target = &targets[i]
+		}
+	}
+	if target == nil {
+		t.Fatal("expected Facts Artist to still surface (art status still pending)")
+	}
+	if target.FactsStatus != enrich.Found || target.BioStatus != enrich.NotFound || target.ArtStatus != enrich.Pending {
+		t.Fatalf("got %+v", target)
+	}
+}
+
+func TestSetAlbumArtFactsDescriptionRoundTrip(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Album Artist", "Cover Album")
+	album := findAlbumByTitle(t, s, "Cover Album")
+
+	if err := s.SetAlbumMusicBrainzID(ctx(), album.ID, "rg-456"); err != nil {
+		t.Fatalf("SetAlbumMusicBrainzID: %v", err)
+	}
+	if err := s.SetAlbumArt(ctx(), album.ID, enrich.Found, "/artwork/album/1/thumb.jpg", "/artwork/album/1/full.jpg"); err != nil {
+		t.Fatalf("SetAlbumArt: %v", err)
+	}
+	if err := s.SetAlbumFacts(ctx(), album.ID, enrich.Found, "Harbor & Kite", "UK", []string{"Dream pop"}); err != nil {
+		t.Fatalf("SetAlbumFacts: %v", err)
+	}
+	if err := s.SetAlbumDescription(ctx(), album.ID, enrich.Found, "A record about tides.", "https://en.wikipedia.org/wiki/Example"); err != nil {
+		t.Fatalf("SetAlbumDescription: %v", err)
+	}
+
+	got, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if got.CoverThumbURL != "/artwork/album/1/thumb.jpg" || got.CoverURL != "/artwork/album/1/full.jpg" {
+		t.Fatalf("got cover URLs %q / %q", got.CoverThumbURL, got.CoverURL)
+	}
+	if got.Label != "Harbor & Kite" || got.Country != "UK" || len(got.Genres) != 1 {
+		t.Fatalf("got facts %+v", got.Album)
+	}
+	if got.Description != "A record about tides." || got.DescriptionSourceURL == "" {
+		t.Fatalf("got description %+v", got.Album)
+	}
+}
+
+func findArtistByName(t *testing.T, s *Store, name string) Artist {
+	t.Helper()
+	page, err := s.ListArtists(ctx(), ListOptions{Page: 1, PageSize: 100, Query: name})
+	if err != nil {
+		t.Fatalf("ListArtists: %v", err)
+	}
+	for _, a := range page.Items {
+		if a.Name == name {
+			return a
+		}
+	}
+	t.Fatalf("artist %q not found", name)
+	return Artist{}
+}
+
+func findAlbumByTitle(t *testing.T, s *Store, title string) Album {
+	t.Helper()
+	page, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 100, Query: title})
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+	for _, al := range page.Items {
+		if al.Title == title {
+			return al
+		}
+	}
+	t.Fatalf("album %q not found", title)
+	return Album{}
+}
