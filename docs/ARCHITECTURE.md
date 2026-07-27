@@ -20,10 +20,12 @@ folder) created and managed from the app itself, with more than one able to
 exist side by side — removing the `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS`
 environment variables entirely; filesystem browsing (for both an import
 source and a new library's root, which can now also be created on the spot
-rather than needing to already exist) is confined to `DATA_DIR` when
-configured (`/data` in `deploy/docker-compose.yml`), or unrestricted from
-`/` when it isn't (e.g. a plain `go run` with no such mount to confine
-anything to). On top of that: a Home screen plus Artist/Album/Song browsing
+rather than needing to already exist) is confined to `DATA_DIR`, which
+defaults to `/data` (every compose file, root and `deploy/`, mounts the
+music volume there — an operator never has to set this themselves) and is
+overridable, including to unrestricted from `/`, for a plain `go run` with
+no such mount to confine anything to. On top of that: a Home screen plus
+Artist/Album/Song browsing
 ([TDR 002](tdr/002_home_and_browsing_design.md)), artist/album artwork plus
 MusicBrainz/Wikipedia-sourced facts and bio
 ([TDR 003](tdr/003_artwork_and_info_design.md)), and self-hosted deployment
@@ -89,10 +91,12 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   `8080`), `STATIC_DIR` (set to `/app/web` in the Docker image; empty in
   local `go run`, which then serves API-only), `ARTWORK_DIR` (optional,
   like `STATIC_DIR` — unset disables embedded-art saving and the enrichment
-  job entirely rather than erroring), and `DATA_DIR` (optional — set to
-  `/data` in the Docker image, confining filesystem browsing and
-  library-root creation to under it; unset means unrestricted from `/`,
-  e.g. a plain `go run` with nothing to confine anything to). There is no
+  job entirely rather than erroring), and `DATA_DIR` (defaults to `/data`,
+  confining filesystem browsing and library-root creation to under it —
+  every compose file mounts the music volume there, so this doesn't need to
+  be set for a Docker deployment; overridable, including to unrestricted
+  from `/`, e.g. for a plain `go run` with nothing mounted at `/data` at
+  all). There is no
   `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS` env var (removed by
   [TDR 006](tdr/006_multiple_libraries_design.md)) — a library's root is
   created and stored in the database from within the app, and can now be

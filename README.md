@@ -39,7 +39,9 @@ docker compose up -d --build
 ```
 
 This builds the app image (web build + Go build, multi-stage), and starts
-Postgres and the app together.
+Postgres and the app together. Music you want to import must live under
+`./data` (created automatically on first run) — the Libraries page's folder
+picker and the import source browser are both confined to that mount.
 
 Verify it's up:
 ```sh
