@@ -182,6 +182,12 @@ for self-hosting without a Go/Node toolchain on the target machine — see
     /api/library/albums/{id}/covers/{coverId}/primary` / `DELETE
     /api/library/albums/{id}/covers/{coverId}?deleteFile=true|false` —
     album-flavored counterparts of the four artist routes above
+  - `GET /api/library/songs/{id}/stream` — a track's audio bytes (TDR 015),
+    via `http.ServeContent` against the opened file (range requests,
+    206 Partial Content, and content sniffing all handled by the stdlib
+    directly — no hand-rolled range parsing); `Content-Type` set explicitly
+    per extension first, since Go's default `mime` package doesn't reliably
+    know several of these
   - `GET /api/metadata/artists?q=` — search MusicBrainz artists by name,
     every match (not just the top-ranked one); `503` if the interactive
     search client isn't wired up (it always is, see `MusicBrainz` above)
@@ -346,8 +352,20 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   choice); an always-available "Add photo/cover" tile uploads, which
   always adds rather than replaces. `src/components/ArtActions.tsx` is now
   just the "Retry lookup" action — uploading moved into `ArtworkGallery`
-  once it stopped being a single-image replace. `src/api/library.ts` is
-  the typed fetch client.
+  once it stopped being a single-image replace. `src/player/` (TDR 015)
+  is this app's first global client state: `context.ts` defines the
+  `PlayerContextValue`/`PlayableTrack` shapes, `PlayerContext.tsx`'s
+  `PlayerProvider` owns the one shared `<audio>` element and is rooted in
+  `AppLayout.tsx` (the layout route, so it survives every page
+  navigation), `usePlayer.ts` is the consuming hook — split into three
+  files so only `PlayerProvider` (a component) lives in the `.tsx` file,
+  keeping fast-refresh happy. `src/components/MiniPlayer.tsx` (the docked
+  bottom bar) and `QueueDrawer.tsx` (upcoming tracks, native HTML5
+  drag-and-drop reorder) are rendered by `AppLayout.tsx` alongside
+  `<Outlet />`; `src/components/PlayButton.tsx` is the shared per-row
+  control on `SongsPage.tsx`/`AlbumDetailPage.tsx`, disabled for a
+  `format === "wv"` track. `src/api/library.ts` is the typed fetch
+  client.
 - **`mobile/`** — untouched Expo starter. No navigation or API client added
   yet.
 
@@ -423,6 +441,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| In-browser audio player | [015](tdr/015_audio_player_design.md) | New `GET /api/library/songs/{id}/stream` (`http.ServeContent`, range requests handled by the stdlib); a persistent mini-player bar + queue drawer rooted in `AppLayout.tsx` (the one component that survives every route change), holding playback state in a `PlayerProvider`/`usePlayer()` React Context — this app's first global client state, no new dependency; clicking a track queues the rest of the list it came from and auto-advances; drag-and-drop queue reorder via native HTML5 DnD; `Song`/`AlbumTrack` gain a server-derived `format` field (the raw path itself never exposed) so a WavPack track's play button can be disabled, since no browser can decode that format | GitHub issue/request: play the library directly in the web app rather than it being catalog-only; grilling scoped this to local (this browser tab) playback only — no persistence across reload, no mobile, no WavPack transcoding |
 | Multiple artworks per artist/album | [014](tdr/014_multiple_artworks_design.md) | Real gallery, not a single-image slot: new `artist_photos`/`album_covers` tables (one row per image, content-hash deduped, exactly one `is_primary`); manual upload always adds rather than replaces; Cover Art Archive's full typed image set fetched via `FetchAll` (front/back/booklet/...), not just the front cover; every embedded picture extracted across all five supported formats (MP3 APIC frames, FLAC PICTURE blocks, WavPack's APEv2 `Cover Art (*)` items, plus hand-rolled OGG Vorbis-comment and M4A `covr`-atom parsing, neither of which any existing dependency supports); new `ArtworkGallery` web component, mocked up and signed off before implementation | GitHub issue #14; grilling converged on full parity across every available source rather than a smaller first cut, given how much artwork this app was already silently discarding down to one image per entity |
 | WavPack (.wv) support | [013](tdr/013_wavpack_support_design.md) | `.wv` recognized by format detection (was silently skipped before); new hand-rolled `scan/duration.WavPack` parser (block-header total-samples, falling back to a full block scan); new `apev2` package reads/writes APEv2 tags (Artist/Album/Title/Track/Year/Genre/cover art) since `dhowden/tag` has no APEv2 support and no mature Go library exists; a sibling `.wvc` hybrid-mode correction file is detected, copied alongside its `.wv`, and conflict-checked the same as any other file, with a small icon on its review row | GitHub issue #18; the user wanted full parity with MP3/FLAC rather than a detection-only first cut — confirmed via grilling, not assumed |
 | Metadata lookup during import | [012](tdr/012_metadata_lookup_during_import_design.md) | Per-album "Look up metadata" flow on the import review screen: search MusicBrainz artists → browse their albums (release-groups) → pick a specific release (edition) → review its track listing matched onto the album's files by row order → one "Apply" commits everything; new interactive `MusicBrainz` search/browse/track-listing methods, exposed via `/api/metadata/*`, sharing the existing rate limiter but constructed independently of `ARTWORK_DIR` | GitHub issue #17; the by-ID background enrichment job (TDR 003) can't help when tags are missing/wrong going into the review step — needed a person-driven search-and-pick path, not another silent job |

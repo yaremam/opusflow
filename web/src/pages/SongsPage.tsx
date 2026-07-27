@@ -1,12 +1,33 @@
 import { Link } from 'react-router'
-import { formatDuration, listSongs } from '../api/library'
+import { formatDuration, listSongs, type Song } from '../api/library'
 import { useListPage } from '../hooks/useListPage'
 import Pager from '../components/Pager'
 import ArtTile from '../components/ArtTile'
+import PlayButton from '../components/PlayButton'
+import type { PlayableTrack } from '../player/context'
+import { usePlayer } from '../player/usePlayer'
 import '../styles/catalog.css'
+
+function toPlayableTrack(song: Song): PlayableTrack {
+  return {
+    id: song.id,
+    title: song.title,
+    artistName: song.artistName,
+    albumTitle: song.albumTitle,
+    albumCoverThumbUrl: song.albumCoverThumbUrl,
+    durationSeconds: song.durationSeconds,
+    format: song.format,
+  }
+}
 
 export default function SongsPage() {
   const { filters, setFilter, page, loadError, totalPages } = useListPage(listSongs)
+  const player = usePlayer()
+
+  function handlePlay(index: number) {
+    if (!page) return
+    player.playFrom(page.items.map(toPlayableTrack), index)
+  }
 
   return (
     <div className="page-shell">
@@ -49,8 +70,9 @@ export default function SongsPage() {
       {page && page.items.length === 0 && !loadError && <p className="sub">No songs match these filters.</p>}
 
       <div>
-        {page?.items.map((song) => (
+        {page?.items.map((song, index) => (
           <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
+            <PlayButton track={toPlayableTrack(song)} onPlay={() => handlePlay(index)} />
             <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" artStatus={song.albumArtStatus} />
             <div>
               <div className="t">{song.title}</div>

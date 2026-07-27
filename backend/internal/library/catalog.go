@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lib/pq"
@@ -19,6 +21,10 @@ var ErrArtistNotFound = errors.New("artist not found")
 // ErrAlbumNotFound is returned when an album ID doesn't match any
 // registered album.
 var ErrAlbumNotFound = errors.New("album not found")
+
+// ErrSongNotFound is returned when a song (track) ID doesn't match any
+// registered track.
+var ErrSongNotFound = errors.New("song not found")
 
 // Artist is one artist attributed to at least one track in the library.
 // Untagged tracks are attributed to a real "Unknown Artist" row (empty
@@ -84,6 +90,7 @@ type Song struct {
 	Genre              string        `json:"genre"`
 	DurationSeconds    int           `json:"durationSeconds"`
 	CreatedAt          time.Time     `json:"createdAt"`
+	Format             string        `json:"format"`
 }
 
 // AlbumTrack is one track within an AlbumDetail's listing — narrower than
@@ -93,6 +100,16 @@ type AlbumTrack struct {
 	Title           string `json:"title"`
 	TrackNumber     int    `json:"trackNumber"`
 	DurationSeconds int    `json:"durationSeconds"`
+	Format          string `json:"format"`
+}
+
+// trackFormat derives a track's format (TDR 015) from its on-disk path's
+// extension — lowercased, dot stripped ("mp3"/"flac"/"m4a"/"ogg"/"wv").
+// The path itself is never part of any API response; only this derived
+// label is, the same privacy stance artwork's relative /artwork/ URLs
+// already take toward ARTWORK_DIR's real filesystem location.
+func trackFormat(path string) string {
+	return strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 }
 
 // ArtistDetail is a single artist plus every album attributed to them,
@@ -378,7 +395,7 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, track_number, duration_seconds
+		SELECT id, title, track_number, duration_seconds, path
 		FROM tracks
 		WHERE album_id = $1
 		ORDER BY track_number ASC, title ASC
@@ -391,9 +408,11 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	d.Tracks = []AlbumTrack{}
 	for rows.Next() {
 		var t AlbumTrack
-		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNumber, &t.DurationSeconds); err != nil {
+		var path string
+		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNumber, &t.DurationSeconds, &path); err != nil {
 			return AlbumDetail{}, fmt.Errorf("scanning track: %w", err)
 		}
+		t.Format = trackFormat(path)
 		d.Tracks = append(d.Tracks, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -414,7 +433,7 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.title, t.artist_id, ar.name, t.album_id, al.title,
 		       COALESCE(ac.thumb_path, ''), al.art_status,
-		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at,
+		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at, t.path,
 		       COUNT(*) OVER()
 		FROM tracks t
 		JOIN artists ar ON ar.id = t.artist_id
@@ -433,16 +452,33 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	page := Page[Song]{Page: opts.Page, PageSize: opts.PageSize, Items: []Song{}}
 	for rows.Next() {
 		var sg Song
+		var path string
 		if err := rows.Scan(
 			&sg.ID, &sg.Title, &sg.ArtistID, &sg.ArtistName, &sg.AlbumID, &sg.AlbumTitle, &sg.AlbumCoverThumbURL, &sg.AlbumArtStatus,
-			&sg.TrackNumber, &sg.Year, &sg.Genre, &sg.DurationSeconds, &sg.CreatedAt, &page.TotalCount,
+			&sg.TrackNumber, &sg.Year, &sg.Genre, &sg.DurationSeconds, &sg.CreatedAt, &path, &page.TotalCount,
 		); err != nil {
 			return Page[Song]{}, fmt.Errorf("scanning song: %w", err)
 		}
+		sg.Format = trackFormat(path)
 		page.Items = append(page.Items, sg)
 	}
 	if err := rows.Err(); err != nil {
 		return Page[Song]{}, err
 	}
 	return page, nil
+}
+
+// GetSongPath resolves id to its on-disk path (TDR 015) — used only by
+// the audio-streaming handler; the path itself is never part of any List/
+// Get response (see trackFormat's doc comment).
+func (s *Store) GetSongPath(ctx context.Context, id int64) (string, error) {
+	var path string
+	err := s.db.QueryRowContext(ctx, `SELECT path FROM tracks WHERE id = $1`, id).Scan(&path)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrSongNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("getting song path: %w", err)
+	}
+	return path, nil
 }

@@ -83,6 +83,7 @@ type ImportStore interface {
 	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
 	GetAlbum(ctx context.Context, id int64) (AlbumDetail, error)
 	ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error)
+	GetSongPath(ctx context.Context, id int64) (string, error)
 }
 
 // defaultPageSize/maxPageSize bound ListOptions.PageSize once normalized by
@@ -551,4 +552,10 @@ func (s *Service) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 // ListSongs returns a page of songs (tracks) matching opts.
 func (s *Service) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error) {
 	return s.store.ListSongs(ctx, normalizeListOptions(opts))
+}
+
+// GetSongPath resolves id to its on-disk path (TDR 015), for the audio
+// streaming handler — never itself part of a List/Get JSON response.
+func (s *Service) GetSongPath(ctx context.Context, id int64) (string, error) {
+	return s.store.GetSongPath(ctx, id)
 }

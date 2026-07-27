@@ -348,6 +348,9 @@ func (f *fakeImportStore) GetAlbum(context.Context, int64) (AlbumDetail, error) 
 func (f *fakeImportStore) ListSongs(context.Context, ListOptions) (Page[Song], error) {
 	return Page[Song]{Items: []Song{}}, nil
 }
+func (f *fakeImportStore) GetSongPath(context.Context, int64) (string, error) {
+	return "", ErrSongNotFound
+}
 
 type copyCall struct {
 	importID int64

@@ -138,6 +138,10 @@ export interface Song {
   genre: string
   durationSeconds: number
   createdAt: string
+  // format is the track's file extension (TDR 015), lowercased and
+  // dot-stripped ("mp3"/"flac"/"m4a"/"ogg"/"wv") — used to disable
+  // playback for formats no browser can decode (WavPack).
+  format: string
 }
 
 // hasArtProblem is the one rule every badge/pill in the app follows: show
@@ -153,6 +157,7 @@ export interface AlbumTrack {
   title: string
   trackNumber: number
   durationSeconds: number
+  format: string
 }
 
 // ArtistPhoto/AlbumCover are one image in an artist's/album's gallery (TDR
@@ -485,6 +490,13 @@ export function getAlbum(id: number): Promise<AlbumDetail> {
 
 export function listSongs(params: ListParams = {}): Promise<Page<Song>> {
   return request(`/api/library/songs${listParams(params)}`)
+}
+
+// streamURL builds the audio-streaming URL for a track (TDR 015) — handed
+// straight to an <audio> element's src, never fetched directly, so the
+// browser can issue its own range requests against it.
+export function streamURL(id: number): string {
+  return `/api/library/songs/${id}/stream`
 }
 
 // ArtistMatch/ReleaseGroupMatch/ReleaseMatch/MetadataTrack mirror the

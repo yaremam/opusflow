@@ -235,7 +235,7 @@
 
 .song-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 0.85rem;
   padding: 0.5rem 0.15rem;
@@ -454,6 +454,9 @@ table.track-table td.dur {
 table.track-table td.trk {
   color: var(--mist-400);
   font-variant-numeric: tabular-nums;
+  width: 2.5rem;
+}
+table.track-table td.play {
   width: 2.5rem;
 }
 
