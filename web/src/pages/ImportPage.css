@@ -341,6 +341,16 @@
   flex-shrink: 0;
   white-space: nowrap;
 }
+.album-select-all {
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.album-none-selected {
+  color: var(--warn);
+}
 
 .field-inline {
   background: var(--ink-950);
@@ -383,6 +393,14 @@
 .track-plan-table tr:first-child td {
   border-top: none;
 }
+.tp-check {
+  width: 2.25rem;
+  padding-right: 0;
+}
+.tp-check input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .tp-num {
   width: 4.5rem;
   color: var(--mist-400);
@@ -410,6 +428,16 @@
 }
 .conflict-row td {
   background: var(--bad-bg);
+}
+.excluded td {
+  opacity: 0.45;
+}
+.excluded .tp-check {
+  opacity: 1;
+}
+.excluded .tp-title input,
+.excluded .tp-dest {
+  text-decoration: line-through;
 }
 .conflict-note-cell {
   padding: 0 !important;

@@ -30,10 +30,6 @@ function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
 }
 
-function trackCount(plan: Plan): number {
-  return plan.albums.reduce((sum, al) => sum + al.tracks.length, 0)
-}
-
 function withAlbumField(plan: Plan, albumIndex: number, field: 'artist' | 'album' | 'year', value: string): Plan {
   return {
     albums: plan.albums.map((al, i): PlanAlbum => (i === albumIndex ? { ...al, [field]: field === 'year' ? Number(value) || 0 : value } : al)),
@@ -76,6 +72,76 @@ function errorFor(errors: ValidationError[], albumIndex: number, trackIndex: num
   return errors.find((e) => e.albumIndex === albumIndex && e.trackIndex === trackIndex)
 }
 
+function trackKey(albumIndex: number, trackIndex: number): string {
+  return `${albumIndex}:${trackIndex}`
+}
+
+type Selection = 'all' | 'none' | 'mixed'
+
+function isExcluded(albumIndex: number, trackIndex: number, excluded: Set<string>): boolean {
+  return excluded.has(trackKey(albumIndex, trackIndex))
+}
+
+function albumSelection(al: PlanAlbum, albumIndex: number, excluded: Set<string>): Selection {
+  if (al.tracks.length === 0) return 'all'
+  const excludedCount = al.tracks.filter((_, ti) => excluded.has(trackKey(albumIndex, ti))).length
+  if (excludedCount === 0) return 'all'
+  if (excludedCount === al.tracks.length) return 'none'
+  return 'mixed'
+}
+
+function includedTrackCount(plan: Plan, excluded: Set<string>): number {
+  return plan.albums.reduce(
+    (sum, al, ai) => sum + al.tracks.filter((_, ti) => !excluded.has(trackKey(ai, ti))).length,
+    0,
+  )
+}
+
+// buildIncludedPlan strips excluded tracks out of the payload sent to
+// validatePlan/confirmImport — the backend never needs to know a track was
+// excluded, it just never sees it (TDR 011). indexMaps[albumIndex][j] is
+// the original trackIndex the j-th included track came from, needed to
+// translate the response's plan/errors (indexed into the filtered arrays)
+// back onto the full local plan's original indices.
+function buildIncludedPlan(plan: Plan, excluded: Set<string>): { plan: Plan; indexMaps: number[][] } {
+  const indexMaps: number[][] = []
+  const albums = plan.albums.map((al, ai) => {
+    const map: number[] = []
+    const tracks = al.tracks.filter((_, ti) => {
+      const keep = !excluded.has(trackKey(ai, ti))
+      if (keep) map.push(ti)
+      return keep
+    })
+    indexMaps.push(map)
+    return { ...al, tracks }
+  })
+  return { plan: { albums }, indexMaps }
+}
+
+function remapErrors(errors: ValidationError[], indexMaps: number[][]): ValidationError[] {
+  return errors.map((e) => ({ ...e, trackIndex: indexMaps[e.albumIndex]?.[e.trackIndex] ?? e.trackIndex }))
+}
+
+// mergeIncludedPlan folds validatePlan's corrected fields (computed only
+// for the included subset, see buildIncludedPlan) back into the full local
+// plan — excluded tracks keep whatever they already had, since the backend
+// never touched them.
+function mergeIncludedPlan(fullPlan: Plan, resultPlan: Plan, indexMaps: number[][]): Plan {
+  return {
+    albums: fullPlan.albums.map((al, ai): PlanAlbum => {
+      const resultAlbum = resultPlan.albums[ai]
+      const map = indexMaps[ai] ?? []
+      return {
+        ...resultAlbum,
+        tracks: al.tracks.map((tr, ti) => {
+          const pos = map.indexOf(ti)
+          return pos === -1 ? tr : resultAlbum.tracks[pos]
+        }),
+      }
+    }),
+  }
+}
+
 export default function ImportPage() {
   const [step, setStep] = useState<Step>('list')
 
@@ -99,6 +165,7 @@ export default function ImportPage() {
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [bannerFlash, setBannerFlash] = useState(false)
+  const [excludedTracks, setExcludedTracks] = useState<Set<string>>(new Set())
 
   const [activeImport, setActiveImport] = useState<Import | null>(null)
 
@@ -125,6 +192,7 @@ export default function ImportPage() {
   function startImport() {
     setPlan(null)
     setErrors([])
+    setExcludedTracks(new Set())
     setPlanLoadError(null)
     setConfirmError(null)
     setSourceDescription('')
@@ -190,13 +258,37 @@ export default function ImportPage() {
   async function revalidate(next: Plan) {
     setPlan(next)
     if (libraryId == null) return
+    const { plan: filtered, indexMaps } = buildIncludedPlan(next, excludedTracks)
     try {
-      const result = await validatePlan(libraryId, next)
-      setPlan(result.plan)
-      setErrors(result.errors)
+      const result = await validatePlan(libraryId, filtered)
+      setPlan(mergeIncludedPlan(next, result.plan, indexMaps))
+      setErrors(remapErrors(result.errors, indexMaps))
     } catch (err) {
       setConfirmError(errorMessage(err))
     }
+  }
+
+  function toggleTrackExcluded(albumIndex: number, trackIndex: number) {
+    setExcludedTracks((prev) => {
+      const next = new Set(prev)
+      const key = trackKey(albumIndex, trackIndex)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
+  }
+
+  function toggleAlbumExcluded(al: PlanAlbum, albumIndex: number) {
+    const excludeAll = albumSelection(al, albumIndex, excludedTracks) === 'all'
+    setExcludedTracks((prev) => {
+      const next = new Set(prev)
+      al.tracks.forEach((_, ti) => {
+        const key = trackKey(albumIndex, ti)
+        if (excludeAll) next.add(key)
+        else next.delete(key)
+      })
+      return next
+    })
   }
 
   function handleAlbumFieldChange(albumIndex: number, field: 'artist' | 'album' | 'year', value: string) {
@@ -234,7 +326,7 @@ export default function ImportPage() {
   }
 
   function handleConfirmClick() {
-    if (hasErrors) {
+    if (confirmBlocked) {
       bannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
       setBannerFlash(true)
       setTimeout(() => setBannerFlash(false), 1000)
@@ -247,10 +339,11 @@ export default function ImportPage() {
     if (!plan || libraryId == null) return
     setConfirming(true)
     setConfirmError(null)
+    const { plan: filtered, indexMaps } = buildIncludedPlan(plan, excludedTracks)
     try {
-      const result = await confirmImport(libraryId, sourceDescription, plan)
+      const result = await confirmImport(libraryId, sourceDescription, filtered)
       if (result.errors) {
-        setErrors(result.errors)
+        setErrors(remapErrors(result.errors, indexMaps))
         return
       }
       if (result.import) {
@@ -291,8 +384,11 @@ export default function ImportPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, activeImport?.id])
 
-  const totalTracks = plan ? trackCount(plan) : 0
-  const hasErrors = errors.length > 0
+  const totalTracks = plan ? includedTrackCount(plan, excludedTracks) : 0
+  const relevantErrors = errors.filter((e) => !isExcluded(e.albumIndex, e.trackIndex, excludedTracks))
+  const hasErrors = relevantErrors.length > 0
+  const nothingSelected = plan != null && totalTracks === 0
+  const confirmBlocked = hasErrors || nothingSelected
 
   return (
     <div className="page-shell wide">
@@ -459,19 +555,32 @@ export default function ImportPage() {
 
           <div
             ref={bannerRef}
-            className={[hasErrors ? 'plan-banner' : 'plan-banner ok', bannerFlash ? 'flash' : ''].filter(Boolean).join(' ')}
+            className={[confirmBlocked ? 'plan-banner' : 'plan-banner ok', bannerFlash ? 'flash' : ''].filter(Boolean).join(' ')}
           >
             {hasErrors
-              ? `⚠ ${errors.length} track${errors.length === 1 ? '' : 's'} need${errors.length === 1 ? 's' : ''} attention — resolve to continue.`
-              : `Ready to import ${totalTracks} track${totalTracks === 1 ? '' : 's'}.`}
+              ? `⚠ ${relevantErrors.length} track${relevantErrors.length === 1 ? '' : 's'} need${relevantErrors.length === 1 ? 's' : ''} attention — resolve to continue.`
+              : nothingSelected
+                ? 'Nothing selected — check at least one track to import.'
+                : `Ready to import ${totalTracks} track${totalTracks === 1 ? '' : 's'}.`}
           </div>
 
           {plan.albums.map((al, albumIndex) => {
             const destDir = al.tracks[0]?.destPath.split('/').slice(0, -1).join('/') + '/'
             const conflictCount = al.tracks.filter((tr) => tr.conflict && !tr.overwrite).length
+            const selection = albumSelection(al, albumIndex, excludedTracks)
             return (
               <div className="album-group" key={albumIndex}>
                 <div className="album-group-head">
+                  <input
+                    type="checkbox"
+                    className="album-select-all"
+                    checked={selection === 'all'}
+                    ref={(el) => {
+                      if (el) el.indeterminate = selection === 'mixed'
+                    }}
+                    onChange={() => toggleAlbumExcluded(al, albumIndex)}
+                    title={selection === 'none' ? 'Select all tracks in this album' : 'Deselect all tracks in this album'}
+                  />
                   <div className="album-art-stub">♪</div>
                   <div className="album-group-title-wrap">
                     <div className="album-group-title">
@@ -500,6 +609,7 @@ export default function ImportPage() {
                         onBlur={(e) => handleAlbumFieldBlur(albumIndex, 'year', e.target.value)}
                       />{' '}
                       · destination <span className="mono">{destDir}</span>
+                      {selection === 'none' && <span className="album-none-selected"> · 0 tracks selected</span>}
                     </div>
                   </div>
                   {conflictCount > 1 && (
@@ -511,12 +621,20 @@ export default function ImportPage() {
                 <table className="track-plan-table">
                   <tbody>
                     {al.tracks.map((tr, trackIndex) => {
-                      const err = errorFor(errors, albumIndex, trackIndex)
+                      const excluded = isExcluded(albumIndex, trackIndex, excludedTracks)
+                      const err = excluded ? undefined : errorFor(errors, albumIndex, trackIndex)
                       const missing = err?.missing ?? []
                       const isConflict = Boolean(err?.conflict)
                       return (
                         <Fragment key={trackIndex}>
-                          <tr className={isConflict ? 'conflict-row' : undefined}>
+                          <tr className={[isConflict ? 'conflict-row' : '', excluded ? 'excluded' : ''].filter(Boolean).join(' ') || undefined}>
+                            <td className="tp-check">
+                              <input
+                                type="checkbox"
+                                checked={!excluded}
+                                onChange={() => toggleTrackExcluded(albumIndex, trackIndex)}
+                              />
+                            </td>
                             <td className="tp-num">
                               <input
                                 ref={(el) => {
@@ -545,7 +663,7 @@ export default function ImportPage() {
                           </tr>
                           {isConflict && !tr.overwrite && (
                             <tr>
-                              <td colSpan={4} className="conflict-note-cell">
+                              <td colSpan={5} className="conflict-note-cell">
                                 <div className="conflict-note">
                                   <span className="path" title={tr.destPath}>
                                     This file already exists at <span className="mono">{tr.destPath}</span>
@@ -580,9 +698,9 @@ export default function ImportPage() {
               </button>
               <button
                 type="button"
-                className={hasErrors ? 'btn-primary blocked' : 'btn-primary'}
+                className={confirmBlocked ? 'btn-primary blocked' : 'btn-primary'}
                 disabled={confirming}
-                aria-disabled={hasErrors}
+                aria-disabled={confirmBlocked}
                 onClick={handleConfirmClick}
               >
                 {confirming ? 'Starting…' : `Confirm & import ${totalTracks} track${totalTracks === 1 ? '' : 's'}`}
