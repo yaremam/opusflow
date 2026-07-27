@@ -207,6 +207,142 @@ func parseDeleteFiles(r *http.Request) (bool, error) {
 	}
 }
 
+// parseDeleteFile is parseDeleteFiles for the single-image gallery removal
+// endpoints (TDR 014 AC-4) — same required-explicit-choice rule, just
+// singular ("deleteFile") since exactly one photo/cover is ever removed
+// per call, unlike DeleteArtist/DeleteAlbum's whole-track-list removal.
+func parseDeleteFile(r *http.Request) (bool, error) {
+	v := r.URL.Query().Get("deleteFile")
+	switch v {
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, errors.New(`deleteFile query parameter must be "true" or "false"`)
+	}
+}
+
+// handleSetArtistPrimaryPhoto marks one photo in an artist's gallery as
+// the one shown in list views and grid tiles (AC-2), returning the
+// artist's full detail (gallery included) so the frontend can re-render
+// without a second round trip.
+func handleSetArtistPrimaryPhoto(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		artistID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			return
+		}
+		photoID, err := strconv.ParseInt(r.PathValue("photoId"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid photo id", http.StatusBadRequest)
+			return
+		}
+		if err := svc.SetArtistPrimaryPhoto(r.Context(), artistID, photoID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		artist, err := svc.GetArtist(r.Context(), artistID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, artist)
+	}
+}
+
+// handleDeleteArtistPhoto removes one photo from an artist's gallery
+// (AC-4), optionally also deleting its file from disk per the required
+// deleteFile query param (see parseDeleteFile).
+func handleDeleteArtistPhoto(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		artistID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			return
+		}
+		photoID, err := strconv.ParseInt(r.PathValue("photoId"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid photo id", http.StatusBadRequest)
+			return
+		}
+		deleteFile, err := parseDeleteFile(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := svc.DeleteArtistPhoto(r.Context(), artistID, photoID, deleteFile); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		artist, err := svc.GetArtist(r.Context(), artistID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, artist)
+	}
+}
+
+// handleSetAlbumPrimaryCover is handleSetArtistPrimaryPhoto's album
+// counterpart.
+func handleSetAlbumPrimaryCover(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid album id", http.StatusBadRequest)
+			return
+		}
+		coverID, err := strconv.ParseInt(r.PathValue("coverId"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid cover id", http.StatusBadRequest)
+			return
+		}
+		if err := svc.SetAlbumPrimaryCover(r.Context(), albumID, coverID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		album, err := svc.GetAlbum(r.Context(), albumID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, album)
+	}
+}
+
+// handleDeleteAlbumCover is handleDeleteArtistPhoto's album counterpart.
+func handleDeleteAlbumCover(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid album id", http.StatusBadRequest)
+			return
+		}
+		coverID, err := strconv.ParseInt(r.PathValue("coverId"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid cover id", http.StatusBadRequest)
+			return
+		}
+		deleteFile, err := parseDeleteFile(r)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if err := svc.DeleteAlbumCover(r.Context(), albumID, coverID, deleteFile); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		album, err := svc.GetAlbum(r.Context(), albumID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, album)
+	}
+}
+
 func handleListAlbums(svc *library.Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		page, err := svc.ListAlbums(r.Context(), parseListOptions(r))

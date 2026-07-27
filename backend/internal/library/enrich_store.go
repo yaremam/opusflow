@@ -86,21 +86,19 @@ func (s *Store) SetArtistMusicBrainzID(ctx context.Context, id int64, mbid strin
 	return nil
 }
 
-// SetArtistArt records the outcome of an artist photo lookup. Only a
-// Found outcome overwrites the path columns — a NotFound/Failed write
-// touches art_status alone, so a previously-found photo survives a later
-// attempt (e.g. a manual retry, TDR 007) that doesn't turn up a
-// replacement, rather than being nulled out by it.
+// SetArtistArt records the outcome of an artist photo lookup. A Found
+// outcome adds a new photo to the artist's gallery (TDR 014) rather than
+// overwriting anything — a NotFound/Failed write touches art_status
+// alone, so photos already in the gallery survive a later attempt (e.g. a
+// manual retry, TDR 007) that doesn't turn up a replacement.
 func (s *Store) SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE artists SET
-			art_status = $2,
-			photo_thumb_path = CASE WHEN $5 = 'found' THEN $3 ELSE photo_thumb_path END,
-			photo_path = CASE WHEN $5 = 'found' THEN $4 ELSE photo_path END
-		WHERE id = $1
-	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath), string(status))
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE artists SET art_status = $2 WHERE id = $1`, id, status); err != nil {
 		return fmt.Errorf("setting artist art: %w", err)
+	}
+	if status == enrich.Found && thumbPath != "" {
+		if _, err := s.AddArtistPhoto(ctx, id, thumbPath, fullPath, "enrichment", ""); err != nil {
+			return fmt.Errorf("setting artist art: %w", err)
+		}
 	}
 	return nil
 }
@@ -166,18 +164,16 @@ func (s *Store) SetAlbumMusicBrainzID(ctx context.Context, id int64, mbid string
 }
 
 // SetAlbumArt records the outcome of an album cover lookup. See
-// SetArtistArt's doc comment — same Found-only path-column write, same
+// SetArtistArt's doc comment — same Found-only gallery-add, same
 // reasoning.
 func (s *Store) SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE albums SET
-			art_status = $2,
-			cover_thumb_path = CASE WHEN $5 = 'found' THEN $3 ELSE cover_thumb_path END,
-			cover_path = CASE WHEN $5 = 'found' THEN $4 ELSE cover_path END
-		WHERE id = $1
-	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath), string(status))
-	if err != nil {
+	if _, err := s.db.ExecContext(ctx, `UPDATE albums SET art_status = $2 WHERE id = $1`, id, status); err != nil {
 		return fmt.Errorf("setting album art: %w", err)
+	}
+	if status == enrich.Found && thumbPath != "" {
+		if _, err := s.AddAlbumCover(ctx, id, thumbPath, fullPath, "enrichment", "", ""); err != nil {
+			return fmt.Errorf("setting album art: %w", err)
+		}
 	}
 	return nil
 }
@@ -201,12 +197,20 @@ func (s *Store) ResetAlbumArt(ctx context.Context, id int64) error {
 // art (AC-1), where "first image found wins" must never clobber art a
 // different track, or the enrichment job, already resolved.
 func (s *Store) SetAlbumArtIfOpen(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error {
-	_, err := s.db.ExecContext(ctx, `
-		UPDATE albums SET art_status = $2, cover_thumb_path = $3, cover_path = $4
+	res, err := s.db.ExecContext(ctx, `
+		UPDATE albums SET art_status = $2
 		WHERE id = $1 AND art_status `+pendingOrFailed+`
-	`, id, status, nullIfEmpty(thumbPath), nullIfEmpty(fullPath))
+	`, id, status)
 	if err != nil {
 		return fmt.Errorf("setting album art if open: %w", err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return nil
+	}
+	if status == enrich.Found && thumbPath != "" {
+		if _, err := s.AddAlbumCover(ctx, id, thumbPath, fullPath, "embedded", "", ""); err != nil {
+			return fmt.Errorf("setting album art if open: %w", err)
+		}
 	}
 	return nil
 }
@@ -237,14 +241,4 @@ func (s *Store) SetAlbumDescription(ctx context.Context, id int64, status enrich
 		return fmt.Errorf("setting album description: %w", err)
 	}
 	return nil
-}
-
-// nullIfEmpty turns "" into a SQL NULL so path columns stay genuinely NULL
-// (never set) rather than an empty string, matching artistEnrichCols'/
-// albumEnrichCols' COALESCE(..., ”) read side.
-func nullIfEmpty(s string) any {
-	if s == "" {
-		return nil
-	}
-	return s
 }

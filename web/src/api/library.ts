@@ -155,12 +155,37 @@ export interface AlbumTrack {
   durationSeconds: number
 }
 
+// ArtistPhoto/AlbumCover are one image in an artist's/album's gallery (TDR
+// 014) — exactly one per entity has isPrimary set, which is the one
+// reflected in photoThumbUrl/coverThumbUrl above for list views and grid
+// tiles that only have room for one image.
+export interface ArtistPhoto {
+  id: number
+  thumbUrl: string
+  fullUrl: string
+  source: string
+  isPrimary: boolean
+  createdAt: string
+}
+
+export interface AlbumCover {
+  id: number
+  thumbUrl: string
+  fullUrl: string
+  source: string
+  pictureType?: string
+  isPrimary: boolean
+  createdAt: string
+}
+
 export interface ArtistDetail extends Artist {
   albums: Album[]
+  photos: ArtistPhoto[]
 }
 
 export interface AlbumDetail extends Album {
   tracks: AlbumTrack[]
+  covers: AlbumCover[]
 }
 
 export interface Page<T> {
@@ -245,15 +270,38 @@ function uploadArt<T>(path: string, file: File): Promise<T> {
   return request(path, { method: 'POST', body: form })
 }
 
-// uploadArtistArt/uploadAlbumArt save a manually-chosen image, bypassing
-// MusicBrainz/Cover Art Archive entirely — synchronous (no polling needed):
-// the response already reflects the new photo/cover.
-export function uploadArtistArt(id: number, file: File): Promise<Artist> {
+// uploadArtistArt/uploadAlbumArt add a manually-chosen image to the
+// gallery (TDR 014 AC-3: upload always adds, never replaces) — synchronous
+// (no polling needed): the response already reflects the new gallery,
+// including the freshly-added photo/cover.
+export function uploadArtistArt(id: number, file: File): Promise<ArtistDetail> {
   return uploadArt(`/api/library/artists/${id}/art`, file)
 }
 
-export function uploadAlbumArt(id: number, file: File): Promise<Album> {
+export function uploadAlbumArt(id: number, file: File): Promise<AlbumDetail> {
   return uploadArt(`/api/library/albums/${id}/art`, file)
+}
+
+// setArtistPrimaryPhoto/setAlbumPrimaryCover mark one gallery image as the
+// one shown in list views and grid tiles (AC-2); deleteArtistPhoto/
+// deleteAlbumCover remove one image, optionally deleting its file from
+// disk too (AC-4, same explicit keep-vs-delete-file choice as
+// deleteArtist/deleteAlbum). Both return the entity's fresh detail
+// (gallery included) so the gallery UI can re-render from one response.
+export function setArtistPrimaryPhoto(artistId: number, photoId: number): Promise<ArtistDetail> {
+  return postJSON(`/api/library/artists/${artistId}/photos/${photoId}/primary`, {})
+}
+
+export function deleteArtistPhoto(artistId: number, photoId: number, deleteFile: boolean): Promise<ArtistDetail> {
+  return request(`/api/library/artists/${artistId}/photos/${photoId}?deleteFile=${deleteFile}`, { method: 'DELETE' })
+}
+
+export function setAlbumPrimaryCover(albumId: number, coverId: number): Promise<AlbumDetail> {
+  return postJSON(`/api/library/albums/${albumId}/covers/${coverId}/primary`, {})
+}
+
+export function deleteAlbumCover(albumId: number, coverId: number, deleteFile: boolean): Promise<AlbumDetail> {
+  return request(`/api/library/albums/${albumId}/covers/${coverId}?deleteFile=${deleteFile}`, { method: 'DELETE' })
 }
 
 // pollForArtResolution re-fetches an artist/album every 2s for up to ~30s

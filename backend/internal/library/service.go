@@ -68,6 +68,16 @@ type ImportStore interface {
 	SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
 	SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
 
+	ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistPhoto, error)
+	AddArtistPhoto(ctx context.Context, artistID int64, thumbURL, fullURL, source, contentHash string) (ArtistPhoto, error)
+	SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error
+	DeleteArtistPhoto(ctx context.Context, artistID, photoID int64) (thumbPath, fullPath string, err error)
+
+	ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCover, error)
+	AddAlbumCover(ctx context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) (AlbumCover, error)
+	SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error
+	DeleteAlbumCover(ctx context.Context, albumID, coverID int64) (thumbPath, fullPath string, err error)
+
 	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
 	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
 	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
@@ -379,45 +389,103 @@ func (s *Service) wakeEnricher() {
 // to, the same constraint the background enrichment job is already under.
 var ErrArtworkNotConfigured = errors.New("artwork storage is not configured")
 
-// UploadArtistArt saves data as id's photo — bypassing MusicBrainz/Cover
-// Art Archive entirely (TDR 007), synchronously (no queueing, unlike
-// retry): the same thumb/full variants the automatic lookup produces are
-// written via the shared ImageStore, then recorded as Found immediately.
-func (s *Service) UploadArtistArt(ctx context.Context, id int64, data []byte) (Artist, error) {
+// UploadArtistArt adds data as a new photo in id's gallery (AC-3: upload
+// always adds, never replaces) — bypassing MusicBrainz/Wikidata entirely
+// (TDR 007), synchronously (no queueing, unlike retry). The image is
+// saved via the shared ImageStore (whose content hash drives AC-5's
+// dedup), then art_status is marked Found so the background enrichment
+// job treats this artist's art as settled — the empty thumb/full paths in
+// that call are deliberate: the gallery entry itself was already added
+// above, so SetArtistArt here only needs to flip the status.
+func (s *Service) UploadArtistArt(ctx context.Context, id int64, data []byte) (ArtistDetail, error) {
 	if s.images == nil {
-		return Artist{}, ErrArtworkNotConfigured
+		return ArtistDetail{}, ErrArtworkNotConfigured
 	}
-	thumbURL, fullURL, err := s.images.Save("artist", id, data)
+	thumbURL, fullURL, hash, err := s.images.Save("artist", id, data)
 	if err != nil {
-		return Artist{}, fmt.Errorf("saving artist photo: %w", err)
+		return ArtistDetail{}, fmt.Errorf("saving artist photo: %w", err)
 	}
-	if err := s.store.SetArtistArt(ctx, id, enrich.Found, thumbURL, fullURL); err != nil {
-		return Artist{}, err
+	if _, err := s.store.AddArtistPhoto(ctx, id, thumbURL, fullURL, "upload", hash); err != nil {
+		return ArtistDetail{}, err
 	}
-	detail, err := s.store.GetArtist(ctx, id)
-	if err != nil {
-		return Artist{}, err
+	if err := s.store.SetArtistArt(ctx, id, enrich.Found, "", ""); err != nil {
+		return ArtistDetail{}, err
 	}
-	return detail.Artist, nil
+	return s.store.GetArtist(ctx, id)
 }
 
-// UploadAlbumArt is UploadArtistArt's album counterpart.
-func (s *Service) UploadAlbumArt(ctx context.Context, id int64, data []byte) (Album, error) {
+// UploadAlbumArt is UploadArtistArt's album counterpart. The uploaded
+// image has no known Cover Art Archive/embedded-tag type, so it's added
+// with an empty pictureType.
+func (s *Service) UploadAlbumArt(ctx context.Context, id int64, data []byte) (AlbumDetail, error) {
 	if s.images == nil {
-		return Album{}, ErrArtworkNotConfigured
+		return AlbumDetail{}, ErrArtworkNotConfigured
 	}
-	thumbURL, fullURL, err := s.images.Save("album", id, data)
+	thumbURL, fullURL, hash, err := s.images.Save("album", id, data)
 	if err != nil {
-		return Album{}, fmt.Errorf("saving album cover: %w", err)
+		return AlbumDetail{}, fmt.Errorf("saving album cover: %w", err)
 	}
-	if err := s.store.SetAlbumArt(ctx, id, enrich.Found, thumbURL, fullURL); err != nil {
-		return Album{}, err
+	if _, err := s.store.AddAlbumCover(ctx, id, thumbURL, fullURL, "upload", "", hash); err != nil {
+		return AlbumDetail{}, err
 	}
-	detail, err := s.store.GetAlbum(ctx, id)
+	if err := s.store.SetAlbumArt(ctx, id, enrich.Found, "", ""); err != nil {
+		return AlbumDetail{}, err
+	}
+	return s.store.GetAlbum(ctx, id)
+}
+
+// ListArtistPhotos returns every photo in an artist's gallery (AC-1).
+func (s *Service) ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistPhoto, error) {
+	return s.store.ListArtistPhotos(ctx, artistID)
+}
+
+// SetArtistPrimaryPhoto marks photoID as the one shown in list views and
+// grid tiles for this artist (AC-2).
+func (s *Service) SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error {
+	return s.store.SetArtistPrimaryPhoto(ctx, artistID, photoID)
+}
+
+// DeleteArtistPhoto removes a photo from an artist's gallery (AC-4),
+// optionally also deleting its files from disk — the same explicit
+// keep-vs-delete-file choice DeleteArtist/DeleteAlbum already offer for
+// tracks. A missing/misconfigured ImageStore just skips the file removal;
+// the catalog reference is still gone either way.
+func (s *Service) DeleteArtistPhoto(ctx context.Context, artistID, photoID int64, deleteFile bool) error {
+	thumbURL, fullURL, err := s.store.DeleteArtistPhoto(ctx, artistID, photoID)
 	if err != nil {
-		return Album{}, err
+		return err
 	}
-	return detail.Album, nil
+	if deleteFile && s.images != nil {
+		if err := s.images.Delete(thumbURL, fullURL); err != nil {
+			log.Printf("library: artist %d: deleting photo file: %v", artistID, err)
+		}
+	}
+	return nil
+}
+
+// ListAlbumCovers returns every cover in an album's gallery (AC-1).
+func (s *Service) ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCover, error) {
+	return s.store.ListAlbumCovers(ctx, albumID)
+}
+
+// SetAlbumPrimaryCover marks coverID as the one shown in list views and
+// grid tiles for this album (AC-2).
+func (s *Service) SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error {
+	return s.store.SetAlbumPrimaryCover(ctx, albumID, coverID)
+}
+
+// DeleteAlbumCover is DeleteArtistPhoto's album counterpart.
+func (s *Service) DeleteAlbumCover(ctx context.Context, albumID, coverID int64, deleteFile bool) error {
+	thumbURL, fullURL, err := s.store.DeleteAlbumCover(ctx, albumID, coverID)
+	if err != nil {
+		return err
+	}
+	if deleteFile && s.images != nil {
+		if err := s.images.Delete(thumbURL, fullURL); err != nil {
+			log.Printf("library: album %d: deleting cover file: %v", albumID, err)
+		}
+	}
+	return nil
 }
 
 // ErrMetadataSearchNotConfigured is returned by SearchArtists and its

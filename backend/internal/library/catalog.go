@@ -96,17 +96,19 @@ type AlbumTrack struct {
 }
 
 // ArtistDetail is a single artist plus every album attributed to them,
-// newest first.
+// newest first, and their full photo gallery (TDR 014).
 type ArtistDetail struct {
 	Artist
-	Albums []Album `json:"albums"`
+	Albums []Album       `json:"albums"`
+	Photos []ArtistPhoto `json:"photos"`
 }
 
 // AlbumDetail is a single album plus its full track listing, ordered by
-// track number.
+// track number, and its full cover gallery (TDR 014).
 type AlbumDetail struct {
 	Album
 	Tracks []AlbumTrack `json:"tracks"`
+	Covers []AlbumCover `json:"covers"`
 }
 
 // ListOptions controls sorting, filtering, and pagination shared by
@@ -138,8 +140,29 @@ func (o ListOptions) offset() int { return (o.Page - 1) * o.PageSize }
 // nullable (never set until the enrich job first runs) and COALESCEd to ”
 // here so Go's Artist/Album never need a nullable string type, matching
 // this codebase's existing "real empty row, not null" convention.
-const artistEnrichCols = `COALESCE(a.photo_thumb_path, ''), COALESCE(a.photo_path, ''), a.art_status, a.formed_year, a.country, a.genres, a.bio, a.bio_source_url`
-const albumEnrichCols = `COALESCE(al.cover_thumb_path, ''), COALESCE(al.cover_path, ''), al.art_status, al.label, al.country, al.genres, al.description, al.description_source_url`
+const artistEnrichCols = `COALESCE(ap.thumb_path, ''), COALESCE(ap.full_path, ''), a.art_status, a.formed_year, a.country, a.genres, a.bio, a.bio_source_url`
+const albumEnrichCols = `COALESCE(ac.thumb_path, ''), COALESCE(ac.full_path, ''), al.art_status, al.label, al.country, al.genres, al.description, al.description_source_url`
+
+// artistPrimaryPhotoJoin/albumPrimaryCoverJoin derive each artist's/
+// album's single primary image (TDR 014's "exactly one primary per
+// entity" invariant) for list views and tiles that only have room for
+// one thumbnail — the full gallery is fetched separately via
+// ListArtistPhotos/ListAlbumCovers. Every query using these must alias
+// the artists row "a" (photo join) / albums row "al" (cover join).
+const artistPrimaryPhotoJoin = `
+	LEFT JOIN LATERAL (
+		SELECT thumb_path, full_path FROM artist_photos
+		WHERE artist_id = a.id
+		ORDER BY is_primary DESC, created_at ASC, id ASC
+		LIMIT 1
+	) ap ON true`
+const albumPrimaryCoverJoin = `
+	LEFT JOIN LATERAL (
+		SELECT thumb_path, full_path FROM album_covers
+		WHERE album_id = al.id
+		ORDER BY is_primary DESC, created_at ASC, id ASC
+		LIMIT 1
+	) ac ON true`
 
 // scanArtistEnrich/scanAlbumEnrich are the *sql.Row/*sql.Rows destinations
 // matching artistEnrichCols/albumEnrichCols, in order.
@@ -211,7 +234,7 @@ func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist]
 		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
 		       `+artistEnrichCols+`,
 		       COUNT(*) OVER()
-		FROM artists a
+		FROM artists a`+artistPrimaryPhotoJoin+`
 		WHERE ($3 = '' OR EXISTS (SELECT 1 FROM tracks t WHERE t.artist_id = a.id AND t.genre ILIKE '%' || $3 || '%'))
 		  AND ($4 = 0 OR EXISTS (SELECT 1 FROM tracks t WHERE t.artist_id = a.id AND t.year = $4))
 		  AND ($5 = '' OR a.name ILIKE '%' || $5 || '%')
@@ -249,7 +272,8 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 		       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
 		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
 		       `+artistEnrichCols+`
-		FROM artists a WHERE a.id = $1
+		FROM artists a`+artistPrimaryPhotoJoin+`
+		WHERE a.id = $1
 	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ArtistDetail{}, ErrArtistNotFound
@@ -263,7 +287,7 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
 		       `+albumEnrichCols+`
 		FROM albums al
-		JOIN artists a ON a.id = al.artist_id
+		JOIN artists a ON a.id = al.artist_id`+albumPrimaryCoverJoin+`
 		WHERE al.artist_id = $1
 		ORDER BY al.year DESC, al.title ASC
 	`, id)
@@ -284,6 +308,12 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	if err := rows.Err(); err != nil {
 		return ArtistDetail{}, err
 	}
+
+	photos, err := s.ListArtistPhotos(ctx, id)
+	if err != nil {
+		return ArtistDetail{}, fmt.Errorf("listing artist's photos: %w", err)
+	}
+	d.Photos = photos
 	return d, nil
 }
 
@@ -299,7 +329,7 @@ func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], 
 		       `+albumEnrichCols+`,
 		       COUNT(*) OVER()
 		FROM albums al
-		JOIN artists ar ON ar.id = al.artist_id
+		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+`
 		WHERE ($3 = '' OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = al.id AND t.genre ILIKE '%' || $3 || '%'))
 		  AND ($4 = 0 OR al.year = $4)
 		  AND ($5 = '' OR al.title ILIKE '%' || $5 || '%' OR ar.name ILIKE '%' || $5 || '%')
@@ -337,7 +367,7 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
 		       `+albumEnrichCols+`
 		FROM albums al
-		JOIN artists ar ON ar.id = al.artist_id
+		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+`
 		WHERE al.id = $1
 	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -369,6 +399,12 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	if err := rows.Err(); err != nil {
 		return AlbumDetail{}, err
 	}
+
+	covers, err := s.ListAlbumCovers(ctx, id)
+	if err != nil {
+		return AlbumDetail{}, fmt.Errorf("listing album's covers: %w", err)
+	}
+	d.Covers = covers
 	return d, nil
 }
 
@@ -377,12 +413,12 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	order := recentOrName(opts, "t.created_at", "t.title")
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.title, t.artist_id, ar.name, t.album_id, al.title,
-		       COALESCE(al.cover_thumb_path, ''), al.art_status,
+		       COALESCE(ac.thumb_path, ''), al.art_status,
 		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at,
 		       COUNT(*) OVER()
 		FROM tracks t
 		JOIN artists ar ON ar.id = t.artist_id
-		JOIN albums al ON al.id = t.album_id
+		JOIN albums al ON al.id = t.album_id`+albumPrimaryCoverJoin+`
 		WHERE ($3 = '' OR t.genre ILIKE '%' || $3 || '%')
 		  AND ($4 = 0 OR t.year = $4)
 		  AND ($5 = '' OR t.title ILIKE '%' || $5 || '%' OR ar.name ILIKE '%' || $5 || '%' OR al.title ILIKE '%' || $5 || '%')

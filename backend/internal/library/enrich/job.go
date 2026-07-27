@@ -213,7 +213,7 @@ func (j *Job) processArtist(ctx context.Context, a ArtistTarget) RunSummary {
 				return false, err
 			}
 			var saveErr error
-			thumbURL, fullURL, saveErr = j.images.Save("artist", a.ID, data)
+			thumbURL, fullURL, _, saveErr = j.images.Save("artist", a.ID, data)
 			if saveErr != nil {
 				log.Printf("enrich: artist %d: saving photo: %v", a.ID, saveErr)
 				return false, saveErr
@@ -286,7 +286,7 @@ func (j *Job) processAlbum(ctx context.Context, al AlbumTarget) RunSummary {
 				return false, nil
 			}
 			var saveErr error
-			artThumbURL, artFullURL, saveErr = j.images.Save("album", al.ID, data)
+			artThumbURL, artFullURL, _, saveErr = j.images.Save("album", al.ID, data)
 			if saveErr != nil {
 				log.Printf("enrich: album %d: saving cover: %v", al.ID, saveErr)
 				return false, saveErr

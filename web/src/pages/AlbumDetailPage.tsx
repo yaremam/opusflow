@@ -2,16 +2,19 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   deleteAlbum,
+  deleteAlbumCover,
   errorMessage,
   formatDuration,
   getAlbum,
   pollForArtResolution,
   retryAlbumArt,
+  setAlbumPrimaryCover,
   uploadAlbumArt,
   type AlbumDetail,
 } from '../api/library'
 import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
+import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
 import RemoveModal from '../components/RemoveModal'
 import '../styles/catalog.css'
@@ -33,10 +36,22 @@ export default function AlbumDetailPage() {
     setAlbum((prev) => prev && { ...prev, ...resolved })
   }
 
-  async function handleUploadArt(file: File) {
+  async function handleUploadCover(file: File) {
     if (!album) return
     const updated = await uploadAlbumArt(album.id, file)
-    setAlbum((prev) => prev && { ...prev, ...updated })
+    setAlbum(updated)
+  }
+
+  async function handleSetPrimaryCover(coverId: number) {
+    if (!album) return
+    const updated = await setAlbumPrimaryCover(album.id, coverId)
+    setAlbum(updated)
+  }
+
+  async function handleDeleteCover(coverId: number, deleteFile: boolean) {
+    if (!album) return
+    const updated = await deleteAlbumCover(album.id, coverId, deleteFile)
+    setAlbum(updated)
   }
 
   async function handleRemove(deleteFiles: boolean) {
@@ -106,18 +121,20 @@ export default function AlbumDetailPage() {
             {album.year > 0 ? `${album.year} · ` : ''}
             {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
           </div>
-          <ArtActions
-            thumbUrl={album.coverThumbUrl}
-            artStatus={album.artStatus}
-            label="cover"
-            onRetry={handleRetryArt}
-            onUpload={handleUploadArt}
-          />
+          <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
           <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
             Remove album…
           </button>
         </div>
       </div>
+
+      <ArtworkGallery
+        images={album.covers}
+        label="cover"
+        onUpload={handleUploadCover}
+        onSetPrimary={handleSetPrimaryCover}
+        onDelete={handleDeleteCover}
+      />
 
       {removing && (
         <RemoveModal

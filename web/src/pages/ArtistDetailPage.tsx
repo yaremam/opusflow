@@ -2,15 +2,18 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   deleteArtist,
+  deleteArtistPhoto,
   errorMessage,
   getArtist,
   pollForArtResolution,
   retryArtistArt,
+  setArtistPrimaryPhoto,
   uploadArtistArt,
   type ArtistDetail,
 } from '../api/library'
 import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
+import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
 import RemoveModal from '../components/RemoveModal'
 import '../styles/catalog.css'
@@ -32,10 +35,22 @@ export default function ArtistDetailPage() {
     setArtist((prev) => prev && { ...prev, ...resolved })
   }
 
-  async function handleUploadArt(file: File) {
+  async function handleUploadPhoto(file: File) {
     if (!artist) return
     const updated = await uploadArtistArt(artist.id, file)
-    setArtist((prev) => prev && { ...prev, ...updated })
+    setArtist(updated)
+  }
+
+  async function handleSetPrimaryPhoto(photoId: number) {
+    if (!artist) return
+    const updated = await setArtistPrimaryPhoto(artist.id, photoId)
+    setArtist(updated)
+  }
+
+  async function handleDeletePhoto(photoId: number, deleteFile: boolean) {
+    if (!artist) return
+    const updated = await deleteArtistPhoto(artist.id, photoId, deleteFile)
+    setArtist(updated)
   }
 
   async function handleRemove(deleteFiles: boolean) {
@@ -100,18 +115,20 @@ export default function ArtistDetailPage() {
             {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
             {artist.trackCount === 1 ? '' : 's'}
           </div>
-          <ArtActions
-            thumbUrl={artist.photoThumbUrl}
-            artStatus={artist.artStatus}
-            label="photo"
-            onRetry={handleRetryArt}
-            onUpload={handleUploadArt}
-          />
+          <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
           <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
             Remove artist…
           </button>
         </div>
       </div>
+
+      <ArtworkGallery
+        images={artist.photos}
+        label="photo"
+        onUpload={handleUploadPhoto}
+        onSetPrimary={handleSetPrimaryPhoto}
+        onDelete={handleDeletePhoto}
+      />
 
       {removing && (
         <RemoveModal
