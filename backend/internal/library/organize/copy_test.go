@@ -256,8 +256,8 @@ func TestCopyCarriesGenreAndArtworkIntoCopiedTrack(t *testing.T) {
 	if got.Genre != "Jazz" {
 		t.Fatalf("Genre = %q, want %q (carried from source tags)", got.Genre, "Jazz")
 	}
-	if string(got.ArtworkData) != string(art) {
-		t.Fatalf("ArtworkData mismatch: got %d bytes, want %d bytes matching source picture", len(got.ArtworkData), len(art))
+	if len(got.ArtworkPictures) != 1 || string(got.ArtworkPictures[0].Data) != string(art) {
+		t.Fatalf("ArtworkPictures = %+v, want 1 picture matching source picture (%d bytes)", got.ArtworkPictures, len(art))
 	}
 }
 

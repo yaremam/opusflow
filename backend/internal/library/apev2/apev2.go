@@ -28,19 +28,77 @@ const (
 )
 
 // Tags is what this package reads and writes: the fields opusflow's review
-// screen edits (Artist/Album/Title/Track/Year) plus Genre and Artwork —
-// read-only everywhere in this app for every format, WavPack included
-// (Write preserves whatever was already there for both, the same
-// only-touch-the-fields-given approach organize.setVorbisComment already
-// takes for FLAC).
+// screen edits (Artist/Album/Title/Track/Year) plus Genre — read-only
+// everywhere in this app for every format, WavPack included (Write
+// preserves whatever was already there, the same only-touch-the-fields-
+// given approach organize.setVorbisComment already takes for FLAC).
+// Embedded artwork isn't part of Tags — see ReadArtworks, which returns
+// every "Cover Art (*)" item rather than just one (TDR 014 AC-7).
 type Tags struct {
-	Artist  string
-	Album   string
-	Title   string
-	Track   int
-	Year    int
-	Genre   string
-	Artwork []byte
+	Artist string
+	Album  string
+	Title  string
+	Track  int
+	Year   int
+	Genre  string
+}
+
+// Artwork is one embedded picture read from an APEv2 tag's "Cover Art
+// (*)" items — WavPack's format supports several, distinctly keyed
+// ("Cover Art (Front)", "Cover Art (Back)", "Cover Art (Booklet)", ...).
+type Artwork struct {
+	Data        []byte
+	PictureType string // "front", "back", "booklet", ... parsed from the item's own key; "" if the key doesn't carry a recognizable type
+}
+
+// coverArtKeyPrefix is the APEv2 item-key convention every "Cover Art"
+// item shares: "Cover Art (<Type>)".
+const coverArtKeyPrefix = "cover art ("
+
+// artworkPictureType extracts and lowercases <Type> from a lowercased
+// "cover art (<type>)" item key, "" if key doesn't have a closing paren.
+func artworkPictureType(lowerKey string) string {
+	if !strings.HasSuffix(lowerKey, ")") {
+		return ""
+	}
+	return lowerKey[len(coverArtKeyPrefix) : len(lowerKey)-1]
+}
+
+// parseArtworkValue splits a Cover Art item's value into just the image
+// bytes — APEv2 packs an optional filename before a NUL, then the raw
+// image data.
+func parseArtworkValue(value []byte) []byte {
+	if idx := bytes.IndexByte(value, 0); idx >= 0 {
+		return value[idx+1:]
+	}
+	return value
+}
+
+// ReadArtworks returns every "Cover Art (*)" item in path's APEv2 tag —
+// a WavPack file can carry several (front, back, booklet, ...), all
+// preserved untouched by Write the same as any other item this package
+// doesn't know about.
+func ReadArtworks(path string) ([]Artwork, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	items, _, err := readItems(f)
+	if err != nil {
+		return nil, err
+	}
+
+	var artworks []Artwork
+	for _, it := range items {
+		lower := strings.ToLower(it.key)
+		if !strings.HasPrefix(lower, coverArtKeyPrefix) {
+			continue
+		}
+		artworks = append(artworks, Artwork{Data: parseArtworkValue(it.value), PictureType: artworkPictureType(lower)})
+	}
+	return artworks, nil
 }
 
 type item struct {
@@ -79,10 +137,6 @@ func Read(f *os.File) (Tags, error) {
 			t.Track = parseLeadingInt(string(it.value))
 		case "year":
 			t.Year = parseLeadingInt(string(it.value))
-		case "cover art (front)":
-			if idx := bytes.IndexByte(it.value, 0); idx >= 0 {
-				t.Artwork = it.value[idx+1:]
-			}
 		}
 	}
 	return t, nil

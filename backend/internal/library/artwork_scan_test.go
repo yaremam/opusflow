@@ -1,6 +1,10 @@
 package library
 
 import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library/enrich"
@@ -24,15 +28,29 @@ func testPNG(t *testing.T) []byte {
 	}
 }
 
+// testPNG2 is a second, genuinely distinct decodable PNG (a different
+// solid color) — content-hash dedup (TDR 014 AC-5) must treat this as
+// different from testPNG, not collapse it away.
+func testPNG2(t *testing.T) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, 1, 1))
+	img.Set(0, 0, color.RGBA{R: 10, G: 200, B: 30, A: 255})
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatalf("encoding test PNG: %v", err)
+	}
+	return buf.Bytes()
+}
+
 func insertTrackWithArtwork(t *testing.T, s *Store, artist, album string, artwork []byte) {
 	t.Helper()
 	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
-		ImportID:    mustCreateImport(t, s),
-		Path:        "/music/" + artist + "/" + album + "/track.mp3",
-		Title:       "Track",
-		Artist:      artist,
-		Album:       album,
-		ArtworkData: artwork,
+		ImportID:        mustCreateImport(t, s),
+		Path:            "/music/" + artist + "/" + album + "/track.mp3",
+		Title:           "Track",
+		Artist:          artist,
+		Album:           album,
+		ArtworkPictures: []organize.EmbeddedPicture{{Data: artwork}},
 	}); err != nil {
 		t.Fatalf("InsertTrack: %v", err)
 	}
@@ -50,7 +68,7 @@ func TestInsertTrackSavesEmbeddedArtwork(t *testing.T) {
 	}
 }
 
-func TestInsertTrackKeepsFirstEmbeddedArtworkAcrossTracks(t *testing.T) {
+func TestInsertTrackDedupesIdenticalEmbeddedArtworkAcrossTracks(t *testing.T) {
 	s := testStore(t)
 	s.SetImages(enrich.NewImageStore(t.TempDir()))
 
@@ -61,23 +79,61 @@ func TestInsertTrackKeepsFirstEmbeddedArtworkAcrossTracks(t *testing.T) {
 		t.Fatal("expected first track's artwork to be saved")
 	}
 
-	// A second track for the *same* album, also carrying artwork, must not
-	// overwrite what the first track already set (AC-1: first image found
-	// wins).
+	// A second track for the *same* album, carrying the identical embedded
+	// picture, must dedupe by content hash (AC-5) rather than adding a
+	// second gallery entry — the primary (and its thumbnail) stays exactly
+	// what the first track set.
 	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
-		ImportID:    mustCreateImport(t, s),
-		Path:        "/music/Multi Track Artist/Multi Track Album/track2.mp3",
-		Title:       "Track 2",
-		Artist:      "Multi Track Artist",
-		Album:       "Multi Track Album",
-		ArtworkData: testPNG(t),
+		ImportID:        mustCreateImport(t, s),
+		Path:            "/music/Multi Track Artist/Multi Track Album/track2.mp3",
+		Title:           "Track 2",
+		Artist:          "Multi Track Artist",
+		Album:           "Multi Track Album",
+		ArtworkPictures: []organize.EmbeddedPicture{{Data: testPNG(t)}},
 	}); err != nil {
 		t.Fatalf("InsertTrack (second track): %v", err)
 	}
 
-	album = findAlbumByTitle(t, s, "Multi Track Album")
-	if album.CoverThumbURL != firstThumb {
-		t.Fatalf("CoverThumbURL changed from %q to %q; expected the first track's artwork to be kept", firstThumb, album.CoverThumbURL)
+	detail, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if detail.CoverThumbURL != firstThumb {
+		t.Fatalf("CoverThumbURL changed from %q to %q; expected the deduped artwork to stay primary", firstThumb, detail.CoverThumbURL)
+	}
+	if len(detail.Covers) != 1 {
+		t.Fatalf("Covers = %+v, want exactly 1 (identical picture deduped, not added again)", detail.Covers)
+	}
+}
+
+func TestInsertTrackAddsDifferentEmbeddedArtworkFromSecondTrack(t *testing.T) {
+	s := testStore(t)
+	s.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	insertTrackWithArtwork(t, s, "Gallery Artist", "Gallery Album", testPNG(t))
+	album := findAlbumByTitle(t, s, "Gallery Album")
+
+	// A second track carrying a *different* embedded picture (e.g. a back
+	// cover on one track, front on another) must be added as a new gallery
+	// entry (AC-7) rather than being ignored because the album's art is
+	// already settled.
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID:        mustCreateImport(t, s),
+		Path:            "/music/Gallery Artist/Gallery Album/track2.mp3",
+		Title:           "Track 2",
+		Artist:          "Gallery Artist",
+		Album:           "Gallery Album",
+		ArtworkPictures: []organize.EmbeddedPicture{{Data: testPNG2(t), PictureType: "back"}},
+	}); err != nil {
+		t.Fatalf("InsertTrack (second track): %v", err)
+	}
+
+	detail, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if len(detail.Covers) != 2 {
+		t.Fatalf("Covers = %+v, want 2 (both distinct embedded pictures added)", detail.Covers)
 	}
 }
 

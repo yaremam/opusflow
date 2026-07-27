@@ -165,15 +165,23 @@ for self-hosting without a Go/Node toolchain on the target machine — see
     status to pending and wake the enrichment job immediately (TDR 007);
     `202` + the artist as of right now, for the frontend to poll
   - `POST /api/library/artists/{id}/art` (multipart, one `image` field,
-    8MB cap) — save a manually-uploaded photo, bypassing MusicBrainz/Cover
-    Art Archive entirely (TDR 007); `200` + the updated artist, or `503` if
-    `ARTWORK_DIR` isn't configured
+    8MB cap) — add a manually-uploaded photo to the artist's gallery (TDR
+    007; always *adds* rather than replaces as of TDR 014), bypassing
+    MusicBrainz/Cover Art Archive entirely; `200` + the updated artist
+    (gallery included), or `503` if `ARTWORK_DIR` isn't configured
+  - `POST /api/library/artists/{id}/photos/{photoId}/primary` /
+    `DELETE /api/library/artists/{id}/photos/{photoId}?deleteFile=true|false`
+    (TDR 014) — mark one gallery photo as primary, or remove it (the same
+    keep-vs-delete-file-on-disk choice as artist/album/library removal);
+    both return the updated artist (gallery included)
   - `GET /api/library/albums/{id}` — album detail (with its track listing)
   - `DELETE /api/library/albums/{id}?deleteFiles=true|false` — remove an
     album and its tracks
   - `POST /api/library/albums/{id}/art/retry` / `POST
-    /api/library/albums/{id}/art` — album-flavored counterparts of the two
-    artist routes above
+    /api/library/albums/{id}/art` / `POST
+    /api/library/albums/{id}/covers/{coverId}/primary` / `DELETE
+    /api/library/albums/{id}/covers/{coverId}?deleteFile=true|false` —
+    album-flavored counterparts of the four artist routes above
   - `GET /api/metadata/artists?q=` — search MusicBrainz artists by name,
     every match (not just the top-ranked one); `503` if the interactive
     search client isn't wired up (it always is, see `MusicBrainz` above)
@@ -198,11 +206,15 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   library also sweeps any artist/album left with zero tracks, the one place
   that orphan-cleanup shape survives after TDR 005 removed it as a general
   behavior; plus the enrichment query/update methods satisfying
-  `enrich.Store` — `SetArtistArt`/`SetAlbumArt` only overwrite the
-  photo/cover path columns on a `Found` write, so a `NotFound`/`Failed`
-  outcome never nulls out a previously-found image, the fix TDR 007's
-  always-available retry depends on; `ResetArtistArt`/`ResetAlbumArt` mark
-  status pending again without touching those paths), `Service`
+  `enrich.Store` — `SetArtistArt`/`SetAlbumArt` only *add* a gallery entry
+  on a `Found` write (TDR 014), never on `NotFound`/`Failed`, so a failed
+  retry never touches images already in the gallery, the invariant TDR
+  007's always-available retry depends on; `ResetArtistArt`/
+  `ResetAlbumArt` mark status pending again without touching the gallery;
+  `List/Add/SetPrimary/Delete{ArtistPhoto,AlbumCover}` (TDR 014) are the
+  gallery CRUD itself — `Add*` dedupes by content hash and auto-primaries
+  the first image added, `Delete*` promotes the oldest remaining image to
+  primary if the deleted one was primary), `Service`
   (orchestrates library create/list/delete, browse/plan/validate/confirm
   scoped to a chosen library, and artist/album/song listing/detail/delete;
   `ConfirmImport` starts the copy as a background goroutine so
@@ -213,7 +225,11 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   wake-the-job-in-the-background shape on demand, and
   `UploadArtistArt`/`UploadAlbumArt` save a manually-chosen image straight
   through the same `enrich.ImageStore` the job uses, bypassing MusicBrainz/
-  Cover Art Archive entirely).
+  Cover Art Archive entirely, *adding* it to the gallery rather than
+  replacing whatever was there (TDR 014); `SetArtistPrimaryPhoto`/
+  `SetAlbumPrimaryCover` and `DeleteArtistPhoto`/`DeleteAlbumCover` round
+  out the gallery API, the latter reusing the existing keep-vs-delete-
+  file-on-disk choice).
 - **`backend/internal/library/organize`** — the organize-on-import engine
   (TDR 005): `BuildPlan` (recursive source walk, tag reads that leave a
   blank field blank rather than guessing — deliberately distinct from
@@ -228,10 +244,17 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   conflict/overwrite decision rather than needing one of its own), and
   `Copy` (copies each file — and its `.wvc` companion, if any — to its
   destination, writes the plan's corrected fields back into the copy's own
-  MP3/FLAC/WavPack tags, re-extracts genre/embedded artwork from the
-  original tags for the catalog, and tolerates per-file failure without
-  aborting the rest — the same tolerance `scan.Scanner` used for the model
-  this replaced).
+  MP3/FLAC/WavPack tags, re-extracts genre and *every* embedded picture
+  from the original tags for the catalog (TDR 014 — `dhowden/tag`'s
+  `Picture()` only ever keeps the last one parsed, so multi-picture
+  extraction bypasses it: ID3v2 `APIC` frames and FLAC `PICTURE` blocks
+  via already-used dependencies exposing all of them; hand-rolled OGG
+  page/packet reassembly feeding the same Vorbis-comment and FLAC-picture
+  parsers a `METADATA_BLOCK_PICTURE` comment's base64 payload decodes
+  into; hand-rolled MP4 box traversal for M4A's `covr` atom's `data`
+  children; `apev2.ReadArtworks` for WavPack's `Cover Art (*)` items), and
+  tolerates per-file failure without aborting the rest — the same
+  tolerance `scan.Scanner` used for the model this replaced).
 - **`backend/internal/library/scan`** — now scoped to what `organize` still
   needs: audio format detection by extension
   (mp3/flac/m4a/aac/ogg/wav/wv — `.wvc` deliberately excluded, TDR 013 AC-9)
@@ -248,20 +271,28 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 - **`backend/internal/library/apev2`** — reads and writes APEv2 tags (TDR
   013), the format WavPack (`.wv`) files use, which `dhowden/tag` doesn't
   support. `Read`/`Write` cover Artist/Album/Title/Track/Year (what the
-  review screen edits) plus Genre and embedded cover art (read-only
-  everywhere in this app, matching every other format); `Write` preserves
-  every other existing tag item untouched, the same
-  overwrite-named-fields-only approach `organize`'s FLAC writer already
-  takes.
+  review screen edits) plus Genre (read-only everywhere in this app,
+  matching every other format); `Write` preserves every other existing
+  tag item untouched, the same overwrite-named-fields-only approach
+  `organize`'s FLAC writer already takes. `ReadArtworks` (TDR 014) returns
+  every distinctly-keyed `Cover Art (*)` item rather than just the front
+  cover, each with its picture type parsed straight from the item's own
+  key.
 - **`backend/internal/library/enrich`** — the background artwork/info
   worker (TDR 003): `MusicBrainz` (search + lookup, rate-limited to its
-  usage policy), `CoverArtArchive` (album covers by release-group MBID),
+  usage policy), `CoverArtArchive` (`FetchAll`, TDR 014 — every image
+  Cover Art Archive has for a release-group's matched release, each with
+  its own picture type, via the real `/release-group/{mbid}` JSON
+  endpoint rather than the old single-image `/front` redirect),
   `Wikidata` (resolves a MusicBrainz "wikidata" relation into a Commons
   photo filename and an English Wikipedia article title, then fetches
-  each), `ImageStore` (resizes into thumb/full JPEG variants under
-  `ARTWORK_DIR`), and `Job` (orchestrates all of the above against a
-  `Store` interface `*library.Store` satisfies — same "leaf package,
-  dependency points one way" shape as `scan`/`library.Store.InsertTrack`).
+  each), `ImageStore` (content-addressed: resizes into thumb/full JPEG
+  variants under a hash-named subdirectory of `ARTWORK_DIR`, returning
+  that hash as the dedup key TDR 014's gallery `Add*` methods check
+  against; `Delete` removes a gallery entry's files and now-empty
+  directory), and `Job` (orchestrates all of the above against a `Store`
+  interface `*library.Store` satisfies — same "leaf package, dependency
+  points one way" shape as `scan`/`library.Store.InsertTrack`).
   `Job.Run` processes every artist/album with any of art/facts/bio still
   `pending`/`failed`, not scoped to a particular scan, tracking each kind's
   outcome independently. `MusicBrainz` has a second, independent consumer
@@ -308,8 +339,15 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   destinations or conflict state. `src/components/ArtTile.tsx` (real artwork
   vs. a refined placeholder glyph) and `src/components/InfoBlock.tsx`
   (facts-chip row + optional bio/description) are shared across every page
-  that renders artist/album art (TDR 003). `src/api/library.ts` is the typed
-  fetch client.
+  that renders artist/album art (TDR 003). `src/components/ArtworkGallery.tsx`
+  (TDR 014) is the multi-image gallery on the Artist/Album detail pages —
+  every image in the entity's gallery with its source/type, a "Set
+  primary" action, and Remove (reusing `RemoveModal`'s keep-vs-delete-file
+  choice); an always-available "Add photo/cover" tile uploads, which
+  always adds rather than replaces. `src/components/ArtActions.tsx` is now
+  just the "Retry lookup" action — uploading moved into `ArtworkGallery`
+  once it stopped being a single-image replace. `src/api/library.ts` is
+  the typed fetch client.
 - **`mobile/`** — untouched Expo starter. No navigation or API client added
   yet.
 
@@ -349,17 +387,34 @@ Postgres, migrated via `backend/internal/db` (see §3):
   cascades to the artist's own albums/tracks (and, with `deleteFiles=true`,
   their files on disk) rather than a global "no tracks left anywhere" sweep.
   [TDR 003](tdr/003_artwork_and_info_design.md) added `musicbrainz_id`
-  (cached once matched), `photo_thumb_path`/`photo_path` + `art_status`,
-  `formed_year`/`country`/`genres` + `facts_status`, and `bio`/
-  `bio_source_url` + `bio_status` — three independent `enrich_status`
-  (`pending`/`found`/`not_found`/`failed`) columns, one per kind, rather
-  than a single combined status.
+  (cached once matched), `art_status`, `formed_year`/`country`/`genres` +
+  `facts_status`, and `bio`/`bio_source_url` + `bio_status` — three
+  independent `enrich_status` (`pending`/`found`/`not_found`/`failed`)
+  columns, one per kind, rather than a single combined status. Its
+  original single-slot `photo_thumb_path`/`photo_path` columns were
+  replaced by the `artist_photos` table below (TDR 014) — `art_status`
+  itself is unchanged, still driving the background job's "does this
+  entity still need automatic discovery" scheduling, now independent of
+  how many images actually exist.
 - **`albums`** — one row per `(title, artist_id)` pair, `year`. Same
   upsert/direct-delete lifecycle as `artists` (`DELETE
   /api/library/albums/{id}`), and the same TDR 003 extension shape:
-  `musicbrainz_id`, `cover_thumb_path`/`cover_path` + `art_status`,
-  `label`/`country`/`genres` + `facts_status`, `description`/
-  `description_source_url` + `description_status`.
+  `musicbrainz_id`, `art_status`, `label`/`country`/`genres` +
+  `facts_status`, `description`/`description_source_url` +
+  `description_status` — its original `cover_thumb_path`/`cover_path`
+  columns replaced by the `album_covers` table below, same as `artists`.
+- **`artist_photos`** / **`album_covers`** — added by
+  [TDR 014](tdr/014_multiple_artworks_design.md): one row per image (not
+  per entity), `FOREIGN KEY ... ON DELETE CASCADE`, `thumb_path`/
+  `full_path`, `source` (`upload`/`embedded`/`enrichment`/
+  `cover_art_archive`/`legacy`), `content_hash` (SHA-256 of the original
+  bytes, deduped against before adding a new image), `is_primary`
+  (exactly one per entity, enforced at the application layer — the one
+  shown in list views/tiles), `created_at` (default-primary tiebreak:
+  oldest wins). `album_covers` additionally carries `picture_type`
+  (`front`/`back`/`booklet`/... from Cover Art Archive or an embedded
+  tag's own picture-type byte; blank for a plain upload or a format with
+  no such concept, like M4A).
 
 ## 5. Feature-by-feature decision log
 
@@ -368,6 +423,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Multiple artworks per artist/album | [014](tdr/014_multiple_artworks_design.md) | Real gallery, not a single-image slot: new `artist_photos`/`album_covers` tables (one row per image, content-hash deduped, exactly one `is_primary`); manual upload always adds rather than replaces; Cover Art Archive's full typed image set fetched via `FetchAll` (front/back/booklet/...), not just the front cover; every embedded picture extracted across all five supported formats (MP3 APIC frames, FLAC PICTURE blocks, WavPack's APEv2 `Cover Art (*)` items, plus hand-rolled OGG Vorbis-comment and M4A `covr`-atom parsing, neither of which any existing dependency supports); new `ArtworkGallery` web component, mocked up and signed off before implementation | GitHub issue #14; grilling converged on full parity across every available source rather than a smaller first cut, given how much artwork this app was already silently discarding down to one image per entity |
 | WavPack (.wv) support | [013](tdr/013_wavpack_support_design.md) | `.wv` recognized by format detection (was silently skipped before); new hand-rolled `scan/duration.WavPack` parser (block-header total-samples, falling back to a full block scan); new `apev2` package reads/writes APEv2 tags (Artist/Album/Title/Track/Year/Genre/cover art) since `dhowden/tag` has no APEv2 support and no mature Go library exists; a sibling `.wvc` hybrid-mode correction file is detected, copied alongside its `.wv`, and conflict-checked the same as any other file, with a small icon on its review row | GitHub issue #18; the user wanted full parity with MP3/FLAC rather than a detection-only first cut — confirmed via grilling, not assumed |
 | Metadata lookup during import | [012](tdr/012_metadata_lookup_during_import_design.md) | Per-album "Look up metadata" flow on the import review screen: search MusicBrainz artists → browse their albums (release-groups) → pick a specific release (edition) → review its track listing matched onto the album's files by row order → one "Apply" commits everything; new interactive `MusicBrainz` search/browse/track-listing methods, exposed via `/api/metadata/*`, sharing the existing rate limiter but constructed independently of `ARTWORK_DIR` | GitHub issue #17; the by-ID background enrichment job (TDR 003) can't help when tags are missing/wrong going into the review step — needed a person-driven search-and-pick path, not another silent job |
 | About page & build versioning | [009](tdr/009_about_page_and_versioning_design.md) | Semantic version derived from git tags (`git describe --tags --always`) plus a UTC build timestamp, stamped into the image and served from a new `GET /api/about`; new About page (last item in the top nav) displays both plus a GitHub link; `GET /health` drops its `revision` field, back to `{"status":"ok"}` only | The prior SHA-only `/health` revision had no in-app surface and no notion of a release, just an opaque hash to `curl` for |
@@ -376,7 +432,7 @@ an index with the one-line "why" for each, newest first.
 | Multiple libraries | [006](tdr/006_multiple_libraries_design.md) | `LIBRARY_ROOT`/`IMPORT_SOURCE_ROOTS` env vars removed; a library (name + root folder, now creatable on the spot rather than needing to pre-exist) is created/deleted from within the app, several can exist; catalog browsing stays unified across all of them; filesystem browsing confined to `DATA_DIR` when configured (unrestricted from `/` otherwise — amended post-TDR-006, see `DATA_DIR` above); deleting a library cascades with the same keep-or-delete-files choice as artist/album removal | A fixed, deploy-time destination folder was inflexible for more than one logical collection, and coupled a purely operational choice to a redeploy rather than something changeable in the app |
 | Organize-on-import *(its single-`LIBRARY_ROOT` destination superseded by [006](tdr/006_multiple_libraries_design.md))* | [005](tdr/005_organize_on_import_design.md) | Replaces add-directory/scan-in-place entirely: import copies files from a chosen source into a single `LIBRARY_ROOT`, renamed into `<Artist>/<Year>.<Album>/<NN>.<Title>`; review-before-copy with server-computed destinations/conflicts; tag write-back scoped to MP3/FLAC; direct artist/album deletion with explicit keep-or-delete-files choice | The original scan-in-place model left files wherever they started, with no consistent on-disk naming — organizing them is the point, not an optional extra step |
 | Self-hosted deployment *(`/health`'s `revision` field superseded by [009](tdr/009_about_page_and_versioning_design.md))* | [004](tdr/004_self_hosted_deployment_design.md) | Nightly multi-platform image on GHCR (skip-if-unchanged, test-gated); separate `deploy/docker-compose.yml` pulling it, with bundled Postgres and multi-root music bind-mounts | Removes the Go/Node toolchain requirement from the target machine (a NAS); mirrors a proven pattern from a sibling project (docuflow) adapted for opusflow's host-mounted-library model |
-| Artist/album artwork and info *(art status/manual override amended by [007](tdr/007_artwork_retry_and_upload_design.md))* | [003](tdr/003_artwork_and_info_design.md) | Embedded-tag art first, MusicBrainz + Cover Art Archive + Wikidata/Wikipedia fallback via a background `enrich.Job`; three independent per-kind statuses; files on disk under `ARTWORK_DIR`, not DB blobs | Free/open/no-API-key sources matching the project's anti-proprietary-protocol stance; a background job (not inline with scanning) respects MusicBrainz's rate limit and doubles as backfill for pre-existing libraries |
+| Artist/album artwork and info *(art status/manual override amended by [007](tdr/007_artwork_retry_and_upload_design.md); single-image schema superseded by [014](tdr/014_multiple_artworks_design.md))* | [003](tdr/003_artwork_and_info_design.md) | Embedded-tag art first, MusicBrainz + Cover Art Archive + Wikidata/Wikipedia fallback via a background `enrich.Job`; three independent per-kind statuses; files on disk under `ARTWORK_DIR`, not DB blobs | Free/open/no-API-key sources matching the project's anti-proprietary-protocol stance; a background job (not inline with scanning) respects MusicBrainz's rate limit and doubles as backfill for pre-existing libraries |
 | Home screen & library browsing | [002](tdr/002_home_and_browsing_design.md) | Normalized `artists`/`albums` tables (upserted at scan/import time); numbered pagination; `react-router` added | Gives Artist/Album detail pages stable IDs to route by and a natural home for future streaming-service artist linkage |
 | Add local directory to library *(superseded by [005](tdr/005_organize_on_import_design.md))* | [001](tdr/001_add_local_directory_design.md) | Async goroutine-based scan; server-side directory picker scoped to multiple `LIBRARY_ROOTS`; skip-and-continue per-file error handling | Matches real multi-volume households and real-world tagging inconsistency without over-building (no job queue, no router) — superseded once organizing files on disk became a requirement, not just cataloging them in place |
 

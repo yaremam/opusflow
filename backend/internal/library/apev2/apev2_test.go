@@ -114,25 +114,62 @@ func TestReadParsesTrackWithTotal(t *testing.T) {
 	}
 }
 
-func TestReadParsesCoverArt(t *testing.T) {
+func TestReadArtworksReturnsFrontCover(t *testing.T) {
 	audio := []byte("fake wavpack audio bytes")
 	imageBytes := []byte("\xFF\xD8\xFFfakejpegdata")
 	value := append([]byte("cover.jpg\x00"), imageBytes...)
 	tag := buildTag([]apeItem{{key: "Cover Art (Front)", value: value, valueType: 1}})
 	path := writeTempFile(t, append(audio, tag...))
 
-	f, err := os.Open(path)
+	artworks, err := ReadArtworks(path)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("ReadArtworks: %v", err)
 	}
-	defer f.Close()
+	if len(artworks) != 1 {
+		t.Fatalf("len(artworks) = %d, want 1", len(artworks))
+	}
+	if !bytes.Equal(artworks[0].Data, imageBytes) || artworks[0].PictureType != "front" {
+		t.Fatalf("artworks[0] = %+v, want data=%v type=front", artworks[0], imageBytes)
+	}
+}
 
-	tags, err := Read(f)
+func TestReadArtworksReturnsEveryCoverArtItem(t *testing.T) {
+	audio := []byte("fake wavpack audio bytes")
+	frontBytes := []byte("\xFF\xD8\xFFfront")
+	backBytes := []byte("\xFF\xD8\xFFback")
+	tag := buildTag([]apeItem{
+		{key: "Cover Art (Front)", value: append([]byte("front.jpg\x00"), frontBytes...), valueType: 1},
+		{key: "Cover Art (Back)", value: append([]byte("back.jpg\x00"), backBytes...), valueType: 1},
+	})
+	path := writeTempFile(t, append(audio, tag...))
+
+	artworks, err := ReadArtworks(path)
 	if err != nil {
-		t.Fatalf("Read: %v", err)
+		t.Fatalf("ReadArtworks: %v", err)
 	}
-	if !bytes.Equal(tags.Artwork, imageBytes) {
-		t.Fatalf("Artwork = %v, want %v", tags.Artwork, imageBytes)
+	if len(artworks) != 2 {
+		t.Fatalf("len(artworks) = %d, want 2", len(artworks))
+	}
+	byType := map[string][]byte{}
+	for _, a := range artworks {
+		byType[a.PictureType] = a.Data
+	}
+	if !bytes.Equal(byType["front"], frontBytes) || !bytes.Equal(byType["back"], backBytes) {
+		t.Fatalf("artworks = %+v", artworks)
+	}
+}
+
+func TestReadArtworksWithNoCoverArtItems(t *testing.T) {
+	audio := []byte("fake wavpack audio bytes")
+	tag := buildTag([]apeItem{{key: "Artist", value: []byte("Someone"), valueType: 0}})
+	path := writeTempFile(t, append(audio, tag...))
+
+	artworks, err := ReadArtworks(path)
+	if err != nil {
+		t.Fatalf("ReadArtworks: %v", err)
+	}
+	if len(artworks) != 0 {
+		t.Fatalf("artworks = %+v, want none", artworks)
 	}
 }
 
@@ -148,7 +185,7 @@ func TestReadWithNoTagReturnsZeroValue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Read: %v", err)
 	}
-	if tags.Artist != "" || tags.Album != "" || tags.Title != "" || tags.Track != 0 || tags.Year != 0 || tags.Genre != "" || tags.Artwork != nil {
+	if tags.Artist != "" || tags.Album != "" || tags.Title != "" || tags.Track != 0 || tags.Year != 0 || tags.Genre != "" {
 		t.Fatalf("tags = %+v, want zero value", tags)
 	}
 }
@@ -224,8 +261,13 @@ func TestWritePreservesGenreAndArtworkAndUnknownItems(t *testing.T) {
 	if tags.Genre != "Jazz" {
 		t.Fatalf("Genre = %q, want Jazz (should be preserved, Genre is read-only elsewhere in this app)", tags.Genre)
 	}
-	if !bytes.Equal(tags.Artwork, imageBytes) {
-		t.Fatalf("Artwork = %v, want preserved %v", tags.Artwork, imageBytes)
+
+	artworks, err := ReadArtworks(path)
+	if err != nil {
+		t.Fatalf("ReadArtworks: %v", err)
+	}
+	if len(artworks) != 1 || !bytes.Equal(artworks[0].Data, imageBytes) {
+		t.Fatalf("artworks = %+v, want preserved front cover %v", artworks, imageBytes)
 	}
 }
 
