@@ -33,7 +33,7 @@ type CopiedTrack struct {
 	Year            int
 	Genre           string
 	DurationSeconds int
-	ArtworkData     []byte
+	ArtworkPictures []EmbeddedPicture
 }
 
 // Store is what Copy needs from the catalog to record its results and
@@ -110,7 +110,7 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		}
 	}
 
-	genre, artwork, err := readGenreAndArtwork(tr.DestPath)
+	genre, pictures, err := readGenreAndArtwork(tr.DestPath)
 	if err != nil {
 		return fmt.Errorf("reading source tags: %w", err)
 	}
@@ -148,7 +148,7 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		Year:            al.Year,
 		Genre:           genre,
 		DurationSeconds: duration,
-		ArtworkData:     artwork,
+		ArtworkPictures: pictures,
 	})
 }
 
@@ -169,10 +169,17 @@ func copyBytes(src, dst string) error {
 	return err
 }
 
-// readGenreAndArtwork reads the (unmodified, just-copied) destination file's
-// original tags for the fields the review plan doesn't carry. A file with
-// no tags at all yields both fields blank rather than an error.
-func readGenreAndArtwork(path string) (genre string, artwork []byte, err error) {
+// readGenreAndArtwork reads the (unmodified, just-copied) destination
+// file's original tags for the fields the review plan doesn't carry —
+// genre, plus every embedded picture (TDR 014 AC-7; extractEmbeddedPictures
+// handles the format-specific multi-picture traversal). A file with no
+// tags at all yields both fields blank rather than an error.
+func readGenreAndArtwork(path string) (genre string, pictures []EmbeddedPicture, err error) {
+	pictures, err = extractEmbeddedPictures(path)
+	if err != nil {
+		return "", nil, err
+	}
+
 	f, err := os.Open(path)
 	if err != nil {
 		return "", nil, err
@@ -184,22 +191,18 @@ func readGenreAndArtwork(path string) (genre string, artwork []byte, err error) 
 		if err != nil {
 			return "", nil, err
 		}
-		return fixCyrillicMojibake(t.Genre), t.Artwork, nil
+		return fixCyrillicMojibake(t.Genre), pictures, nil
 	}
 
 	m, err := tag.ReadFrom(f)
 	if errors.Is(err, tag.ErrNoTagsFound) {
-		return "", nil, nil
+		return "", pictures, nil
 	}
 	if err != nil {
 		return "", nil, err
 	}
 
-	genre = fixCyrillicMojibake(m.Genre())
-	if pic := m.Picture(); pic != nil {
-		artwork = pic.Data
-	}
-	return genre, artwork, nil
+	return fixCyrillicMojibake(m.Genre()), pictures, nil
 }
 
 func writeMP3Tags(path string, al Album, tr Track) error {
