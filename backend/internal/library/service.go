@@ -193,8 +193,12 @@ func (s *Service) DeleteLibrary(ctx context.Context, id int64, deleteFiles bool)
 
 // BuildPlan reads tags from every recognized audio file under sourceDir and
 // groups them into a per-album plan, computed against libraryID's root.
-// Rejects sourceDir if it's the same as, or nested inside, any existing
-// library's root (AC-8) — importing a library into itself.
+// Rejects sourceDir if it falls outside the configured browse root (empty by
+// default, see SetBrowseRoot) — the browse UI only ever offers paths inside
+// it, but sourceDir arrives from the client on every call, so this can't be
+// trusted to have been picked through Browse. Also rejects sourceDir if it's
+// the same as, or nested inside, any existing library's root (AC-8) —
+// importing a library into itself.
 func (s *Service) BuildPlan(ctx context.Context, libraryID int64, sourceDir string) (organize.Plan, error) {
 	lib, err := s.store.GetLibrary(ctx, libraryID)
 	if err != nil {
@@ -202,6 +206,10 @@ func (s *Service) BuildPlan(ctx context.Context, libraryID int64, sourceDir stri
 	}
 
 	clean := filepath.Clean(sourceDir)
+	if err := WithinRoot(clean, s.browseRoot); err != nil {
+		return organize.Plan{}, err
+	}
+
 	libs, err := s.store.ListLibraries(ctx)
 	if err != nil {
 		return organize.Plan{}, err

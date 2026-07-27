@@ -266,6 +266,20 @@ export async function pollForArtResolution<T extends { artStatus: ArtStatus }>(
   return latest
 }
 
+export interface About {
+  version: string
+  buildDate: string
+}
+
+// getAbout fetches the running build's identity for the About page (TDR
+// 008) — version is a `git describe` string, buildDate a UTC timestamp;
+// both come from the backend rather than being baked into the web bundle,
+// so the same static assets report correctly regardless of which backend
+// build actually served them.
+export function getAbout(): Promise<About> {
+  return request('/api/about')
+}
+
 export interface Config {
   dataDir: string
 }

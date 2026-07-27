@@ -521,6 +521,26 @@ func TestBuildPlanReadsTagsFromSourceDirectory(t *testing.T) {
 	}
 }
 
+// TestBuildPlanRejectsSourceOutsideBrowseRoot guards against a client
+// bypassing the browse UI's DATA_DIR scoping (Browse/CreateLibrary already
+// enforce it — see TestBrowseRejectsPathOutsideBrowseRoot) by posting an
+// arbitrary sourceDir straight to /build-plan: without this check BuildPlan
+// would happily scan anywhere on the container filesystem once a browse
+// root is configured.
+func TestBuildPlanRejectsSourceOutsideBrowseRoot(t *testing.T) {
+	store := newFakeImportStore()
+	libID := store.seedLibrary(t.TempDir())
+	svc := NewService(store, newRecordingCopier())
+	root := t.TempDir()
+	svc.SetBrowseRoot(root)
+
+	outside := t.TempDir() // a sibling temp dir, not under root
+	_, err := svc.BuildPlan(ctx(), libID, outside)
+	if !errors.Is(err, ErrOutsideRoot) {
+		t.Fatalf("BuildPlan outside browse root: err = %v, want ErrOutsideRoot", err)
+	}
+}
+
 func TestBuildPlanRejectsUnknownLibrary(t *testing.T) {
 	store := newFakeImportStore()
 	svc := NewService(store, newRecordingCopier())

@@ -8,6 +8,7 @@ import AlbumDetailPage from './pages/AlbumDetailPage'
 import SongsPage from './pages/SongsPage'
 import ImportPage from './pages/ImportPage'
 import LibrariesPage from './pages/LibrariesPage'
+import AboutPage from './pages/AboutPage'
 
 function App() {
   return (
@@ -22,6 +23,7 @@ function App() {
           <Route path="songs" element={<SongsPage />} />
           <Route path="import" element={<ImportPage />} />
           <Route path="libraries" element={<LibrariesPage />} />
+          <Route path="about" element={<AboutPage />} />
         </Route>
       </Routes>
     </BrowserRouter>

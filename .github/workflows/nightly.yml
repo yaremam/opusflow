@@ -100,7 +100,12 @@ jobs:
       contents: read
       packages: write
     steps:
+      # fetch-depth: 0 (full history + tags) — `git describe --tags` below
+      # needs tag history reachable from HEAD, which the default shallow
+      # checkout wouldn't have.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       # Needed to cross-build the arm64 half of the image on an amd64
       # runner — buildx alone only covers the runner's native platform.
       - uses: docker/setup-qemu-action@v3
@@ -115,6 +120,11 @@ jobs:
         run: |
           echo "date=$(date -u +%F)" >> "$GITHUB_OUTPUT"
           echo "short=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          # TDR 009: nearest tag + commits-since + short SHA (or the bare tag
+          # exactly on one) — falls back to a bare hash via --always if no
+          # tag exists reachable from HEAD yet.
+          echo "version=$(git describe --tags --always)" >> "$GITHUB_OUTPUT"
+          echo "build_date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
       # amd64 + arm64: no single known deploy target the way docuflow has
       # one, so one image reference needs to run on whichever machine ends
       # up hosting it (see TDR 004). `latest` is deliberately not tagged —
@@ -126,6 +136,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           build-args: |
             GIT_SHA=${{ needs.changes.outputs.sha }}
+            VERSION=${{ steps.tags.outputs.version }}
+            BUILD_DATE=${{ steps.tags.outputs.build_date }}
           tags: |
             ${{ env.IMAGE }}:nightly
             ${{ env.IMAGE }}:nightly-${{ steps.tags.outputs.date }}

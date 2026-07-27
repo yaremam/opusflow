@@ -19,8 +19,14 @@ services:
       PORT: ${PORT:-8080}
       DATABASE_URL: ${DATABASE_URL:-postgres://opusflow:opusflow@postgres:5432/opusflow?sslmode=disable}
       ARTWORK_DIR: /data/artwork
+      # Confines the Libraries page's folder picker and the import source
+      # browser to this one mount (see deploy/docker-compose.yml, which sets
+      # this the same way). ./data is created on the host automatically if
+      # it doesn't already exist — put your music there to import it.
+      DATA_DIR: /data
     volumes:
       - artwork:/data/artwork
+      - ./data:/data
     ports:
       - "8090:8080"
     depends_on:
