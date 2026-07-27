@@ -46,6 +46,10 @@ func New(staticDir, artworkDir, version, buildDate string, svc *library.Service)
 	mux.HandleFunc("POST /api/library/albums/{id}/art/retry", handleRetryAlbumArt(svc))
 	mux.HandleFunc("POST /api/library/albums/{id}/art", handleUploadAlbumArt(svc))
 	mux.HandleFunc("GET /api/library/songs", handleListSongs(svc))
+	mux.HandleFunc("GET /api/metadata/artists", handleSearchArtists(svc))
+	mux.HandleFunc("GET /api/metadata/artists/{mbid}/release-groups", handleArtistReleaseGroups(svc))
+	mux.HandleFunc("GET /api/metadata/release-groups/{mbid}/releases", handleReleaseGroupReleases(svc))
+	mux.HandleFunc("GET /api/metadata/releases/{mbid}/tracks", handleReleaseTracks(svc))
 
 	if artworkDir != "" {
 		mux.Handle("GET /artwork/", http.StripPrefix("/artwork/", http.FileServer(http.Dir(artworkDir))))

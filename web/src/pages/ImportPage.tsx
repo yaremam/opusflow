@@ -16,6 +16,7 @@ import {
   type PlanResponse,
   type ValidationError,
 } from '../api/library'
+import MetadataLookupModal, { type MetadataLookupApply } from '../components/MetadataLookupModal'
 import SourceFolderPicker from '../components/SourceFolderPicker'
 import UploadDropzone from '../components/UploadDropzone'
 import './ImportPage.css'
@@ -64,6 +65,29 @@ function withOverwriteAlbum(plan: Plan, albumIndex: number): Plan {
     albums: plan.albums.map((al, ai) => {
       if (ai !== albumIndex) return al
       return { ...al, tracks: al.tracks.map((tr) => (tr.conflict ? { ...tr, overwrite: true } : tr)) }
+    }),
+  }
+}
+
+// withMetadataLookup applies a picked MusicBrainz release (TDR 012) onto
+// one album: artist/album/year unconditionally, and each matched track's
+// title/trackNumber by index — tracks with no match (a count mismatch
+// between the release and the album's files) are left untouched.
+function withMetadataLookup(plan: Plan, albumIndex: number, result: MetadataLookupApply): Plan {
+  const byTrackIndex = new Map(result.tracks.map((t) => [t.trackIndex, t]))
+  return {
+    albums: plan.albums.map((al, ai) => {
+      if (ai !== albumIndex) return al
+      return {
+        ...al,
+        artist: result.artist,
+        album: result.album,
+        year: result.year,
+        tracks: al.tracks.map((tr, ti) => {
+          const match = byTrackIndex.get(ti)
+          return match ? { ...tr, title: match.title, trackNumber: match.trackNumber } : tr
+        }),
+      }
     }),
   }
 }
@@ -166,6 +190,7 @@ export default function ImportPage() {
   const [confirmError, setConfirmError] = useState<string | null>(null)
   const [bannerFlash, setBannerFlash] = useState(false)
   const [excludedTracks, setExcludedTracks] = useState<Set<string>>(new Set())
+  const [metadataLookupAlbumIndex, setMetadataLookupAlbumIndex] = useState<number | null>(null)
 
   const [activeImport, setActiveImport] = useState<Import | null>(null)
 
@@ -319,6 +344,11 @@ export default function ImportPage() {
   function handleOverwriteAlbum(albumIndex: number) {
     if (!plan) return
     void revalidate(withOverwriteAlbum(plan, albumIndex))
+  }
+
+  function handleMetadataLookupApply(albumIndex: number, result: MetadataLookupApply) {
+    if (!plan) return
+    void revalidate(withMetadataLookup(plan, albumIndex, result))
   }
 
   function focusTrackNumber(albumIndex: number, trackIndex: number) {
@@ -612,6 +642,9 @@ export default function ImportPage() {
                       {selection === 'none' && <span className="album-none-selected"> · 0 tracks selected</span>}
                     </div>
                   </div>
+                  <button type="button" className="btn-ghost album-lookup-metadata" onClick={() => setMetadataLookupAlbumIndex(albumIndex)}>
+                    Look up metadata
+                  </button>
                   {conflictCount > 1 && (
                     <button type="button" className="btn-bad album-overwrite-all" onClick={() => handleOverwriteAlbum(albumIndex)}>
                       Overwrite all {conflictCount} existing
@@ -707,6 +740,20 @@ export default function ImportPage() {
               </button>
             </div>
           </div>
+
+          {metadataLookupAlbumIndex !== null &&
+            plan &&
+            (() => {
+              const al = plan.albums[metadataLookupAlbumIndex]
+              return (
+                <MetadataLookupModal
+                  initialArtist={al.artist}
+                  files={al.tracks.map((tr) => tr.destPath.split('/').pop() ?? '')}
+                  onApply={(result) => handleMetadataLookupApply(metadataLookupAlbumIndex, result)}
+                  onClose={() => setMetadataLookupAlbumIndex(null)}
+                />
+              )
+            })()}
         </>
       )}
 

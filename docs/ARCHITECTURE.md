@@ -174,6 +174,15 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   - `POST /api/library/albums/{id}/art/retry` / `POST
     /api/library/albums/{id}/art` — album-flavored counterparts of the two
     artist routes above
+  - `GET /api/metadata/artists?q=` — search MusicBrainz artists by name,
+    every match (not just the top-ranked one); `503` if the interactive
+    search client isn't wired up (it always is, see `MusicBrainz` above)
+  - `GET /api/metadata/artists/{mbid}/release-groups` — that artist's
+    albums
+  - `GET /api/metadata/release-groups/{mbid}/releases` — a release-group's
+    specific releases/editions, with each one's track count
+  - `GET /api/metadata/releases/{mbid}/tracks` — a release's full track
+    listing (TDR 012, the review screen's "Look up metadata" flow)
 - **`backend/internal/db`** — Postgres connection (`Open`) and schema
   migrations (`Migrate`, embedding `internal/db/migrations/*.sql`, tracked in
   a `schema_migrations` table).
@@ -237,7 +246,15 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   dependency points one way" shape as `scan`/`library.Store.InsertTrack`).
   `Job.Run` processes every artist/album with any of art/facts/bio still
   `pending`/`failed`, not scoped to a particular scan, tracking each kind's
-  outcome independently.
+  outcome independently. `MusicBrainz` has a second, independent consumer
+  as of TDR 012: the import review screen's on-demand "Look up metadata"
+  flow (`SearchArtists`/`ArtistReleaseGroups`/`ReleaseGroupReleases`/
+  `ReleaseTracks`, exposed via `library.Service.SetMusicBrainzSearch` and
+  `/api/metadata/*`) searches/browses MusicBrainz interactively rather than
+  by internal ID, sharing the same rate limiter but constructed
+  unconditionally in `main.go` — unlike `Job`, it needs no `ARTWORK_DIR`
+  (no image storage involved), so it's available even when artwork
+  enrichment itself is off.
 - **`web/`** — `react-router` routes wrapped in `src/components/AppLayout.tsx`
   (persistent Home/Artists/Albums/Songs/Import/Libraries header nav):
   `src/pages/HomePage.tsx` (library snapshot + recently-added previews, with
@@ -251,7 +268,11 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   reused verbatim by `LibrariesPage` below), `src/pages/ImportPage.tsx` — the
   organize-on-import flow as one page-level state machine (history list →
   choose/create a library → choose a source → browse/upload → review plan →
-  copying → done), replacing the old directory-list Library page, and
+  copying → done), replacing the old directory-list Library page; its review
+  step's per-album "Look up metadata" button opens
+  `src/components/MetadataLookupModal.tsx` (TDR 012) — a four-step
+  artist → album → release → track-match modal that applies everything to
+  the plan in one commit, and
   `src/pages/LibrariesPage.tsx` (TDR 006) — lists every library and is the
   only place one can be deleted from. Both pages compose
   `src/components/SourceFolderPicker.tsx` (breadcrumb folder browser,
@@ -329,6 +350,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Metadata lookup during import | [012](tdr/012_metadata_lookup_during_import_design.md) | Per-album "Look up metadata" flow on the import review screen: search MusicBrainz artists → browse their albums (release-groups) → pick a specific release (edition) → review its track listing matched onto the album's files by row order → one "Apply" commits everything; new interactive `MusicBrainz` search/browse/track-listing methods, exposed via `/api/metadata/*`, sharing the existing rate limiter but constructed independently of `ARTWORK_DIR` | GitHub issue #17; the by-ID background enrichment job (TDR 003) can't help when tags are missing/wrong going into the review step — needed a person-driven search-and-pick path, not another silent job |
 | About page & build versioning | [009](tdr/009_about_page_and_versioning_design.md) | Semantic version derived from git tags (`git describe --tags --always`) plus a UTC build timestamp, stamped into the image and served from a new `GET /api/about`; new About page (last item in the top nav) displays both plus a GitHub link; `GET /health` drops its `revision` field, back to `{"status":"ok"}` only | The prior SHA-only `/health` revision had no in-app surface and no notion of a release, just an opaque hash to `curl` for |
 | Home page table view | [008](tdr/008_home_page_table_view_design.md) | A shared "▦ Grid / ☰ Table" toggle above the home page's Recently added artists/albums sections; table columns (Artist/Albums/Songs, Album/Artist/Year) sourced entirely from fields the existing API responses already carry; choice remembered in `localStorage`, no backend change | GitHub issue #8; a large library benefits from scanning more rows at once with more detail per row than the card/chip grid shows, without giving up the grid for people who prefer it |
 | Artwork status, manual retry & upload | [007](tdr/007_artwork_retry_and_upload_design.md) | Art status (pending/found/not_found/failed) exposed via the API and surfaced as a badge/pill wherever it's rendered; "Retry lookup" resets status to pending and wakes the background job immediately, always available even on a `found` item; "Upload photo/cover" bypasses MusicBrainz/Cover Art Archive entirely, synchronous, always available; `SetArtistArt`/`SetAlbumArt` fixed to only overwrite path columns on a `Found` write | The API previously couldn't distinguish "still looking" from "gave up," and a `failed`/`not_found` item had no way to be nudged short of a new import; scoped to Art only, Facts/Bio/Description unchanged |
