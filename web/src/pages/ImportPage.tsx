@@ -689,7 +689,14 @@ export default function ImportPage() {
                                 onBlur={(e) => handleTrackFieldBlur(albumIndex, trackIndex, 'title', e.target.value)}
                               />
                             </td>
-                            <td className="tp-dest mono">{tr.destPath.split('/').pop()}</td>
+                            <td className="tp-dest mono">
+                              {tr.destPath.split('/').pop()}
+                              {tr.hasCorrectionFile && (
+                                <span className="tp-correction-file" title="Includes a .wvc correction file">
+                                  📎
+                                </span>
+                              )}
+                            </td>
                             <td className="tp-status">
                               {err ? <span className="warn-dot">⚠</span> : <span className="ok-dot">●</span>}
                             </td>

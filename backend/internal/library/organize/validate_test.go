@@ -70,6 +70,50 @@ func TestValidateFlagsUnresolvedConflict(t *testing.T) {
 	}
 }
 
+func TestValidateFlagsConflictWhenOnlyTheWVCCompanionExists(t *testing.T) {
+	root := t.TempDir()
+	// The .wv destination itself is free, but its .wvc companion's
+	// destination already exists — TDR 013 AC-7 treats that the same as
+	// any other conflict, since a .wvc is never overwritten silently.
+	wvcDest := filepath.Join(root, "Pink Floyd", "1975.Wish You Were Here", "01.Shine On.wvc")
+	if err := os.MkdirAll(filepath.Dir(wvcDest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wvcDest, []byte("existing correction file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	track := completeTrack("/src/one.wv")
+	track.HasCorrectionFile = true
+	plan := Plan{Albums: []Album{{Artist: "Pink Floyd", Album: "Wish You Were Here", Year: 1975, Tracks: []Track{track}}}}
+
+	errs := Validate(root, &plan)
+	if len(errs) != 1 || !errs[0].Conflict {
+		t.Fatalf("errs = %+v, want one conflict error from the .wvc companion alone", errs)
+	}
+}
+
+func TestValidateOverwriteResolvesBothWVAndWVCConflict(t *testing.T) {
+	root := t.TempDir()
+	wvcDest := filepath.Join(root, "Pink Floyd", "1975.Wish You Were Here", "01.Shine On.wvc")
+	if err := os.MkdirAll(filepath.Dir(wvcDest), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wvcDest, []byte("existing correction file"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	track := completeTrack("/src/one.wv")
+	track.HasCorrectionFile = true
+	track.Overwrite = true
+	plan := Plan{Albums: []Album{{Artist: "Pink Floyd", Album: "Wish You Were Here", Year: 1975, Tracks: []Track{track}}}}
+
+	errs := Validate(root, &plan)
+	if len(errs) != 0 {
+		t.Fatalf("errs = %+v, want none — Overwrite resolves the .wvc conflict too, one decision for both files", errs)
+	}
+}
+
 func TestValidateAllowsExplicitOverwriteOfAConflict(t *testing.T) {
 	root := t.TempDir()
 	dest := filepath.Join(root, "Pink Floyd", "1975.Wish You Were Here", "01.Shine On.flac")

@@ -30,6 +30,7 @@ var durationParsersByExt = map[string]DurationParser{
 	".aac":  duration.MP4, // ADTS in practice; MP4 box parser is an approximation
 	".ogg":  duration.OGG,
 	".wav":  duration.WAV,
+	".wv":   duration.WavPack,
 }
 
 // DetectFormat reports the duration parser for a filename based on its

@@ -78,8 +78,8 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 | Web frontend | React 19 + Vite + TypeScript + `react-router` | `web/`; router added by [TDR 002](tdr/002_home_and_browsing_design.md) — no separate state-management library yet |
 | Mobile | Expo (React Native) + TypeScript | `mobile/`, default `create-expo-app blank-typescript` template, not yet customized |
 | Database | PostgreSQL 17 | `backend/internal/db` (`lib/pq` driver, hand-rolled embed-based migration runner — no ORM/migration-library dependency); wired up by [TDR 001](tdr/001_add_local_directory_design.md) |
-| Audio tag reading/duration parsing | `github.com/dhowden/tag` (reading) + hand-rolled per-format duration parsers | `backend/internal/library/scan` (format detection + duration only) and `backend/internal/library/organize` (plan-building tag reads); see [TDR 005](tdr/005_organize_on_import_design.md) |
-| Audio tag writing | `github.com/bogem/id3v2` (MP3) + `github.com/go-flac/go-flac` + `flacvorbis` (FLAC) | `backend/internal/library/organize`; scoped to MP3/FLAC only — no mature Go writer exists for M4A/OGG/WAV, see [TDR 005](tdr/005_organize_on_import_design.md) |
+| Audio tag reading/duration parsing | `github.com/dhowden/tag` (ID3v2/MP4/Vorbis) + this project's own `apev2` package (WavPack's APEv2 tags, TDR 013 — dhowden/tag has no APEv2 support) + hand-rolled per-format duration parsers | `backend/internal/library/scan` (format detection + duration only) and `backend/internal/library/organize` (plan-building tag reads); see [TDR 005](tdr/005_organize_on_import_design.md) |
+| Audio tag writing | `github.com/bogem/id3v2` (MP3) + `github.com/go-flac/go-flac` + `flacvorbis` (FLAC) + this project's own `apev2` package (WavPack) | `backend/internal/library/organize`; scoped to MP3/FLAC/WavPack only — no mature Go writer exists for M4A/OGG, see [TDR 005](tdr/005_organize_on_import_design.md); WavPack's APEv2 writer is hand-rolled for the same reason (TDR 013) |
 | Artwork/info sourcing | MusicBrainz + Cover Art Archive + Wikidata/Wikipedia (no API key, descriptive `User-Agent`) | `backend/internal/library/enrich`; `golang.org/x/image/draw` for resizing; see [TDR 003](tdr/003_artwork_and_info_design.md) |
 | Package manager (web/mobile) | pnpm workspaces, pinned via corepack (`pnpm@9`), Node.js 24 | root `pnpm-workspace.yaml` covers `web/` and `mobile/`; `Dockerfile`'s `node:24-alpine` build stage and the nightly workflow's `setup-node` both pin the same version |
 | Packaging | Docker (see §1) | root `Dockerfile` + `docker-compose.yml` (local build/dev) |
@@ -217,24 +217,42 @@ for self-hosting without a Go/Node toolchain on the target machine — see
 - **`backend/internal/library/organize`** — the organize-on-import engine
   (TDR 005): `BuildPlan` (recursive source walk, tag reads that leave a
   blank field blank rather than guessing — deliberately distinct from
-  `scan.ExtractTags`'s old filename-fallback behavior), `Validate`
-  (recomputes each track's canonical `<Artist>/<Year>.<Album>/<NN>.<Title>`
-  destination and on-disk conflict status against the plan's current,
-  possibly reviewer-edited values — the server, never the client, decides
-  what confirming would actually do), and `Copy` (copies each file to its
+  `scan.ExtractTags`'s old filename-fallback behavior; a `.wv` file's tags
+  come from `apev2.Read` instead of `dhowden/tag`, and a sibling `.wvc`
+  hybrid-mode correction file sets `Track.HasCorrectionFile`, TDR 013),
+  `Validate` (recomputes each track's canonical
+  `<Artist>/<Year>.<Album>/<NN>.<Title>` destination and on-disk conflict
+  status against the plan's current, possibly reviewer-edited values — the
+  server, never the client, decides what confirming would actually do; a
+  `.wvc` companion's own destination is folded into the same track's
+  conflict/overwrite decision rather than needing one of its own), and
+  `Copy` (copies each file — and its `.wvc` companion, if any — to its
   destination, writes the plan's corrected fields back into the copy's own
-  MP3/FLAC tags, re-extracts genre/embedded artwork from the original tags
-  for the catalog, and tolerates per-file failure without aborting the rest
-  — the same tolerance `scan.Scanner` used for the model this replaced).
+  MP3/FLAC/WavPack tags, re-extracts genre/embedded artwork from the
+  original tags for the catalog, and tolerates per-file failure without
+  aborting the rest — the same tolerance `scan.Scanner` used for the model
+  this replaced).
 - **`backend/internal/library/scan`** — now scoped to what `organize` still
-  needs: audio format detection by extension (mp3/flac/m4a/aac/ogg/wav) and
-  per-format duration parsing. The old recursive-scan-in-place engine
+  needs: audio format detection by extension
+  (mp3/flac/m4a/aac/ogg/wav/wv — `.wvc` deliberately excluded, TDR 013 AC-9)
+  and per-format duration parsing. The old recursive-scan-in-place engine
   (`Scanner`, `Track`, filename-fallback tag extraction) was removed with
   TDR 005; TDR 001's original design remains in that TDR's write-up for
   history.
 - **`backend/internal/library/scan/duration`** — per-format audio duration:
-  exact for WAV/FLAC/MP4, best-effort for OGG (last page granule position)
-  and MP3 (Xing/Info VBR header if present, else a bitrate/filesize estimate).
+  exact for WAV/FLAC/MP4/WavPack (TDR 013 — read from the first block
+  header's total-sample count, falling back to summing every block's count
+  only for the rare file encoded without a known length upfront),
+  best-effort for OGG (last page granule position) and MP3 (Xing/Info VBR
+  header if present, else a bitrate/filesize estimate).
+- **`backend/internal/library/apev2`** — reads and writes APEv2 tags (TDR
+  013), the format WavPack (`.wv`) files use, which `dhowden/tag` doesn't
+  support. `Read`/`Write` cover Artist/Album/Title/Track/Year (what the
+  review screen edits) plus Genre and embedded cover art (read-only
+  everywhere in this app, matching every other format); `Write` preserves
+  every other existing tag item untouched, the same
+  overwrite-named-fields-only approach `organize`'s FLAC writer already
+  takes.
 - **`backend/internal/library/enrich`** — the background artwork/info
   worker (TDR 003): `MusicBrainz` (search + lookup, rate-limited to its
   usage policy), `CoverArtArchive` (album covers by release-group MBID),
@@ -350,6 +368,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| WavPack (.wv) support | [013](tdr/013_wavpack_support_design.md) | `.wv` recognized by format detection (was silently skipped before); new hand-rolled `scan/duration.WavPack` parser (block-header total-samples, falling back to a full block scan); new `apev2` package reads/writes APEv2 tags (Artist/Album/Title/Track/Year/Genre/cover art) since `dhowden/tag` has no APEv2 support and no mature Go library exists; a sibling `.wvc` hybrid-mode correction file is detected, copied alongside its `.wv`, and conflict-checked the same as any other file, with a small icon on its review row | GitHub issue #18; the user wanted full parity with MP3/FLAC rather than a detection-only first cut — confirmed via grilling, not assumed |
 | Metadata lookup during import | [012](tdr/012_metadata_lookup_during_import_design.md) | Per-album "Look up metadata" flow on the import review screen: search MusicBrainz artists → browse their albums (release-groups) → pick a specific release (edition) → review its track listing matched onto the album's files by row order → one "Apply" commits everything; new interactive `MusicBrainz` search/browse/track-listing methods, exposed via `/api/metadata/*`, sharing the existing rate limiter but constructed independently of `ARTWORK_DIR` | GitHub issue #17; the by-ID background enrichment job (TDR 003) can't help when tags are missing/wrong going into the review step — needed a person-driven search-and-pick path, not another silent job |
 | About page & build versioning | [009](tdr/009_about_page_and_versioning_design.md) | Semantic version derived from git tags (`git describe --tags --always`) plus a UTC build timestamp, stamped into the image and served from a new `GET /api/about`; new About page (last item in the top nav) displays both plus a GitHub link; `GET /health` drops its `revision` field, back to `{"status":"ok"}` only | The prior SHA-only `/health` revision had no in-app surface and no notion of a release, just an opaque hash to `curl` for |
 | Home page table view | [008](tdr/008_home_page_table_view_design.md) | A shared "▦ Grid / ☰ Table" toggle above the home page's Recently added artists/albums sections; table columns (Artist/Albums/Songs, Album/Artist/Year) sourced entirely from fields the existing API responses already carry; choice remembered in `localStorage`, no backend change | GitHub issue #8; a large library benefits from scanning more rows at once with more detail per row than the card/chip grid shows, without giving up the grid for people who prefer it |

@@ -10,7 +10,10 @@ import (
 // These exercise the parsers against real encoder output (fixtures shared
 // with the scan package's tag-extraction tests), as a sanity check beyond
 // the hand-built exact-value fixtures above: real files must parse without
-// error and produce a plausible, bounded duration.
+// error and produce a plausible, bounded duration. sample.wv is the one
+// exception — no WavPack encoder was available to produce a real one, so
+// it's hand-constructed to match the on-disk block-header format exactly
+// (see wavpack_test.go's synthetic fixtures for the same construction).
 func TestDurationOnRealFixtures(t *testing.T) {
 	const maxPlausible = 30 * time.Second
 
@@ -23,6 +26,7 @@ func TestDurationOnRealFixtures(t *testing.T) {
 		{"flac", FLAC, filepath.Join("..", "testdata", "with_tags", "sample.flac")},
 		{"m4a", MP4, filepath.Join("..", "testdata", "with_tags", "sample.m4a")},
 		{"ogg", OGG, filepath.Join("..", "testdata", "with_tags", "sample.ogg")},
+		{"wv", WavPack, filepath.Join("..", "testdata", "with_tags", "sample.wv")},
 	}
 
 	for _, tt := range tests {

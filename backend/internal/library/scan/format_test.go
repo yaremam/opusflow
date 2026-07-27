@@ -26,6 +26,12 @@ func TestDetectFormat(t *testing.T) {
 		{"song.aac", duration.MP4, true},
 		{"song.ogg", duration.OGG, true},
 		{"song.wav", duration.WAV, true},
+		{"song.wv", duration.WavPack, true},
+		{"song.WV", duration.WavPack, true},
+		// .wvc (a WavPack hybrid-mode correction file) must never be
+		// independently detected as its own track -- TDR 013 AC-9 -- it is
+		// only ever noticed as a side effect of finding a .wv.
+		{"song.wvc", nil, false},
 		{"cover.jpg", nil, false},
 		{"README.md", nil, false},
 		{"noextension", nil, false},

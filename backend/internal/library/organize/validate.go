@@ -33,7 +33,7 @@ func Validate(libraryRoot string, plan *Plan) []ValidationError {
 			missing := missingFields(*al, *tr)
 
 			tr.DestPath = destPath(libraryRoot, al.Artist, al.Album, al.Year, tr.TrackNumber, tr.Title, filepath.Ext(tr.SourcePath))
-			tr.Conflict = destExists(tr.DestPath)
+			tr.Conflict = destExists(tr.DestPath) || (tr.HasCorrectionFile && destExists(correctionPath(tr.DestPath)))
 
 			unresolvedConflict := tr.Conflict && !tr.Overwrite
 			if len(missing) > 0 || unresolvedConflict {

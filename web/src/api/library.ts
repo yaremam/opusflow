@@ -45,6 +45,11 @@ export interface PlanTrack {
   destPath: string
   conflict: boolean
   overwrite: boolean
+  // hasCorrectionFile is set for a WavPack (.wv) track with a matching
+  // .wvc hybrid-mode correction file alongside it (TDR 013) — that file
+  // rides along wherever this track goes, sharing its conflict/overwrite
+  // status rather than getting a review row of its own.
+  hasCorrectionFile?: boolean
 }
 
 export interface PlanAlbum {

@@ -8,6 +8,8 @@ import (
 
 	"github.com/bogem/id3v2/v2"
 	"github.com/dhowden/tag"
+
+	"github.com/yaremam/opusflow/backend/internal/library/apev2"
 )
 
 // fakeStore is an in-memory Store double for asserting on what Copy reports,
@@ -256,6 +258,85 @@ func TestCopyCarriesGenreAndArtworkIntoCopiedTrack(t *testing.T) {
 	}
 	if string(got.ArtworkData) != string(art) {
 		t.Fatalf("ArtworkData mismatch: got %d bytes, want %d bytes matching source picture", len(got.ArtworkData), len(art))
+	}
+}
+
+func TestCopyWritesBackCorrectedTagsToWavPack(t *testing.T) {
+	root := t.TempDir()
+	dest := filepath.Join(root, "Corrected Artist", "1999.Corrected Album", "05.Corrected Title.wv")
+	plan := Plan{Albums: []Album{{
+		Artist: "Corrected Artist", Album: "Corrected Album", Year: 1999,
+		Tracks: []Track{trackFor("testdata/tagged.wv", dest, "Corrected Title", 5)},
+	}}}
+
+	store := &fakeStore{}
+	summary := Copy(context.Background(), store, 1, plan)
+	if summary.FilesProcessed != 1 || summary.FilesFailed != 0 {
+		t.Fatalf("summary = %+v, want 1 processed, 0 failed", summary)
+	}
+
+	f, err := os.Open(dest)
+	if err != nil {
+		t.Fatalf("open copied file: %v", err)
+	}
+	defer f.Close()
+	got, err := apev2.Read(f)
+	if err != nil {
+		t.Fatalf("read back tags: %v", err)
+	}
+	if got.Title != "Corrected Title" || got.Artist != "Corrected Artist" || got.Album != "Corrected Album" {
+		t.Fatalf("tags = %+v, want corrected values", got)
+	}
+	if got.Track != 5 || got.Year != 1999 {
+		t.Fatalf("Track/Year = %d/%d, want 5/1999", got.Track, got.Year)
+	}
+}
+
+func TestCopyCopiesCorrectionFileAlongsideWavPack(t *testing.T) {
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "one.wv")
+	copyFixture(t, "testdata/tagged.wv", src)
+	copyFixture(t, "testdata/tagged.wvc", filepath.Join(srcDir, "one.wvc"))
+
+	root := t.TempDir()
+	dest := filepath.Join(root, "Artist", "2000.Album", "03.Title.wv")
+	tr := trackFor(src, dest, "Title", 3)
+	tr.HasCorrectionFile = true
+	plan := Plan{Albums: []Album{{Artist: "Artist", Album: "Album", Year: 2000, Tracks: []Track{tr}}}}
+
+	store := &fakeStore{}
+	summary := Copy(context.Background(), store, 1, plan)
+	if summary.FilesProcessed != 1 || summary.FilesFailed != 0 {
+		t.Fatalf("summary = %+v, want 1 processed, 0 failed", summary)
+	}
+
+	wvcDest := filepath.Join(root, "Artist", "2000.Album", "03.Title.wvc")
+	got, err := os.ReadFile(wvcDest)
+	if err != nil {
+		t.Fatalf("correction file missing at %s: %v", wvcDest, err)
+	}
+	want, _ := os.ReadFile("testdata/tagged.wvc")
+	if string(got) != string(want) {
+		t.Fatal("copied .wvc content doesn't match the source correction file")
+	}
+}
+
+func TestCopyFailsWholeTrackWhenCorrectionFileSourceMissing(t *testing.T) {
+	srcDir := t.TempDir()
+	src := filepath.Join(srcDir, "one.wv")
+	copyFixture(t, "testdata/tagged.wv", src)
+	// Deliberately no one.wvc written alongside it.
+
+	root := t.TempDir()
+	dest := filepath.Join(root, "Artist", "2000.Album", "03.Title.wv")
+	tr := trackFor(src, dest, "Title", 3)
+	tr.HasCorrectionFile = true
+	plan := Plan{Albums: []Album{{Artist: "Artist", Album: "Album", Year: 2000, Tracks: []Track{tr}}}}
+
+	store := &fakeStore{}
+	summary := Copy(context.Background(), store, 1, plan)
+	if summary.FilesFailed != 1 || summary.FilesProcessed != 0 {
+		t.Fatalf("summary = %+v, want the whole track to fail when the promised .wvc source is missing", summary)
 	}
 }
 

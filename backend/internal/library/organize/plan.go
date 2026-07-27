@@ -7,9 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/dhowden/tag"
 
+	"github.com/yaremam/opusflow/backend/internal/library/apev2"
 	"github.com/yaremam/opusflow/backend/internal/library/scan"
 )
 
@@ -30,6 +32,12 @@ type Track struct {
 	// handling — never defaulted true). Ignored by BuildPlan; only read by
 	// Validate/Confirm.
 	Overwrite bool `json:"overwrite"`
+
+	// HasCorrectionFile is set when a WavPack hybrid-mode ".wvc" file with
+	// the same base name sits alongside SourcePath (TDR 013) — it rides
+	// along wherever this track goes, sharing its Conflict/Overwrite
+	// status rather than getting a review row of its own.
+	HasCorrectionFile bool `json:"hasCorrectionFile,omitempty"`
 }
 
 // Album is one detected (Artist, Album) group within a source directory,
@@ -98,11 +106,12 @@ func BuildPlan(libraryRoot, sourceDir string) (Plan, error) {
 		dest := destPath(libraryRoot, artist, album, year, trackNumber, title, filepath.Ext(p))
 
 		grp.Tracks = append(grp.Tracks, Track{
-			SourcePath:  p,
-			TrackNumber: trackNumber,
-			Title:       title,
-			DestPath:    dest,
-			Conflict:    destExists(dest),
+			SourcePath:        p,
+			TrackNumber:       trackNumber,
+			Title:             title,
+			DestPath:          dest,
+			Conflict:          destExists(dest) || (hasCorrectionFile(p) && destExists(correctionPath(dest))),
+			HasCorrectionFile: hasCorrectionFile(p),
 		})
 		return nil
 	})
@@ -132,6 +141,16 @@ func readTrackTags(path string) (artist, album, title string, trackNumber, year 
 		return "", "", "", 0, 0, err
 	}
 	defer f.Close()
+
+	// dhowden/tag has no APEv2 support (WavPack's tag format) — a .wv file
+	// goes through this package's own reader instead (TDR 013).
+	if strings.EqualFold(filepath.Ext(path), ".wv") {
+		t, err := apev2.Read(f)
+		if err != nil {
+			return "", "", "", 0, 0, err
+		}
+		return fixCyrillicMojibake(t.Artist), fixCyrillicMojibake(t.Album), fixCyrillicMojibake(t.Title), t.Track, t.Year, nil
+	}
 
 	m, err := tag.ReadFrom(f)
 	if errors.Is(err, tag.ErrNoTagsFound) {
