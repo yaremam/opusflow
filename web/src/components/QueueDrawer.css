@@ -1,0 +1,121 @@
+.queue-drawer {
+  position: fixed;
+  right: 1.25rem;
+  bottom: 5rem;
+  width: 320px;
+  max-height: 60vh;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+  z-index: 19;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.queue-drawer-head {
+  padding: 0.85rem 1rem;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.queue-drawer-head h3 {
+  margin: 0;
+  font-size: 0.88rem;
+}
+.queue-drawer-head .count {
+  font-size: 0.74rem;
+  color: var(--mist-400);
+}
+.queue-list {
+  overflow-y: auto;
+  padding: 0.4rem;
+}
+.queue-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.5rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.queue-row:hover {
+  background: var(--ink-800);
+}
+.queue-row.dragging {
+  opacity: 0.4;
+}
+.queue-row.drag-over {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.queue-row .handle {
+  color: var(--mist-400);
+  flex-shrink: 0;
+  display: flex;
+  cursor: grab;
+}
+.queue-row .handle svg {
+  width: 0.9rem;
+  height: 0.9rem;
+}
+.queue-row .art {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 5px;
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.queue-row .meta {
+  flex: 1;
+  min-width: 0;
+}
+.queue-row .title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-row .artist {
+  font-size: 0.7rem;
+  color: var(--mist-400);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queue-row .remove {
+  background: none;
+  border: none;
+  color: var(--mist-400);
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 5px;
+}
+.queue-row .remove:hover {
+  color: var(--bad);
+  background: var(--bad-bg);
+}
+.queue-row .remove svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}
+.queue-empty {
+  padding: 1.5rem 1rem;
+  text-align: center;
+  color: var(--mist-400);
+  font-size: 0.82rem;
+}
+
+@media (max-width: 720px) {
+  .queue-drawer {
+    right: 0.75rem;
+    left: 0.75rem;
+    width: auto;
+  }
+}

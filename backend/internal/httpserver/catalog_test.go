@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -24,6 +25,25 @@ func mustInsertTrack(t *testing.T, store *library.Store, importID int64, artist,
 	}); err != nil {
 		t.Fatalf("InsertTrack: %v", err)
 	}
+}
+
+// mustInsertTrackWithFile is mustInsertTrack, but points the track at a
+// real file on disk (containing data) rather than a fake /music/... path
+// — needed for the streaming endpoint (TDR 015), which actually opens
+// and serves the file's bytes.
+func mustInsertTrackWithFile(t *testing.T, store *library.Store, importID int64, artist, album, title string, trackNumber, year int, ext string, data []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), title+ext)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("writing test audio file: %v", err)
+	}
+	if err := store.InsertTrack(context.Background(), organize.CopiedTrack{
+		ImportID: importID, Path: path,
+		Title: title, Artist: artist, Album: album, TrackNumber: trackNumber, Year: year,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+	return path
 }
 
 func mustCreateImportForTest(t *testing.T, store *library.Store) int64 {
@@ -654,5 +674,91 @@ func TestDeleteAlbumCoverEndpointNotFound(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestStreamSongEndpointServesFullFile(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	data := bytes.Repeat([]byte("abcdefgh"), 100) // 800 bytes
+	mustInsertTrackWithFile(t, store, importID, "Stream Artist", "Stream Album", "Stream Song", 1, 2020, ".mp3", data)
+
+	page, err := svc.ListSongs(context.Background(), library.ListOptions{Query: "Stream Song"})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("ListSongs: items=%+v err=%v", page.Items, err)
+	}
+	id := page.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/"+strconv.FormatInt(id, 10)+"/stream", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "audio/mpeg" {
+		t.Fatalf("Content-Type = %q, want audio/mpeg", ct)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), data) {
+		t.Fatalf("body length = %d, want %d matching the source file", rec.Body.Len(), len(data))
+	}
+	if ar := rec.Header().Get("Accept-Ranges"); ar != "bytes" {
+		t.Fatalf("Accept-Ranges = %q, want bytes", ar)
+	}
+}
+
+func TestStreamSongEndpointSupportsRangeRequests(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	data := bytes.Repeat([]byte("0123456789"), 50) // 500 bytes
+	mustInsertTrackWithFile(t, store, importID, "Range Artist", "Range Album", "Range Song", 1, 2020, ".flac", data)
+
+	page, err := svc.ListSongs(context.Background(), library.ListOptions{Query: "Range Song"})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("ListSongs: items=%+v err=%v", page.Items, err)
+	}
+	id := page.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/"+strconv.FormatInt(id, 10)+"/stream", nil)
+	req.Header.Set("Range", "bytes=100-199")
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusPartialContent {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusPartialContent, rec.Body.String())
+	}
+	if ct := rec.Header().Get("Content-Type"); ct != "audio/flac" {
+		t.Fatalf("Content-Type = %q, want audio/flac", ct)
+	}
+	wantRange := "bytes 100-199/500"
+	if cr := rec.Header().Get("Content-Range"); cr != wantRange {
+		t.Fatalf("Content-Range = %q, want %q", cr, wantRange)
+	}
+	if !bytes.Equal(rec.Body.Bytes(), data[100:200]) {
+		t.Fatalf("range body = %q, want %q", rec.Body.Bytes(), data[100:200])
+	}
+}
+
+func TestStreamSongEndpointNotFound(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/999999/stream", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestStreamSongEndpointRejectsInvalidID(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/not-a-number/stream", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
 	}
 }

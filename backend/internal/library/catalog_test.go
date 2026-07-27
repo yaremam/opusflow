@@ -260,6 +260,89 @@ func TestArtStatusExposedOnFreshAndEnrichedRows(t *testing.T) {
 	}
 }
 
+// TestListSongsIncludesFormat locks in TDR 015's AC-6 prerequisite: the
+// client needs to know a track's format to disable playback for WavPack,
+// derived server-side from the track's path (never itself exposed).
+func TestListSongsIncludesFormat(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "Format Artist", "Format Album", "Format Song", 1, 2020, "Pop")
+
+	page, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Format Song"})
+	if err != nil {
+		t.Fatalf("ListSongs: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Format != "mp3" {
+		t.Fatalf("songs = %+v, want format=mp3", page.Items)
+	}
+}
+
+func TestListSongsFormatForWavPackTrack(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID: importID, Path: "/music/Artist/Album/Song.wv",
+		Title: "WV Song", Artist: "WV Artist", Album: "WV Album", TrackNumber: 1, Year: 2020,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	page, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "WV Song"})
+	if err != nil {
+		t.Fatalf("ListSongs: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].Format != "wv" {
+		t.Fatalf("songs = %+v, want format=wv", page.Items)
+	}
+}
+
+func TestGetSongPathReturnsPath(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "Path Artist", "Path Album", "Path Song", 1, 2020, "Pop")
+
+	page, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Path Song"})
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("ListSongs: items=%+v err=%v", page.Items, err)
+	}
+
+	path, err := s.GetSongPath(ctx(), page.Items[0].ID)
+	if err != nil {
+		t.Fatalf("GetSongPath: %v", err)
+	}
+	if path != "/music/Path Artist/Path Album/Path Song.mp3" {
+		t.Fatalf("path = %q", path)
+	}
+}
+
+func TestGetSongPathNotFound(t *testing.T) {
+	s := testStore(t)
+
+	_, err := s.GetSongPath(ctx(), 999999)
+	if !errors.Is(err, ErrSongNotFound) {
+		t.Fatalf("GetSongPath error = %v, want ErrSongNotFound", err)
+	}
+}
+
+func TestGetAlbumTracksIncludeFormat(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "Format Artist", "Format Track Album", "Only Song", 1, 2020, "Pop")
+
+	albums, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Format Track Album"})
+	if err != nil || len(albums.Items) != 1 {
+		t.Fatalf("ListAlbums: items=%+v err=%v", albums.Items, err)
+	}
+
+	detail, err := s.GetAlbum(ctx(), albums.Items[0].ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if len(detail.Tracks) != 1 || detail.Tracks[0].Format != "mp3" {
+		t.Fatalf("tracks = %+v, want format=mp3", detail.Tracks)
+	}
+}
+
 func TestGetAlbumNotFound(t *testing.T) {
 	s := testStore(t)
 

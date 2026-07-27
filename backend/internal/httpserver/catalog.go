@@ -4,7 +4,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/yaremam/opusflow/backend/internal/library"
 )
@@ -399,5 +402,64 @@ func handleListSongs(svc *library.Service) http.HandlerFunc {
 			return
 		}
 		writeJSON(w, http.StatusOK, page)
+	}
+}
+
+// audioContentType maps a track's extension to the MIME type the
+// in-browser player (TDR 015) expects — set explicitly rather than
+// relying on Go's default mime package, which doesn't reliably know
+// several of these.
+func audioContentType(path string) string {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp3":
+		return "audio/mpeg"
+	case ".flac":
+		return "audio/flac"
+	case ".m4a":
+		return "audio/mp4"
+	case ".ogg":
+		return "audio/ogg"
+	case ".wv":
+		return "audio/x-wavpack"
+	default:
+		return ""
+	}
+}
+
+// handleStreamSong serves a track's audio bytes (TDR 015) — http.
+// ServeContent handles HTTP range requests (206 Partial Content),
+// conditional requests, and content sniffing against the opened file
+// directly, so seeking works without any hand-rolled range-parsing here.
+func handleStreamSong(svc *library.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid song id", http.StatusBadRequest)
+			return
+		}
+
+		path, err := svc.GetSongPath(r.Context(), id)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+
+		f, err := os.Open(path)
+		if err != nil {
+			http.Error(w, "audio file not found on disk", http.StatusNotFound)
+			return
+		}
+		defer f.Close()
+
+		info, err := f.Stat()
+		if err != nil {
+			http.Error(w, "reading audio file", http.StatusInternalServerError)
+			return
+		}
+
+		if ct := audioContentType(path); ct != "" {
+			w.Header().Set("Content-Type", ct)
+		}
+		http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
 	}
 }

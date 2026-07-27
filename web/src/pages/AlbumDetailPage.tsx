@@ -11,12 +11,16 @@ import {
   setAlbumPrimaryCover,
   uploadAlbumArt,
   type AlbumDetail,
+  type AlbumTrack,
 } from '../api/library'
 import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
+import PlayButton from '../components/PlayButton'
 import RemoveModal from '../components/RemoveModal'
+import type { PlayableTrack } from '../player/context'
+import { usePlayer } from '../player/usePlayer'
 import '../styles/catalog.css'
 
 export default function AlbumDetailPage() {
@@ -27,6 +31,24 @@ export default function AlbumDetailPage() {
   const [removing, setRemoving] = useState(false)
   const [removeSubmitting, setRemoveSubmitting] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
+  const player = usePlayer()
+
+  function toPlayableTrack(track: AlbumTrack): PlayableTrack {
+    return {
+      id: track.id,
+      title: track.title,
+      artistName: album?.artistName ?? '',
+      albumTitle: album?.title ?? '',
+      albumCoverThumbUrl: album?.coverThumbUrl ?? '',
+      durationSeconds: track.durationSeconds,
+      format: track.format,
+    }
+  }
+
+  function handlePlay(index: number) {
+    if (!album) return
+    player.playFrom(album.tracks.map(toPlayableTrack), index)
+  }
 
   async function handleRetryArt() {
     if (!album) return
@@ -163,14 +185,18 @@ export default function AlbumDetailPage() {
       <table className="track-table">
         <thead>
           <tr>
+            <th></th>
             <th className="num">#</th>
             <th>Title</th>
             <th className="num">Duration</th>
           </tr>
         </thead>
         <tbody>
-          {album.tracks.map((track) => (
+          {album.tracks.map((track, index) => (
             <tr key={track.id}>
+              <td className="play">
+                <PlayButton track={toPlayableTrack(track)} onPlay={() => handlePlay(index)} />
+              </td>
               <td className="trk">{track.trackNumber || ''}</td>
               <td className="t">{track.title}</td>
               <td className="dur">{formatDuration(track.durationSeconds)}</td>
