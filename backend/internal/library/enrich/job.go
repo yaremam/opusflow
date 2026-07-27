@@ -275,26 +275,43 @@ func (j *Job) processAlbum(ctx context.Context, al AlbumTarget) RunSummary {
 
 	var sum RunSummary
 
-	var artThumbURL, artFullURL string
 	if _, status := resolveKind(ctx, al.ArtStatus, fmt.Sprintf("album %d: setting art", al.ID),
 		func() (bool, error) {
-			data, found, err := j.caa.FetchFront(ctx, mbid)
+			images, err := j.caa.FetchAll(ctx, mbid)
 			if err != nil {
 				return false, err
 			}
-			if !found {
+			if len(images) == 0 {
 				return false, nil
 			}
-			var saveErr error
-			artThumbURL, artFullURL, _, saveErr = j.images.Save("album", al.ID, data)
-			if saveErr != nil {
-				log.Printf("enrich: album %d: saving cover: %v", al.ID, saveErr)
-				return false, saveErr
+			added := false
+			var lastErr error
+			for _, img := range images {
+				thumbURL, fullURL, hash, err := j.images.Save("album", al.ID, img.Data)
+				if err != nil {
+					log.Printf("enrich: album %d: saving cover: %v", al.ID, err)
+					lastErr = err
+					continue
+				}
+				if err := j.store.AddAlbumCoverForEnrichment(ctx, al.ID, thumbURL, fullURL, "cover_art_archive", img.PictureType, hash); err != nil {
+					log.Printf("enrich: album %d: adding cover: %v", al.ID, err)
+					lastErr = err
+					continue
+				}
+				added = true
 			}
-			return true, nil
+			// Cover Art Archive reported at least one image, but every
+			// save/add attempt failed (e.g. a transient network error) —
+			// that's a Failed (retried next run), not a NotFound
+			// (terminal): the images are known to exist, this run just
+			// couldn't land any of them.
+			if !added && lastErr != nil {
+				return false, lastErr
+			}
+			return added, nil
 		},
 		func(ctx context.Context, status Status) error {
-			return j.store.SetAlbumArt(ctx, al.ID, status, artThumbURL, artFullURL)
+			return j.store.SetAlbumArt(ctx, al.ID, status, "", "")
 		},
 	); status != "" {
 		sum.add(status)

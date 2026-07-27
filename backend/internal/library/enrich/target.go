@@ -58,4 +58,5 @@ type Store interface {
 	SetAlbumArt(ctx context.Context, id int64, status Status, thumbPath, fullPath string) error
 	SetAlbumFacts(ctx context.Context, id int64, status Status, info ReleaseGroupInfo) error
 	SetAlbumDescription(ctx context.Context, id int64, status Status, description, sourceURL string) error
+	AddAlbumCoverForEnrichment(ctx context.Context, id int64, thumbURL, fullURL, source, pictureType, contentHash string) error
 }

@@ -207,6 +207,16 @@ func (s *Store) AddAlbumCover(ctx context.Context, albumID int64, thumbURL, full
 	return c, nil
 }
 
+// AddAlbumCoverForEnrichment is AddAlbumCover, discarding the created row —
+// the shape enrich.Store's Store interface needs. enrich can't reference
+// this package's AlbumCover type without an import cycle (library already
+// imports enrich for enrich.Status), and Job never needs the created row
+// back, only whether the add succeeded.
+func (s *Store) AddAlbumCoverForEnrichment(ctx context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) error {
+	_, err := s.AddAlbumCover(ctx, albumID, thumbURL, fullURL, source, pictureType, contentHash)
+	return err
+}
+
 // SetAlbumPrimaryCover marks coverID as the album's primary cover,
 // clearing the flag from every other cover in the gallery.
 func (s *Store) SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error {
