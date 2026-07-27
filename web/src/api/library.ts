@@ -433,3 +433,47 @@ export function getAlbum(id: number): Promise<AlbumDetail> {
 export function listSongs(params: ListParams = {}): Promise<Page<Song>> {
   return request(`/api/library/songs${listParams(params)}`)
 }
+
+// ArtistMatch/ReleaseGroupMatch/ReleaseMatch/MetadataTrack mirror the
+// backend's enrich.ArtistMatch/ReleaseGroupMatch/ReleaseMatch/Track — the
+// interactive "look up metadata" flow's search-result shapes (TDR 012),
+// distinct from the background enrichment system's by-ID lookups.
+export interface ArtistMatch {
+  mbid: string
+  name: string
+  disambiguation?: string
+}
+
+export interface ReleaseGroupMatch {
+  mbid: string
+  title: string
+  firstReleaseYear?: number
+}
+
+export interface ReleaseMatch {
+  mbid: string
+  country?: string
+  date?: string
+  trackCount: number
+}
+
+export interface MetadataTrack {
+  position: number
+  title: string
+}
+
+export function searchArtists(query: string): Promise<ArtistMatch[]> {
+  return request(`/api/metadata/artists?q=${encodeURIComponent(query)}`)
+}
+
+export function artistReleaseGroups(artistMBID: string): Promise<ReleaseGroupMatch[]> {
+  return request(`/api/metadata/artists/${encodeURIComponent(artistMBID)}/release-groups`)
+}
+
+export function releaseGroupReleases(releaseGroupMBID: string): Promise<ReleaseMatch[]> {
+  return request(`/api/metadata/release-groups/${encodeURIComponent(releaseGroupMBID)}/releases`)
+}
+
+export function releaseTracks(releaseMBID: string): Promise<MetadataTrack[]> {
+  return request(`/api/metadata/releases/${encodeURIComponent(releaseMBID)}/tracks`)
+}

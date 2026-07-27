@@ -27,6 +27,18 @@ type Enricher interface {
 	Run(ctx context.Context) enrich.RunSummary
 }
 
+// MetadataSearch is the interactive counterpart to Enricher (TDR 012):
+// searching/browsing MusicBrainz on demand for the review screen's "Look
+// up metadata" flow, rather than the background job's silent by-ID
+// lookups. The real implementation is *enrich.MusicBrainz; tests
+// substitute a fake.
+type MetadataSearch interface {
+	SearchArtists(ctx context.Context, name string) ([]enrich.ArtistMatch, error)
+	ArtistReleaseGroups(ctx context.Context, artistMBID string) ([]enrich.ReleaseGroupMatch, error)
+	ReleaseGroupReleases(ctx context.Context, releaseGroupMBID string) ([]enrich.ReleaseMatch, error)
+	ReleaseTracks(ctx context.Context, releaseMBID string) ([]enrich.Track, error)
+}
+
 // ImportStore is the persistence Service needs — library and import
 // management plus browsing the artist/album/song catalog those imports
 // populate, plus organize.Store's methods so it can be handed straight to a
@@ -102,11 +114,12 @@ var ErrSourceInsideLibrary = errors.New("import source is inside a library's roo
 // a plan against a chosen library's root, confirming it (which copies files
 // in the background), and removing catalog entries.
 type Service struct {
-	store      ImportStore
-	copier     Copier
-	enricher   Enricher
-	browseRoot string
-	images     *enrich.ImageStore
+	store       ImportStore
+	copier      Copier
+	enricher    Enricher
+	browseRoot  string
+	images      *enrich.ImageStore
+	musicBrainz MetadataSearch
 }
 
 // NewService builds a Service.
@@ -130,6 +143,17 @@ func (s *Service) SetEnricher(enricher Enricher) {
 // stub to construct a Service at all.
 func (s *Service) SetImages(images *enrich.ImageStore) {
 	s.images = images
+}
+
+// SetMusicBrainzSearch wires up the interactive metadata-lookup flow
+// (TDR 012) with a MusicBrainz client — unlike SetEnricher/SetImages,
+// this has no ARTWORK_DIR-style gate: a text search needs no image
+// storage, so the caller constructs and wires this unconditionally. Kept
+// as a setter, same reasoning as the others, so a Service can still be
+// built without it (SearchArtists and friends then return
+// ErrMetadataSearchNotConfigured).
+func (s *Service) SetMusicBrainzSearch(ms MetadataSearch) {
+	s.musicBrainz = ms
 }
 
 // SetBrowseRoot confines Browse and CreateLibrary to root (DATA_DIR).
@@ -394,6 +418,46 @@ func (s *Service) UploadAlbumArt(ctx context.Context, id int64, data []byte) (Al
 		return Album{}, err
 	}
 	return detail.Album, nil
+}
+
+// ErrMetadataSearchNotConfigured is returned by SearchArtists and its
+// sibling passthroughs when SetMusicBrainzSearch was never called.
+var ErrMetadataSearchNotConfigured = errors.New("metadata search is not configured")
+
+// SearchArtists looks up every MusicBrainz artist matching name, for the
+// review screen's "Look up metadata" flow (TDR 012) to pick from.
+func (s *Service) SearchArtists(ctx context.Context, name string) ([]enrich.ArtistMatch, error) {
+	if s.musicBrainz == nil {
+		return nil, ErrMetadataSearchNotConfigured
+	}
+	return s.musicBrainz.SearchArtists(ctx, name)
+}
+
+// ArtistReleaseGroups lists every album MusicBrainz has on record for the
+// artist identified by artistMBID.
+func (s *Service) ArtistReleaseGroups(ctx context.Context, artistMBID string) ([]enrich.ReleaseGroupMatch, error) {
+	if s.musicBrainz == nil {
+		return nil, ErrMetadataSearchNotConfigured
+	}
+	return s.musicBrainz.ArtistReleaseGroups(ctx, artistMBID)
+}
+
+// ReleaseGroupReleases lists every specific release/edition under the
+// release-group identified by releaseGroupMBID.
+func (s *Service) ReleaseGroupReleases(ctx context.Context, releaseGroupMBID string) ([]enrich.ReleaseMatch, error) {
+	if s.musicBrainz == nil {
+		return nil, ErrMetadataSearchNotConfigured
+	}
+	return s.musicBrainz.ReleaseGroupReleases(ctx, releaseGroupMBID)
+}
+
+// ReleaseTracks fetches the full track listing for the release identified
+// by releaseMBID.
+func (s *Service) ReleaseTracks(ctx context.Context, releaseMBID string) ([]enrich.Track, error) {
+	if s.musicBrainz == nil {
+		return nil, ErrMetadataSearchNotConfigured
+	}
+	return s.musicBrainz.ReleaseTracks(ctx, releaseMBID)
 }
 
 // ListArtists returns a page of artists matching opts.

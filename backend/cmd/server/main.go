@@ -60,6 +60,12 @@ func main() {
 	// outside the Docker image, where /data won't exist on the host at all.
 	svc.SetBrowseRoot(dataDir)
 
+	// The interactive "look up metadata" flow (TDR 012) needs only the
+	// rate-limited MusicBrainz text-search client, none of the image
+	// storage ARTWORK_DIR gates below — so it's wired up unconditionally,
+	// unlike the background enrichment job.
+	svc.SetMusicBrainzSearch(enrich.NewMusicBrainz(enrichUserAgent))
+
 	// ARTWORK_DIR is optional the same way STATIC_DIR is: unset means
 	// "this feature is off" (embedded-art extraction skipped, no
 	// enrichment job) rather than an error, e.g. for a plain `go run`

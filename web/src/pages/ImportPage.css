@@ -337,7 +337,8 @@
   color: var(--mist-400);
   margin-top: 0.35rem;
 }
-.album-overwrite-all {
+.album-overwrite-all,
+.album-lookup-metadata {
   flex-shrink: 0;
   white-space: nowrap;
 }
