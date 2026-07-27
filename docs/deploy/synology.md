@@ -60,9 +60,7 @@ directly in that file before deploying.
 Once the project shows both containers as **Running**:
 
 - Visit `http://<your-nas-ip>:<port>/health` (default port `8090`) — expect
-  `{"status":"ok","revision":"<git sha>"}`. The `revision` field tells you
-  exactly which nightly build is running; include it if you ever report a
-  problem.
+  `{"status":"ok"}`.
 - Visit `http://<your-nas-ip>:<port>` in a browser for the app itself. Nothing
   exists yet — open the **Libraries** page and create your first library
   (give it a name, then either pick an existing folder under `/data` or use
@@ -74,14 +72,17 @@ Once the project shows both containers as **Running**:
   the `:/data` mount in step 5. Check
   **Container Manager → Project → opusflow → Logs** on the `app` container
   if an import seems stuck for a large batch of files.
+- The **About** page (last link in the top navigation) shows exactly which
+  build is running — a version string plus the build's UTC timestamp;
+  include the version if you ever report a problem.
 
 ## Updating to a newer nightly
 
 **Container Manager → Project → opusflow → Action → Build** re-pulls
 `ghcr.io/yaremam/opusflow:nightly` and recreates the `app` container against
 whatever is currently published — your library and Postgres data (on their
-Docker volumes) are untouched. Check `/health`'s `revision` before and after
-to confirm the update actually landed.
+Docker volumes) are untouched. Check the About page's version before and
+after to confirm the update actually landed.
 
 ## Changing settings later
 

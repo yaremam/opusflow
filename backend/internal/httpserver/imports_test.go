@@ -79,7 +79,7 @@ func TestBuildPlanReturnsAlbumsFromSourceDirectory(t *testing.T) {
 	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDir":"` + root + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -114,7 +114,7 @@ func TestBuildPlanRejectsSourceInsideLibrary(t *testing.T) {
 	body := `{"libraryId":` + strconv.FormatInt(otherLibID, 10) + `,"sourceDir":"` + sourceInsideLibRoot + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -127,7 +127,7 @@ func TestBuildPlanRequiresSourceDir(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"libraryId":`+strconv.FormatInt(libID, 10)+`}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -139,7 +139,7 @@ func TestBuildPlanRequiresLibraryID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"sourceDir":"/tmp"}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -153,7 +153,7 @@ func TestValidatePlanFlagsMissingFields(t *testing.T) {
 	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"plan":{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/plan/validate", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -197,7 +197,7 @@ func TestUploadImportStagesFilesAndReturnsPlan(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -228,7 +228,7 @@ func TestUploadImportRequiresLibraryID(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -254,7 +254,7 @@ func TestUploadImportRejectsPathTraversalInFilename(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/upload", &buf)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	// The traversal is neutralized (staged under the temp dir, not written
 	// to /etc/passwd) rather than rejected outright — either way, the real
@@ -280,7 +280,7 @@ func TestConfirmImportAcceptsValidPlan(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
@@ -301,7 +301,7 @@ func TestConfirmImportRejectsIncompletePlan(t *testing.T) {
 	body := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"/music/src","plan":{"albums":[{"artist":"","album":"Album","year":2000,"tracks":[{"sourcePath":"/src/one.mp3","title":"Title","trackNumber":1}]}]}}`
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusUnprocessableEntity, rec.Body.String())
@@ -313,7 +313,7 @@ func TestConfirmImportRequiresSourceDescription(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(`{"libraryId":1,"plan":{"albums":[]}}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -325,7 +325,7 @@ func TestConfirmImportRequiresLibraryID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(`{"sourceDescription":"/music/src","plan":{"albums":[]}}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -344,7 +344,7 @@ func TestListImportsReturnsNewestFirst(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -369,7 +369,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 
 	planReq := httptest.NewRequest(http.MethodPost, "/api/imports/plan", strings.NewReader(`{"libraryId":`+strconv.FormatInt(libID, 10)+`,"sourceDir":"`+src+`"}`))
 	planRec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(planRec, planReq)
+	New("", "", "", "", svc).ServeHTTP(planRec, planReq)
 	if planRec.Code != http.StatusOK {
 		t.Fatalf("build plan status = %d, body = %s", planRec.Code, planRec.Body.String())
 	}
@@ -387,7 +387,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 	confirmBody := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"` + jsonEscape(src) + `","plan":` + string(planJSON) + `}`
 	confirmReq := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(confirmBody))
 	confirmRec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(confirmRec, confirmReq)
+	New("", "", "", "", svc).ServeHTTP(confirmRec, confirmReq)
 	if confirmRec.Code != http.StatusAccepted {
 		t.Fatalf("confirm status = %d, body = %s", confirmRec.Code, confirmRec.Body.String())
 	}
@@ -401,7 +401,7 @@ func TestGetImportReturnsProgress(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/"+strconv.FormatInt(imp.ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -413,7 +413,7 @@ func TestGetImportNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/999999", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -425,7 +425,7 @@ func TestGetImportInvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/not-a-number", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())

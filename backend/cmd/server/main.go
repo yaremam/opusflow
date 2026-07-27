@@ -27,6 +27,10 @@ const migrateRetryDelay = 2 * time.Second
 // expect a descriptive User-Agent naming the app and a contact.
 const enrichUserAgent = "opusflow/0.1 (+https://github.com/yaremam/opusflow)"
 
+// defaultDataDir is where every shipped compose file mounts the music
+// volume — see DATA_DIR below.
+const defaultDataDir = "/data"
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -35,7 +39,11 @@ func main() {
 	staticDir := os.Getenv("STATIC_DIR")
 	artworkDir := os.Getenv("ARTWORK_DIR")
 	dataDir := os.Getenv("DATA_DIR")
-	revision := os.Getenv("GIT_SHA")
+	if dataDir == "" {
+		dataDir = defaultDataDir
+	}
+	version := os.Getenv("VERSION")
+	buildDate := os.Getenv("BUILD_DATE")
 
 	conn, err := db.Connect(databaseURL())
 	if err != nil {
@@ -46,13 +54,11 @@ func main() {
 	store := library.NewStore(conn)
 	svc := library.NewService(store, organize.CopyJob{})
 
-	// DATA_DIR is optional the same way ARTWORK_DIR is: unset means
-	// browsing/library-creation stays unrestricted (TDR 006's original
-	// stance), e.g. for a plain `go run` outside the Docker image where
-	// there's no /data mount to confine anything to.
-	if dataDir != "" {
-		svc.SetBrowseRoot(dataDir)
-	}
+	// DATA_DIR defaults to /data — every compose file (both root and
+	// deploy/) mounts the music volume there, so an operator should never
+	// have to set this themselves. Still overridable for a plain `go run`
+	// outside the Docker image, where /data won't exist on the host at all.
+	svc.SetBrowseRoot(dataDir)
 
 	// ARTWORK_DIR is optional the same way STATIC_DIR is: unset means
 	// "this feature is off" (embedded-art extraction skipped, no
@@ -89,7 +95,7 @@ func main() {
 	}()
 
 	log.Printf("listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, revision, svc)); err != nil {
+	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, version, buildDate, svc)); err != nil {
 		log.Fatal(err)
 	}
 }

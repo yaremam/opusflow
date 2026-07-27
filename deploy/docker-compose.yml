@@ -46,8 +46,8 @@ services:
     ports:
       # ↓ EDIT THIS if 8090 is already taken on your machine (DSM claims
       # 5000/5001 itself, and some packages default to 8080). Which build
-      # is running: http://<host>:<port>/health reports the git revision —
-      # include it when reporting a misbehaving nightly.
+      # is running: the About page (last link in the top nav) reports the
+      # version — include it when reporting a misbehaving nightly.
       - "8090:8080"
 
   postgres:

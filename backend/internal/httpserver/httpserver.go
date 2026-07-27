@@ -15,12 +15,14 @@ import (
 // back to its index.html for any unmatched GET so client-side routing keeps
 // working after a refresh. When artworkDir is non-empty, fetched/extracted
 // artist photos and album covers (TDR 003) are served from it under
-// /artwork/. revision (TDR 004's GIT_SHA) is reported by /health so a
-// deployed instance can be identified; empty is a normal value (unset in
-// local `go run`, not an error). svc backs the library endpoints.
-func New(staticDir, artworkDir, revision string, svc *library.Service) http.Handler {
+// /artwork/. version and buildDate (TDR 009) are reported by /api/about so a
+// deployed instance can be identified from within the app; empty is a
+// normal value (unset in local `go run`, not an error). svc backs the
+// library endpoints.
+func New(staticDir, artworkDir, version, buildDate string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /health", handleHealth(revision))
+	mux.HandleFunc("GET /health", handleHealth())
+	mux.HandleFunc("GET /api/about", handleAbout(version, buildDate))
 	mux.HandleFunc("GET /api/config", handleConfig(svc))
 	mux.HandleFunc("GET /api/libraries", handleListLibraries(svc))
 	mux.HandleFunc("POST /api/libraries", handleCreateLibrary(svc))
@@ -57,15 +59,30 @@ func New(staticDir, artworkDir, revision string, svc *library.Service) http.Hand
 }
 
 type healthResponse struct {
-	Status   string `json:"status"`
-	Revision string `json:"revision,omitempty"`
+	Status string `json:"status"`
 }
 
-func handleHealth(revision string) http.HandlerFunc {
+func handleHealth() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(healthResponse{Status: "ok", Revision: revision})
+		json.NewEncoder(w).Encode(healthResponse{Status: "ok"})
+	}
+}
+
+// aboutResponse identifies the running build for the About page (TDR 009):
+// version is `git describe --tags --always` at image build time (e.g.
+// "v0.1.0-4-gabc123f", or bare "v0.1.0" exactly on a tag), buildDate is the
+// image's UTC build timestamp. Both are "dev"/empty for a plain `go run`
+// with nothing stamped in.
+type aboutResponse struct {
+	Version   string `json:"version"`
+	BuildDate string `json:"buildDate"`
+}
+
+func handleAbout(version, buildDate string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, aboutResponse{Version: version, BuildDate: buildDate})
 	}
 }
 
