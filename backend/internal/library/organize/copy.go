@@ -16,6 +16,7 @@ import (
 	"github.com/go-flac/flacvorbis/v2"
 	goflac "github.com/go-flac/go-flac/v2"
 
+	"github.com/yaremam/opusflow/backend/internal/library/apev2"
 	"github.com/yaremam/opusflow/backend/internal/library/scan"
 )
 
@@ -103,6 +104,11 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 	if err := copyBytes(tr.SourcePath, tr.DestPath); err != nil {
 		return fmt.Errorf("copying file: %w", err)
 	}
+	if tr.HasCorrectionFile {
+		if err := copyBytes(correctionPath(tr.SourcePath), correctionPath(tr.DestPath)); err != nil {
+			return fmt.Errorf("copying .wvc correction file: %w", err)
+		}
+	}
 
 	genre, artwork, err := readGenreAndArtwork(tr.DestPath)
 	if err != nil {
@@ -115,6 +121,8 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		err = writeMP3Tags(tr.DestPath, al, tr)
 	case ".flac":
 		err = writeFLACTags(tr.DestPath, al, tr)
+	case ".wv":
+		err = apev2.Write(tr.DestPath, apev2.Tags{Artist: al.Artist, Album: al.Album, Title: tr.Title, Track: tr.TrackNumber, Year: al.Year})
 	}
 	if err != nil {
 		return fmt.Errorf("writing back tags: %w", err)
@@ -170,6 +178,14 @@ func readGenreAndArtwork(path string) (genre string, artwork []byte, err error) 
 		return "", nil, err
 	}
 	defer f.Close()
+
+	if strings.EqualFold(filepath.Ext(path), ".wv") {
+		t, err := apev2.Read(f)
+		if err != nil {
+			return "", nil, err
+		}
+		return fixCyrillicMojibake(t.Genre), t.Artwork, nil
+	}
 
 	m, err := tag.ReadFrom(f)
 	if errors.Is(err, tag.ErrNoTagsFound) {

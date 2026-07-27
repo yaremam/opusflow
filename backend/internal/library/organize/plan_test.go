@@ -136,6 +136,78 @@ func TestBuildPlanSortsTracksByTrackNumber(t *testing.T) {
 	}
 }
 
+func TestBuildPlanReadsAPEv2TagsFromWavPack(t *testing.T) {
+	source := t.TempDir()
+	copyFixture(t, filepath.Join("testdata", "tagged.wv"), filepath.Join(source, "one.wv"))
+
+	plan, err := BuildPlan(t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	al := plan.Albums[0]
+	if al.Artist != "Test Artist" || al.Album != "Test Album" {
+		t.Fatalf("album = %+v, want Artist/Album from the APEv2 tag", al)
+	}
+	tr := al.Tracks[0]
+	if tr.Title != "Test Title" || tr.TrackNumber != 3 {
+		t.Fatalf("track = %+v, want Title/TrackNumber from the APEv2 tag", tr)
+	}
+}
+
+func TestBuildPlanLeavesUntaggedWavPackFieldsBlank(t *testing.T) {
+	source := t.TempDir()
+	copyFixture(t, filepath.Join("testdata", "untagged.wv"), filepath.Join(source, "mystery.wv"))
+
+	plan, err := BuildPlan(t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	al := plan.Albums[0]
+	if al.Artist != "" || al.Album != "" {
+		t.Fatalf("album = %+v, want blank Artist/Album — no APEv2 tag present", al)
+	}
+}
+
+func TestBuildPlanDetectsSiblingWVCCorrectionFile(t *testing.T) {
+	source := t.TempDir()
+	copyFixture(t, filepath.Join("testdata", "tagged.wv"), filepath.Join(source, "one.wv"))
+	copyFixture(t, filepath.Join("testdata", "tagged.wvc"), filepath.Join(source, "one.wvc"))
+
+	plan, err := BuildPlan(t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	if !plan.Albums[0].Tracks[0].HasCorrectionFile {
+		t.Fatal("HasCorrectionFile = false, want true — a sibling .wvc exists")
+	}
+}
+
+func TestBuildPlanWithoutSiblingWVCFile(t *testing.T) {
+	source := t.TempDir()
+	copyFixture(t, filepath.Join("testdata", "tagged.wv"), filepath.Join(source, "one.wv"))
+
+	plan, err := BuildPlan(t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	if plan.Albums[0].Tracks[0].HasCorrectionFile {
+		t.Fatal("HasCorrectionFile = true, want false — no sibling .wvc exists")
+	}
+}
+
+func TestBuildPlanIgnoresOrphanedWVCFile(t *testing.T) {
+	source := t.TempDir()
+	copyFixture(t, filepath.Join("testdata", "tagged.wvc"), filepath.Join(source, "orphan.wvc"))
+
+	plan, err := BuildPlan(t.TempDir(), source)
+	if err != nil {
+		t.Fatalf("BuildPlan: %v", err)
+	}
+	if len(plan.Albums) != 0 {
+		t.Fatalf("len(Albums) = %d, want 0 — a .wvc with no matching .wv must never appear as its own track", len(plan.Albums))
+	}
+}
+
 func TestBuildPlanErrorsWhenSourceDirDoesNotExist(t *testing.T) {
 	_, err := BuildPlan(t.TempDir(), filepath.Join(t.TempDir(), "nope"))
 	if err == nil {

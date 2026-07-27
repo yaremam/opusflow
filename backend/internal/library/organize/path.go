@@ -54,3 +54,24 @@ func destExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// hasCorrectionFile reports whether a WavPack hybrid-mode ".wvc" file
+// (case-insensitive) sits next to sourcePath — TDR 013's "ride along with
+// its .wv" companion, never detected as a track of its own
+// (scan.DetectFormat never recognizes ".wvc").
+func hasCorrectionFile(sourcePath string) bool {
+	base := strings.TrimSuffix(sourcePath, filepath.Ext(sourcePath))
+	for _, ext := range []string{".wvc", ".WVC"} {
+		if destExists(base + ext) {
+			return true
+		}
+	}
+	return false
+}
+
+// correctionPath derives a ".wvc" companion's path from its .wv track's
+// own path (source or destination — the same NN.Title-style renaming
+// applies to both) by swapping the extension.
+func correctionPath(path string) string {
+	return strings.TrimSuffix(path, filepath.Ext(path)) + ".wvc"
+}

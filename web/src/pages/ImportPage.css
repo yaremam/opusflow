@@ -417,6 +417,11 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.tp-correction-file {
+  margin-left: 0.4rem;
+  font-size: 0.72rem;
+  cursor: default;
+}
 .tp-status {
   width: 1.6rem;
   text-align: center;
