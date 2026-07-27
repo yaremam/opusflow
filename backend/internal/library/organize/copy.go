@@ -179,7 +179,7 @@ func readGenreAndArtwork(path string) (genre string, artwork []byte, err error) 
 		return "", nil, err
 	}
 
-	genre = m.Genre()
+	genre = fixCyrillicMojibake(m.Genre())
 	if pic := m.Picture(); pic != nil {
 		artwork = pic.Data
 	}
