@@ -86,9 +86,15 @@ button {
 .btn-primary:active:not(:disabled) {
   transform: translateY(1px);
 }
-.btn-primary:disabled {
-  opacity: 0.6;
-  cursor: default;
+.btn-primary:disabled,
+.btn-primary.blocked {
+  background: var(--ink-700);
+  color: var(--mist-400);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.btn-primary.blocked:hover {
+  background: var(--ink-700);
 }
 .btn-primary:focus-visible {
   outline: 2px solid var(--accent-strong);

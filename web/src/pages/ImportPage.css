@@ -214,6 +214,19 @@
   background: var(--good-bg);
   color: var(--good);
 }
+.plan-banner.flash {
+  animation: plan-banner-flash 0.9s ease;
+}
+@keyframes plan-banner-flash {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  25%,
+  75% {
+    box-shadow: 0 0 0 2px var(--warn);
+  }
+}
 .album-group {
   background: var(--ink-900);
   border: 1px solid var(--border);
@@ -258,6 +271,10 @@
   color: var(--mist-400);
   margin-top: 0.35rem;
 }
+.album-overwrite-all {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
 
 .field-inline {
   background: var(--ink-950);
@@ -272,6 +289,10 @@
 .field-inline.wide {
   width: 16ch;
 }
+.field-inline.narrow {
+  width: 4ch;
+  text-align: center;
+}
 .field-inline.missing {
   border-color: var(--warn);
   background: var(--warn-bg);
@@ -285,6 +306,7 @@
 .track-plan-table {
   width: 100%;
   border-collapse: collapse;
+  table-layout: fixed;
 }
 .track-plan-table td {
   padding: 0.6rem 1.2rem;
@@ -296,15 +318,19 @@
   border-top: none;
 }
 .tp-num {
-  width: 3rem;
+  width: 4.5rem;
   color: var(--mist-400);
 }
 .tp-title {
   width: auto;
 }
 .tp-dest {
+  width: 28%;
   color: var(--mist-400);
   font-size: 0.78rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tp-status {
   width: 1.6rem;
@@ -326,16 +352,19 @@
 .conflict-note {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 0.75rem;
   font-size: 0.8rem;
   color: var(--bad);
   padding: 0.5rem 1.2rem 0.75rem;
   background: var(--bad-bg);
-  flex-wrap: wrap;
 }
 .conflict-note .path {
   opacity: 0.85;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .conflict-actions {
   display: flex;

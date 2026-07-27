@@ -61,6 +61,15 @@ function withOverwrite(plan: Plan, albumIndex: number, trackIndex: number, overw
   }
 }
 
+function withOverwriteAlbum(plan: Plan, albumIndex: number): Plan {
+  return {
+    albums: plan.albums.map((al, ai) => {
+      if (ai !== albumIndex) return al
+      return { ...al, tracks: al.tracks.map((tr) => (tr.conflict ? { ...tr, overwrite: true } : tr)) }
+    }),
+  }
+}
+
 function errorFor(errors: ValidationError[], albumIndex: number, trackIndex: number): ValidationError | undefined {
   return errors.find((e) => e.albumIndex === albumIndex && e.trackIndex === trackIndex)
 }
@@ -85,10 +94,12 @@ export default function ImportPage() {
   const [planLoadError, setPlanLoadError] = useState<string | null>(null)
   const [confirming, setConfirming] = useState(false)
   const [confirmError, setConfirmError] = useState<string | null>(null)
+  const [bannerFlash, setBannerFlash] = useState(false)
 
   const [activeImport, setActiveImport] = useState<Import | null>(null)
 
   const trackNumberRefs = useRef(new Map<string, HTMLInputElement>())
+  const bannerRef = useRef<HTMLDivElement>(null)
 
   function refreshList() {
     listImports()
@@ -202,8 +213,23 @@ export default function ImportPage() {
     void revalidate(withOverwrite(plan, albumIndex, trackIndex, true))
   }
 
+  function handleOverwriteAlbum(albumIndex: number) {
+    if (!plan) return
+    void revalidate(withOverwriteAlbum(plan, albumIndex))
+  }
+
   function focusTrackNumber(albumIndex: number, trackIndex: number) {
     trackNumberRefs.current.get(`${albumIndex}:${trackIndex}`)?.focus()
+  }
+
+  function handleConfirmClick() {
+    if (hasErrors) {
+      bannerRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      setBannerFlash(true)
+      setTimeout(() => setBannerFlash(false), 1000)
+      return
+    }
+    void handleConfirm()
   }
 
   async function handleConfirm() {
@@ -425,7 +451,10 @@ export default function ImportPage() {
             </div>
           </div>
 
-          <div className={hasErrors ? 'plan-banner' : 'plan-banner ok'}>
+          <div
+            ref={bannerRef}
+            className={[hasErrors ? 'plan-banner' : 'plan-banner ok', bannerFlash ? 'flash' : ''].filter(Boolean).join(' ')}
+          >
             {hasErrors
               ? `⚠ ${errors.length} track${errors.length === 1 ? '' : 's'} need${errors.length === 1 ? 's' : ''} attention — resolve to continue.`
               : `Ready to import ${totalTracks} track${totalTracks === 1 ? '' : 's'}.`}
@@ -433,6 +462,7 @@ export default function ImportPage() {
 
           {plan.albums.map((al, albumIndex) => {
             const destDir = al.tracks[0]?.destPath.split('/').slice(0, -1).join('/') + '/'
+            const conflictCount = al.tracks.filter((tr) => tr.conflict && !tr.overwrite).length
             return (
               <div className="album-group" key={albumIndex}>
                 <div className="album-group-head">
@@ -466,6 +496,11 @@ export default function ImportPage() {
                       · destination <span className="mono">{destDir}</span>
                     </div>
                   </div>
+                  {conflictCount > 1 && (
+                    <button type="button" className="btn-bad album-overwrite-all" onClick={() => handleOverwriteAlbum(albumIndex)}>
+                      Overwrite all {conflictCount} existing
+                    </button>
+                  )}
                 </div>
                 <table className="track-plan-table">
                   <tbody>
@@ -481,8 +516,7 @@ export default function ImportPage() {
                                 ref={(el) => {
                                   if (el) trackNumberRefs.current.set(`${albumIndex}:${trackIndex}`, el)
                                 }}
-                                className={missing.includes('trackNumber') ? 'field-inline missing' : 'field-inline'}
-                                style={{ width: '3ch' }}
+                                className={missing.includes('trackNumber') ? 'field-inline narrow missing' : 'field-inline narrow'}
                                 value={tr.trackNumber || ''}
                                 placeholder="—"
                                 onChange={(e) => handleTrackFieldChange(albumIndex, trackIndex, 'trackNumber', e.target.value)}
@@ -507,7 +541,7 @@ export default function ImportPage() {
                             <tr>
                               <td colSpan={4} className="conflict-note-cell">
                                 <div className="conflict-note">
-                                  <span className="path">
+                                  <span className="path" title={tr.destPath}>
                                     This file already exists at <span className="mono">{tr.destPath}</span>
                                   </span>
                                   <div className="conflict-actions">
@@ -538,7 +572,13 @@ export default function ImportPage() {
               <button type="button" className="btn-ghost" onClick={() => setStep('list')}>
                 Cancel
               </button>
-              <button type="button" className="btn-primary" disabled={hasErrors || confirming} onClick={handleConfirm}>
+              <button
+                type="button"
+                className={hasErrors ? 'btn-primary blocked' : 'btn-primary'}
+                disabled={confirming}
+                aria-disabled={hasErrors}
+                onClick={handleConfirmClick}
+              >
                 {confirming ? 'Starting…' : `Confirm & import ${totalTracks} track${totalTracks === 1 ? '' : 's'}`}
               </button>
             </div>
