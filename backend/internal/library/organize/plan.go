@@ -142,5 +142,5 @@ func readTrackTags(path string) (artist, album, title string, trackNumber, year 
 	}
 
 	trackNumber, _ = m.Track()
-	return m.Artist(), m.Album(), m.Title(), trackNumber, m.Year(), nil
+	return fixCyrillicMojibake(m.Artist()), fixCyrillicMojibake(m.Album()), fixCyrillicMojibake(m.Title()), trackNumber, m.Year(), nil
 }
