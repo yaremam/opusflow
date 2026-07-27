@@ -34,6 +34,12 @@ type fakeImportStore struct {
 	resetAlbumArtErr    error
 	setArtistArtCalls   []setArtCall
 	setAlbumArtCalls    []setArtCall
+
+	nextPhotoID  int64
+	artistPhotos map[int64][]ArtistPhoto
+
+	nextCoverID int64
+	albumCovers map[int64][]AlbumCover
 }
 
 // setArtCall records one SetArtistArt/SetAlbumArt invocation — used by
@@ -45,7 +51,12 @@ type setArtCall struct {
 }
 
 func newFakeImportStore() *fakeImportStore {
-	return &fakeImportStore{imports: make(map[int64]Import), libraries: make(map[int64]Library)}
+	return &fakeImportStore{
+		imports:      make(map[int64]Import),
+		libraries:    make(map[int64]Library),
+		artistPhotos: make(map[int64][]ArtistPhoto),
+		albumCovers:  make(map[int64][]AlbumCover),
+	}
 }
 
 // seedLibrary creates a library directly in the fake store (no directory
@@ -218,6 +229,105 @@ func (f *fakeImportStore) SetAlbumArt(_ context.Context, id int64, status enrich
 	defer f.mu.Unlock()
 	f.setAlbumArtCalls = append(f.setAlbumArtCalls, setArtCall{id, status, thumbPath, fullPath})
 	return nil
+}
+
+// Gallery methods below are minimal in-memory stand-ins for the real
+// Store's artwork_gallery.go behavior (add/dedup/primary/delete) — just
+// enough for Service-layer tests (upload, list, set-primary, delete) to
+// exercise Service's own orchestration without a real DB; the gallery
+// invariants themselves (dedup, auto-primary, promote-on-delete) are
+// already covered against real Postgres in artwork_gallery_test.go.
+
+func (f *fakeImportStore) ListArtistPhotos(_ context.Context, artistID int64) ([]ArtistPhoto, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]ArtistPhoto(nil), f.artistPhotos[artistID]...), nil
+}
+
+func (f *fakeImportStore) AddArtistPhoto(_ context.Context, artistID int64, thumbURL, fullURL, source, contentHash string) (ArtistPhoto, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextPhotoID++
+	p := ArtistPhoto{ID: f.nextPhotoID, ThumbURL: thumbURL, FullURL: fullURL, Source: source, IsPrimary: len(f.artistPhotos[artistID]) == 0}
+	f.artistPhotos[artistID] = append(f.artistPhotos[artistID], p)
+	return p, nil
+}
+
+func (f *fakeImportStore) SetArtistPrimaryPhoto(_ context.Context, artistID, photoID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	photos, ok := f.artistPhotos[artistID]
+	if !ok {
+		return ErrArtistPhotoNotFound
+	}
+	found := false
+	for i := range photos {
+		photos[i].IsPrimary = photos[i].ID == photoID
+		found = found || photos[i].IsPrimary
+	}
+	if !found {
+		return ErrArtistPhotoNotFound
+	}
+	return nil
+}
+
+func (f *fakeImportStore) DeleteArtistPhoto(_ context.Context, artistID, photoID int64) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	photos := f.artistPhotos[artistID]
+	for i, p := range photos {
+		if p.ID == photoID {
+			f.artistPhotos[artistID] = append(photos[:i], photos[i+1:]...)
+			return p.ThumbURL, p.FullURL, nil
+		}
+	}
+	return "", "", ErrArtistPhotoNotFound
+}
+
+func (f *fakeImportStore) ListAlbumCovers(_ context.Context, albumID int64) ([]AlbumCover, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]AlbumCover(nil), f.albumCovers[albumID]...), nil
+}
+
+func (f *fakeImportStore) AddAlbumCover(_ context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) (AlbumCover, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.nextCoverID++
+	c := AlbumCover{ID: f.nextCoverID, ThumbURL: thumbURL, FullURL: fullURL, Source: source, PictureType: pictureType, IsPrimary: len(f.albumCovers[albumID]) == 0}
+	f.albumCovers[albumID] = append(f.albumCovers[albumID], c)
+	return c, nil
+}
+
+func (f *fakeImportStore) SetAlbumPrimaryCover(_ context.Context, albumID, coverID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	covers, ok := f.albumCovers[albumID]
+	if !ok {
+		return ErrAlbumCoverNotFound
+	}
+	found := false
+	for i := range covers {
+		covers[i].IsPrimary = covers[i].ID == coverID
+		found = found || covers[i].IsPrimary
+	}
+	if !found {
+		return ErrAlbumCoverNotFound
+	}
+	return nil
+}
+
+func (f *fakeImportStore) DeleteAlbumCover(_ context.Context, albumID, coverID int64) (string, string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	covers := f.albumCovers[albumID]
+	for i, c := range covers {
+		if c.ID == coverID {
+			f.albumCovers[albumID] = append(covers[:i], covers[i+1:]...)
+			return c.ThumbURL, c.FullURL, nil
+		}
+	}
+	return "", "", ErrAlbumCoverNotFound
 }
 
 // Catalog methods aren't exercised by import-orchestration tests — stubbed
@@ -653,8 +763,16 @@ func TestUploadArtistArtSavesImageAndSetsFound(t *testing.T) {
 		t.Fatalf("setArtistArtCalls = %+v, want 1 call", store.setArtistArtCalls)
 	}
 	call := store.setArtistArtCalls[0]
-	if call.id != 42 || call.status != enrich.Found || call.thumbPath == "" || call.fullPath == "" {
-		t.Fatalf("setArtistArtCalls[0] = %+v, want id=42 status=found with non-empty paths", call)
+	if call.id != 42 || call.status != enrich.Found {
+		t.Fatalf("setArtistArtCalls[0] = %+v, want id=42 status=found", call)
+	}
+
+	photos := store.artistPhotos[42]
+	if len(photos) != 1 {
+		t.Fatalf("artistPhotos[42] = %+v, want 1 photo added (AC-3: upload adds)", photos)
+	}
+	if photos[0].Source != "upload" || photos[0].ThumbURL == "" || photos[0].FullURL == "" || !photos[0].IsPrimary {
+		t.Fatalf("photos[0] = %+v, want source=upload, non-empty URLs, primary (first photo)", photos[0])
 	}
 }
 
@@ -693,8 +811,16 @@ func TestUploadAlbumArtSavesImageAndSetsFound(t *testing.T) {
 		t.Fatalf("setAlbumArtCalls = %+v, want 1 call", store.setAlbumArtCalls)
 	}
 	call := store.setAlbumArtCalls[0]
-	if call.id != 7 || call.status != enrich.Found || call.thumbPath == "" || call.fullPath == "" {
-		t.Fatalf("setAlbumArtCalls[0] = %+v, want id=7 status=found with non-empty paths", call)
+	if call.id != 7 || call.status != enrich.Found {
+		t.Fatalf("setAlbumArtCalls[0] = %+v, want id=7 status=found", call)
+	}
+
+	covers := store.albumCovers[7]
+	if len(covers) != 1 {
+		t.Fatalf("albumCovers[7] = %+v, want 1 cover added (AC-3: upload adds)", covers)
+	}
+	if covers[0].Source != "upload" || covers[0].ThumbURL == "" || covers[0].FullURL == "" || !covers[0].IsPrimary {
+		t.Fatalf("covers[0] = %+v, want source=upload, non-empty URLs, primary (first cover)", covers[0])
 	}
 }
 

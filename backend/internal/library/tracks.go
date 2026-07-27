@@ -77,7 +77,7 @@ func (s *Store) saveEmbeddedAlbumArt(ctx context.Context, albumID int64, data []
 		return
 	}
 
-	thumbURL, fullURL, err := s.images.Save("album", albumID, data)
+	thumbURL, fullURL, _, err := s.images.Save("album", albumID, data)
 	if err != nil {
 		log.Printf("library: album %d: saving embedded artwork: %v", albumID, err)
 		return

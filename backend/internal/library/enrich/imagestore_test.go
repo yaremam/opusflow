@@ -45,19 +45,24 @@ func TestImageStoreSaveResizesAndReturnsURLs(t *testing.T) {
 	dir := t.TempDir()
 	st := NewImageStore(dir)
 
-	thumbURL, fullURL, err := st.Save("album", 42, testPNG(t, 1400, 1400))
+	thumbURL, fullURL, hash, err := st.Save("album", 42, testPNG(t, 1400, 1400))
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
-	if thumbURL != "/artwork/album/42/thumb.jpg" || fullURL != "/artwork/album/42/full.jpg" {
-		t.Fatalf("thumbURL=%q fullURL=%q", thumbURL, fullURL)
+	wantThumb := "/artwork/album/42/" + hash + "/thumb.jpg"
+	wantFull := "/artwork/album/42/" + hash + "/full.jpg"
+	if thumbURL != wantThumb || fullURL != wantFull {
+		t.Fatalf("thumbURL=%q fullURL=%q, want %q / %q", thumbURL, fullURL, wantThumb, wantFull)
+	}
+	if hash == "" {
+		t.Fatal("expected a non-empty content hash")
 	}
 
-	tw, th := decodedSize(t, dir+"/album/42/thumb.jpg")
+	tw, th := decodedSize(t, dir+"/album/42/"+hash+"/thumb.jpg")
 	if tw != thumbSize || th != thumbSize {
 		t.Fatalf("thumb dims = %dx%d, want %dx%d", tw, th, thumbSize, thumbSize)
 	}
-	fw, fh := decodedSize(t, dir+"/album/42/full.jpg")
+	fw, fh := decodedSize(t, dir+"/album/42/"+hash+"/full.jpg")
 	if fw != fullSize || fh != fullSize {
 		t.Fatalf("full dims = %dx%d, want %dx%d", fw, fh, fullSize, fullSize)
 	}
@@ -67,7 +72,7 @@ func TestImageStoreSaveDoesNotUpscaleSmallSource(t *testing.T) {
 	dir := t.TempDir()
 	st := NewImageStore(dir)
 
-	_, fullURL, err := st.Save("artist", 7, testPNG(t, 120, 120))
+	_, fullURL, _, err := st.Save("artist", 7, testPNG(t, 120, 120))
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -82,12 +87,12 @@ func TestImageStoreSavePreservesAspectRatio(t *testing.T) {
 	dir := t.TempDir()
 	st := NewImageStore(dir)
 
-	_, _, err := st.Save("album", 1, testPNG(t, 2000, 1000))
+	_, _, hash, err := st.Save("album", 1, testPNG(t, 2000, 1000))
 	if err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 
-	fw, fh := decodedSize(t, dir+"/album/1/full.jpg")
+	fw, fh := decodedSize(t, dir+"/album/1/"+hash+"/full.jpg")
 	if fw != fullSize || fh != fullSize/2 {
 		t.Fatalf("full dims = %dx%d, want %dx%d (2:1 preserved)", fw, fh, fullSize, fullSize/2)
 	}
@@ -95,7 +100,56 @@ func TestImageStoreSavePreservesAspectRatio(t *testing.T) {
 
 func TestImageStoreSaveRejectsUndecodableData(t *testing.T) {
 	st := NewImageStore(t.TempDir())
-	if _, _, err := st.Save("album", 1, []byte("not an image")); err == nil {
+	if _, _, _, err := st.Save("album", 1, []byte("not an image")); err == nil {
 		t.Fatal("expected an error for undecodable image data")
+	}
+}
+
+func TestImageStoreSaveIsContentAddressed(t *testing.T) {
+	st := NewImageStore(t.TempDir())
+
+	_, _, hashA, err := st.Save("album", 1, testPNG(t, 400, 400))
+	if err != nil {
+		t.Fatalf("Save #1: %v", err)
+	}
+	_, _, hashB, err := st.Save("album", 1, testPNG(t, 400, 400))
+	if err != nil {
+		t.Fatalf("Save #2: %v", err)
+	}
+	if hashA != hashB {
+		t.Fatalf("hashA=%q hashB=%q, want identical bytes to produce the same content hash", hashA, hashB)
+	}
+
+	_, _, hashC, err := st.Save("album", 1, testPNG(t, 400, 401))
+	if err != nil {
+		t.Fatalf("Save #3: %v", err)
+	}
+	if hashC == hashA {
+		t.Fatal("expected different image bytes to produce a different content hash")
+	}
+}
+
+func TestImageStoreDeleteRemovesFilesAndHashDir(t *testing.T) {
+	dir := t.TempDir()
+	st := NewImageStore(dir)
+
+	thumbURL, fullURL, hash, err := st.Save("artist", 3, testPNG(t, 200, 200))
+	if err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+	hashDir := dir + "/artist/3/" + hash
+
+	if err := st.Delete(thumbURL, fullURL); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if _, err := os.Stat(hashDir); !os.IsNotExist(err) {
+		t.Fatalf("hash dir %q still exists after Delete", hashDir)
+	}
+}
+
+func TestImageStoreDeleteIgnoresBlankURLs(t *testing.T) {
+	st := NewImageStore(t.TempDir())
+	if err := st.Delete("", ""); err != nil {
+		t.Fatalf("Delete(\"\", \"\") = %v, want nil", err)
 	}
 }

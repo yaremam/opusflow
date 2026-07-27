@@ -321,6 +321,10 @@ func libraryErrorStatus(err error) int {
 		return http.StatusNotFound
 	case errors.Is(err, library.ErrArtworkNotConfigured):
 		return http.StatusServiceUnavailable
+	case errors.Is(err, library.ErrArtistPhotoNotFound):
+		return http.StatusNotFound
+	case errors.Is(err, library.ErrAlbumCoverNotFound):
+		return http.StatusNotFound
 	case errors.Is(err, library.ErrMetadataSearchNotConfigured):
 		return http.StatusServiceUnavailable
 	case errors.Is(err, fs.ErrNotExist):

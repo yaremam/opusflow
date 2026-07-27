@@ -7,6 +7,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 
@@ -449,5 +450,209 @@ func TestDeleteAlbumEndpointRemovesAlbum(t *testing.T) {
 	}
 	if _, err := svc.GetAlbum(context.Background(), id); err == nil {
 		t.Fatal("expected album to be removed")
+	}
+}
+
+func TestSetArtistPrimaryPhotoEndpointSwitchesPrimary(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	if _, err := svc.UploadArtistArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	second, err := store.AddArtistPhoto(context.Background(), id, "/artwork/artist/x/thumb.jpg", "/artwork/artist/x/full.jpg", "upload", "hash-b")
+	if err != nil {
+		t.Fatalf("AddArtistPhoto: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(second.ID, 10)+"/primary", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.ArtistDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.PhotoThumbURL != "/artwork/artist/x/thumb.jpg" {
+		t.Fatalf("PhotoThumbURL = %q, want the newly-primary photo's thumb", got.PhotoThumbURL)
+	}
+	if len(got.Photos) != 2 {
+		t.Fatalf("len(Photos) = %d, want 2", len(got.Photos))
+	}
+}
+
+func TestSetArtistPrimaryPhotoEndpointNotFound(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999/primary", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestDeleteArtistPhotoEndpointRequiresDeleteFileParam(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/1/photos/1", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestDeleteArtistPhotoEndpointRemovesFileWhenRequested(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	dir := t.TempDir()
+	svc.SetImages(enrich.NewImageStore(dir))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	if _, err := svc.UploadArtistArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	photos, err := store.ListArtistPhotos(context.Background(), id)
+	if err != nil || len(photos) != 1 {
+		t.Fatalf("ListArtistPhotos: photos=%+v err=%v", photos, err)
+	}
+	diskPath := dir + photos[0].ThumbURL[len("/artwork"):]
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(photos[0].ID, 10)+"?deleteFile=true", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.ArtistDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if len(got.Photos) != 0 {
+		t.Fatalf("Photos = %+v, want empty after delete", got.Photos)
+	}
+	if _, err := os.Stat(diskPath); !os.IsNotExist(err) {
+		t.Fatalf("expected file %q to be removed, stat error: %v", diskPath, err)
+	}
+}
+
+func TestDeleteArtistPhotoEndpointNotFound(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999?deleteFile=false", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestSetAlbumPrimaryCoverEndpointSwitchesPrimary(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Gallery Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	if _, err := svc.UploadAlbumArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	second, err := store.AddAlbumCover(context.Background(), id, "/artwork/album/x/thumb.jpg", "/artwork/album/x/full.jpg", "upload", "", "hash-b")
+	if err != nil {
+		t.Fatalf("AddAlbumCover: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(second.ID, 10)+"/primary", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.AlbumDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.CoverThumbURL != "/artwork/album/x/thumb.jpg" {
+		t.Fatalf("CoverThumbURL = %q, want the newly-primary cover's thumb", got.CoverThumbURL)
+	}
+	if len(got.Covers) != 2 {
+		t.Fatalf("len(Covers) = %d, want 2", len(got.Covers))
+	}
+}
+
+func TestDeleteAlbumCoverEndpointRemovesFileWhenRequested(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	dir := t.TempDir()
+	svc.SetImages(enrich.NewImageStore(dir))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Gallery Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	if _, err := svc.UploadAlbumArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	covers, err := store.ListAlbumCovers(context.Background(), id)
+	if err != nil || len(covers) != 1 {
+		t.Fatalf("ListAlbumCovers: covers=%+v err=%v", covers, err)
+	}
+	diskPath := dir + covers[0].ThumbURL[len("/artwork"):]
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(covers[0].ID, 10)+"?deleteFile=true", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.AlbumDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if len(got.Covers) != 0 {
+		t.Fatalf("Covers = %+v, want empty after delete", got.Covers)
+	}
+	if _, err := os.Stat(diskPath); !os.IsNotExist(err) {
+		t.Fatalf("expected file %q to be removed, stat error: %v", diskPath, err)
+	}
+}
+
+func TestDeleteAlbumCoverEndpointNotFound(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Gallery Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/999999?deleteFile=false", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
