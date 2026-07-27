@@ -32,12 +32,6 @@
   border: 1px dashed var(--border);
   border-radius: 12px;
 }
-.library-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.7rem;
-}
-
 /* import history / copying card — same visual family the old directory
    card used, redefined here since that component is gone */
 .library-card {
@@ -93,13 +87,85 @@
   border-radius: 100px;
   transition: width 0.3s ease;
 }
-.error-note {
-  margin-top: 0.65rem;
+
+/* compact import history (hidden by default, see history-toggle) */
+.history-toggle {
+  background: none;
+  border: none;
+  color: var(--mist-400);
   font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0;
+  cursor: pointer;
+}
+.history-toggle:hover {
+  color: var(--paper-50);
+}
+.library-empty.compact {
+  margin-top: 1rem;
+  padding: 1.25rem 1rem;
+  font-size: 0.85rem;
+}
+.history-list {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.history-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.4rem 0;
+  font-size: 0.82rem;
+  color: var(--mist-400);
+}
+.history-dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--good);
+}
+.history-dot.copying {
+  background: var(--warn);
+}
+.history-dot.failed {
+  background: var(--bad);
+}
+.history-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  color: var(--paper-50);
+}
+.history-count {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+.history-date {
+  flex-shrink: 0;
+}
+.history-warn {
+  flex-shrink: 0;
   color: var(--bad);
-  background: var(--bad-bg);
-  border-radius: 7px;
-  padding: 0.5rem 0.65rem;
+  cursor: default;
+}
+.history-more {
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--mist-400);
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.3rem 0 0;
+  cursor: pointer;
+}
+.history-more:hover {
+  color: var(--paper-50);
 }
 
 /* choose-a-library */

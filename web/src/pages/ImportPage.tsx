@@ -23,6 +23,8 @@ import './ImportPage.css'
 type Step = 'list' | 'library' | 'createLibrary' | 'source' | 'browse' | 'upload' | 'review' | 'copying' | 'done'
 
 const POLL_INTERVAL_MS = 1200
+const HISTORY_EXPANDED_KEY = 'opusflow.importHistoryExpanded'
+const HISTORY_PAGE_SIZE = 10
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
@@ -79,6 +81,8 @@ export default function ImportPage() {
 
   const [imports, setImports] = useState<Import[]>([])
   const [listError, setListError] = useState<string | null>(null)
+  const [historyExpanded, setHistoryExpanded] = useState(() => localStorage.getItem(HISTORY_EXPANDED_KEY) === 'true')
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(HISTORY_PAGE_SIZE)
 
   const [libraries, setLibraries] = useState<Library[]>([])
   const [libraryListError, setLibraryListError] = useState<string | null>(null)
@@ -105,6 +109,13 @@ export default function ImportPage() {
     listImports()
       .then(setImports)
       .catch((err: unknown) => setListError(errorMessage(err)))
+  }
+
+  function toggleHistoryExpanded() {
+    const next = !historyExpanded
+    setHistoryExpanded(next)
+    setHistoryVisibleCount(HISTORY_PAGE_SIZE)
+    localStorage.setItem(HISTORY_EXPANDED_KEY, String(next))
   }
 
   useEffect(() => {
@@ -300,46 +311,41 @@ export default function ImportPage() {
 
           {listError && <p className="library-load-error">{listError}</p>}
 
-          {imports.length === 0 && !listError ? (
-            <div className="library-empty">No imports yet — import some music to start building your library.</div>
-          ) : (
-            <div className="library-list">
-              {imports.map((imp) => (
-                <div className="library-card" key={imp.id}>
-                  <div className="card-top">
-                    <div className="path-row">
-                      <span className="card-path">{imp.sourceDescription}</span>
-                      <span className={`pill ${imp.status}`}>
-                        {imp.status === 'copying' && <span className="pulse" />}
-                        {imp.status}
+          <button type="button" className="history-toggle" onClick={toggleHistoryExpanded}>
+            {historyExpanded ? 'Hide import history' : 'Show import history'}
+          </button>
+
+          {historyExpanded &&
+            (imports.length === 0 && !listError ? (
+              <div className="library-empty compact">No imports yet — import some music to start building your library.</div>
+            ) : (
+              <div className="history-list">
+                {imports.slice(0, historyVisibleCount).map((imp) => (
+                  <div className="history-row" key={imp.id}>
+                    <span className={`history-dot ${imp.status}`} />
+                    <span className="history-path" title={imp.sourceDescription}>
+                      {imp.sourceDescription}
+                    </span>
+                    <span className="history-count">{imp.trackCount} tracks</span>
+                    <span className="history-date">{formatDate(imp.createdAt)}</span>
+                    {imp.status === 'failed' && imp.error && (
+                      <span className="history-warn" title={imp.error}>
+                        ⚠
                       </span>
-                    </div>
+                    )}
                   </div>
-                  {imp.status === 'copying' ? (
-                    <>
-                      <div className="progress-track">
-                        <div
-                          className="progress-fill"
-                          style={{ width: `${imp.filesTotal > 0 ? Math.min(100, (imp.filesProcessed / imp.filesTotal) * 100) : 0}%` }}
-                        />
-                      </div>
-                      <div className="meta-row">
-                        <span className="count">
-                          {imp.filesProcessed} / {imp.filesTotal || '?'} files copied
-                        </span>
-                      </div>
-                    </>
-                  ) : (
-                    <div className="meta-row">
-                      <span className="count">{imp.trackCount} tracks</span>
-                      <span>Imported {formatDate(imp.createdAt)}</span>
-                    </div>
-                  )}
-                  {imp.status === 'failed' && imp.error && <div className="error-note">{imp.error}</div>}
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+                {imports.length > historyVisibleCount && (
+                  <button
+                    type="button"
+                    className="history-more"
+                    onClick={() => setHistoryVisibleCount(imports.length)}
+                  >
+                    Show {imports.length - historyVisibleCount} more
+                  </button>
+                )}
+              </div>
+            ))}
         </>
       )}
 
