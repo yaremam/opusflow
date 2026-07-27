@@ -204,6 +204,18 @@ func writeMP3Tags(path string, al Album, tr Track) error {
 	}
 	defer tg.Close()
 
+	// id3v2 defaults new/reopened tags to ISO-8859-1 unless the tag is
+	// already version 4 (id3v2's setDefaultEncodingBasedOnVersion), and
+	// ISO-8859-1 can't represent Cyrillic, CJK, or other non-Latin-1 text —
+	// encoding it fails outright. UTF-16 would be the version-3-safe choice,
+	// but id3v2 v2.1.4 has a null-termination bug when writing fresh UTF-16
+	// frames as big-endian (no source bytes to sniff endianness from),
+	// producing an odd-length body that readers reject. UTF-8 sidesteps
+	// both: it's a plain byte copy with no endianness logic, and every
+	// reader this project uses (dhowden/tag) already accepts encoding byte
+	// 3 regardless of the tag's declared ID3v2 version.
+	tg.SetDefaultEncoding(id3v2.EncodingUTF8)
+
 	tg.SetArtist(al.Artist)
 	tg.SetAlbum(al.Album)
 	tg.SetTitle(tr.Title)

@@ -165,6 +165,42 @@ func TestWriteMP3TagsSurvivesUnparsableExistingTag(t *testing.T) {
 	}
 }
 
+// TestCopyWritesBackNonLatinTagsToMP3 reproduces an import failure seen with
+// real Cyrillic-tagged files: id3v2's default encoding is ISO-8859-1 for any
+// tag not already at version 4 (id3v2.go's setDefaultEncodingBasedOnVersion),
+// and ISO-8859-1 can't represent Cyrillic, Chinese, etc. — encoding such a
+// corrected title/artist/album fails with "encoding: rune not supported by
+// encoding" and the whole file is reported as failed even though it was
+// already copied.
+func TestCopyWritesBackNonLatinTagsToMP3(t *testing.T) {
+	root := t.TempDir()
+	dest := filepath.Join(root, "Артист", "1998.Альбом", "15.Там Де Нас Нема (Remix).mp3")
+	plan := Plan{Albums: []Album{{
+		Artist: "Артист", Album: "Альбом", Year: 1998,
+		Tracks: []Track{trackFor("testdata/tagged.mp3", dest, "Там Де Нас Нема (Remix)", 15)},
+	}}}
+
+	store := &fakeStore{}
+	summary := Copy(context.Background(), store, 1, plan)
+
+	if summary.FilesProcessed != 1 || summary.FilesFailed != 0 {
+		t.Fatalf("summary = %+v, want 1 processed, 0 failed (errors: %v)", summary, store.errors)
+	}
+
+	f, err := os.Open(dest)
+	if err != nil {
+		t.Fatalf("open copied file: %v", err)
+	}
+	defer f.Close()
+	m, err := tag.ReadFrom(f)
+	if err != nil {
+		t.Fatalf("read back tags: %v", err)
+	}
+	if m.Title() != "Там Де Нас Нема (Remix)" || m.Artist() != "Артист" || m.Album() != "Альбом" {
+		t.Fatalf("tags = %+v/%+v/%+v, want corrected Cyrillic values", m.Title(), m.Artist(), m.Album())
+	}
+}
+
 func TestCopyWritesBackCorrectedTagsToFLAC(t *testing.T) {
 	root := t.TempDir()
 	dest := filepath.Join(root, "Corrected Artist", "1999.Corrected Album", "05.Corrected Title.flac")
