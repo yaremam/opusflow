@@ -42,6 +42,15 @@ type fakeStore struct {
 		description string
 		sourceURL   string
 	}
+	albumCoverCalls []addedAlbumCover
+}
+
+// addedAlbumCover records one AddAlbumCoverForEnrichment call — used by
+// Cover Art Archive tests (TDR 014 Stage 2) to assert every image Job
+// found got added, not just one.
+type addedAlbumCover struct {
+	albumID                            int64
+	thumbURL, fullURL, source, picType string
 }
 
 func newFakeStore() *fakeStore {
@@ -129,6 +138,10 @@ func (f *fakeStore) SetAlbumDescription(_ context.Context, id int64, status Stat
 		description string
 		sourceURL   string
 	}{status, description, sourceURL}
+	return nil
+}
+func (f *fakeStore) AddAlbumCoverForEnrichment(_ context.Context, id int64, thumbURL, fullURL, source, pictureType, contentHash string) error {
+	f.albumCoverCalls = append(f.albumCoverCalls, addedAlbumCover{id, thumbURL, fullURL, source, pictureType})
 	return nil
 }
 
@@ -340,7 +353,10 @@ func TestJobResolvesAlbumArtFromCoverArtArchiveIndependentlyOfFacts(t *testing.T
 	mux.HandleFunc("/mb/release-group", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"release-groups": [{"id": "rg-mbid"}]}`))
 	})
-	mux.HandleFunc("/caa/release-group/rg-mbid/front", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/caa/release-group/rg-mbid", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"images": [{"types": ["Front"], "image": "http://` + r.Host + `/caa/front.png"}]}`))
+	})
+	mux.HandleFunc("/caa/front.png", func(w http.ResponseWriter, r *http.Request) {
 		w.Write(testPNG(t, 500, 500))
 	})
 	mux.HandleFunc("/mb/release-group/rg-mbid", func(w http.ResponseWriter, r *http.Request) {
@@ -357,8 +373,12 @@ func TestJobResolvesAlbumArtFromCoverArtArchiveIndependentlyOfFacts(t *testing.T
 	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
 
 	art := store.albumArtCalls[3]
-	if art.status != Found || art.thumbURL == "" {
+	if art.status != Found {
 		t.Fatalf("art = %+v", art)
+	}
+	if len(store.albumCoverCalls) != 1 || store.albumCoverCalls[0].thumbURL == "" ||
+		store.albumCoverCalls[0].source != "cover_art_archive" || store.albumCoverCalls[0].picType != "front" {
+		t.Fatalf("albumCoverCalls = %+v, want one front cover added from cover_art_archive", store.albumCoverCalls)
 	}
 	// No releases in the release-group lookup response -> no facts, and no
 	// wikidata relation -> no description. Both distinct not_found
@@ -371,12 +391,57 @@ func TestJobResolvesAlbumArtFromCoverArtArchiveIndependentlyOfFacts(t *testing.T
 	}
 }
 
+func TestJobAddsEveryCoverArtArchiveImageNotJustFront(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/release-group", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"release-groups": [{"id": "rg-multi"}]}`))
+	})
+	mux.HandleFunc("/caa/release-group/rg-multi", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"images": [
+			{"types": ["Front"], "image": "http://` + r.Host + `/caa/front.png"},
+			{"types": ["Back"], "image": "http://` + r.Host + `/caa/back.png"},
+			{"types": ["Booklet"], "image": "http://` + r.Host + `/caa/booklet.png"}
+		]}`))
+	})
+	mux.HandleFunc("/caa/front.png", func(w http.ResponseWriter, r *http.Request) { w.Write(testPNG(t, 500, 500)) })
+	mux.HandleFunc("/caa/back.png", func(w http.ResponseWriter, r *http.Request) { w.Write(testPNG(t, 400, 400)) })
+	mux.HandleFunc("/caa/booklet.png", func(w http.ResponseWriter, r *http.Request) { w.Write(testPNG(t, 300, 300)) })
+	mux.HandleFunc("/mb/release-group/rg-multi", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"genres": [], "relations": [], "releases": []}`))
+	})
+
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.albums = []AlbumTarget{{
+		ID: 9, Title: "Triptych", ArtistName: "Someone",
+		ArtStatus: Pending, FactsStatus: Found, DescriptionStatus: Found,
+	}}
+
+	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if store.albumArtCalls[9].status != Found {
+		t.Fatalf("art status = %v, want found", store.albumArtCalls[9].status)
+	}
+	if len(store.albumCoverCalls) != 3 {
+		t.Fatalf("albumCoverCalls = %+v, want 3 (front, back, booklet all added)", store.albumCoverCalls)
+	}
+	gotTypes := map[string]bool{}
+	for _, c := range store.albumCoverCalls {
+		gotTypes[c.picType] = true
+	}
+	for _, want := range []string{"front", "back", "booklet"} {
+		if !gotTypes[want] {
+			t.Fatalf("albumCoverCalls = %+v, missing picture type %q", store.albumCoverCalls, want)
+		}
+	}
+}
+
 func TestJobMarksAlbumArtNotFoundWhenCoverArtArchiveHasNothing(t *testing.T) {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/mb/release-group", func(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(`{"release-groups": [{"id": "rg-mbid-2"}]}`))
 	})
-	mux.HandleFunc("/caa/release-group/rg-mbid-2/front", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/caa/release-group/rg-mbid-2", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	})
 	mux.HandleFunc("/mb/release-group/rg-mbid-2", func(w http.ResponseWriter, r *http.Request) {
@@ -391,6 +456,9 @@ func TestJobMarksAlbumArtNotFoundWhenCoverArtArchiveHasNothing(t *testing.T) {
 
 	if store.albumArtCalls[7].status != NotFound {
 		t.Fatalf("art status = %v, want not_found", store.albumArtCalls[7].status)
+	}
+	if len(store.albumCoverCalls) != 0 {
+		t.Fatalf("albumCoverCalls = %+v, want none", store.albumCoverCalls)
 	}
 	if _, wrote := store.albumFactsCalls[7]; wrote {
 		t.Fatal("expected already-found facts to be left untouched")
