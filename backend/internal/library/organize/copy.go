@@ -115,16 +115,7 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		return fmt.Errorf("reading source tags: %w", err)
 	}
 
-	ext := strings.ToLower(filepath.Ext(tr.DestPath))
-	switch ext {
-	case ".mp3":
-		err = writeMP3Tags(tr.DestPath, al, tr)
-	case ".flac":
-		err = writeFLACTags(tr.DestPath, al, tr)
-	case ".wv":
-		err = apev2.Write(tr.DestPath, apev2.Tags{Artist: al.Artist, Album: al.Album, Title: tr.Title, Track: tr.TrackNumber, Year: al.Year})
-	}
-	if err != nil {
+	if err := writeTags(tr.DestPath, al, tr); err != nil {
 		return fmt.Errorf("writing back tags: %w", err)
 	}
 
@@ -179,30 +170,60 @@ func readGenreAndArtwork(path string) (genre string, pictures []EmbeddedPicture,
 	if err != nil {
 		return "", nil, err
 	}
-
-	f, err := os.Open(path)
+	genre, err = readGenre(path)
 	if err != nil {
 		return "", nil, err
+	}
+	return genre, pictures, nil
+}
+
+// readGenre reads path's genre from its own embedded tags — WavPack via
+// apev2 (dhowden/tag has no APEv2 support), every other recognized format
+// via dhowden/tag directly, which already covers MP3/FLAC/OGG/M4A/AAC
+// uniformly. A file with no tags at all yields "" rather than an error.
+func readGenre(path string) (string, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return "", err
 	}
 	defer f.Close()
 
 	if strings.EqualFold(filepath.Ext(path), ".wv") {
 		t, err := apev2.Read(f)
 		if err != nil {
-			return "", nil, err
+			return "", err
 		}
-		return fixCyrillicMojibake(t.Genre), pictures, nil
+		return fixCyrillicMojibake(t.Genre), nil
 	}
 
 	m, err := tag.ReadFrom(f)
 	if errors.Is(err, tag.ErrNoTagsFound) {
-		return "", pictures, nil
+		return "", nil
 	}
 	if err != nil {
-		return "", nil, err
+		return "", err
 	}
+	return fixCyrillicMojibake(m.Genre()), nil
+}
 
-	return fixCyrillicMojibake(m.Genre()), pictures, nil
+// writeTags writes the plan's (possibly user-corrected) Artist/Album/
+// Title/Year/TrackNumber back into path's own embedded tags — mirrors
+// extractEmbeddedPictures's per-format dispatch shape (TDR 005/013),
+// scoped to the formats with tag-writing support. Every other extension
+// (M4A/OGG/WAV — TDR 005's deferred write-back work) is a silent no-op
+// today, the same as extractEmbeddedPictures's own default case; adding
+// one only touches this function, not copyTrack.
+func writeTags(path string, al Album, tr Track) error {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".mp3":
+		return writeMP3Tags(path, al, tr)
+	case ".flac":
+		return writeFLACTags(path, al, tr)
+	case ".wv":
+		return apev2.Write(path, apev2.Tags{Artist: al.Artist, Album: al.Album, Title: tr.Title, Track: tr.TrackNumber, Year: al.Year})
+	default:
+		return nil
+	}
 }
 
 func writeMP3Tags(path string, al Album, tr Track) error {
