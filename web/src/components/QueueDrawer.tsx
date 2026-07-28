@@ -20,7 +20,8 @@ export default function QueueDrawer({ open }: QueueDrawerProps) {
 
   if (!open) return null
 
-  const upcoming = queue.map((track, index) => ({ track, index })).slice(currentIndex >= 0 ? currentIndex : 0)
+  const start = currentIndex >= 0 ? currentIndex : 0
+  const upcoming = queue.slice(start).map((track, i) => ({ track, index: start + i }))
   const upcomingCount = Math.max(0, upcoming.length - 1)
 
   function handleDrop(toIndex: number) {

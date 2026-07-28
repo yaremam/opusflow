@@ -103,12 +103,15 @@ type AlbumTrack struct {
 	Format          string `json:"format"`
 }
 
-// trackFormat derives a track's format (TDR 015) from its on-disk path's
+// TrackFormat derives a track's format (TDR 015) from its on-disk path's
 // extension — lowercased, dot stripped ("mp3"/"flac"/"m4a"/"ogg"/"wv").
 // The path itself is never part of any API response; only this derived
 // label is, the same privacy stance artwork's relative /artwork/ URLs
-// already take toward ARTWORK_DIR's real filesystem location.
-func trackFormat(path string) string {
+// already take toward ARTWORK_DIR's real filesystem location. Exported so
+// httpserver's streaming handler can derive the same Content-Type from
+// the same single notion of "format" this package already computes,
+// rather than re-parsing the extension independently.
+func TrackFormat(path string) string {
 	return strings.ToLower(strings.TrimPrefix(filepath.Ext(path), "."))
 }
 
@@ -412,7 +415,7 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNumber, &t.DurationSeconds, &path); err != nil {
 			return AlbumDetail{}, fmt.Errorf("scanning track: %w", err)
 		}
-		t.Format = trackFormat(path)
+		t.Format = TrackFormat(path)
 		d.Tracks = append(d.Tracks, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -459,7 +462,7 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 		); err != nil {
 			return Page[Song]{}, fmt.Errorf("scanning song: %w", err)
 		}
-		sg.Format = trackFormat(path)
+		sg.Format = TrackFormat(path)
 		page.Items = append(page.Items, sg)
 	}
 	if err := rows.Err(); err != nil {
