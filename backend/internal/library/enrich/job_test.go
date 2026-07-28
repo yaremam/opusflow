@@ -43,7 +43,19 @@ type fakeStore struct {
 		sourceURL   string
 	}
 	albumCoverCalls []addedAlbumCover
+
+	// artistsByMBID/albumsByMBID let a test simulate "another row already
+	// has this musicbrainz id" (TDR 017) without a real relational store —
+	// set directly by the test, read by FindArtistIDByMusicBrainzID/
+	// FindAlbumIDByMusicBrainzID.
+	artistsByMBID map[string]int64
+	albumsByMBID  map[string]int64
+
+	mergeArtistCalls []mergeCall
+	mergeAlbumCalls  []mergeCall
 }
+
+type mergeCall struct{ loserID, winnerID int64 }
 
 // addedAlbumCover records one AddAlbumCoverForEnrichment call — used by
 // Cover Art Archive tests (TDR 014 Stage 2) to assert every image Job
@@ -80,6 +92,8 @@ func newFakeStore() *fakeStore {
 			description string
 			sourceURL   string
 		}{},
+		artistsByMBID: map[string]int64{},
+		albumsByMBID:  map[string]int64{},
 	}
 }
 
@@ -142,6 +156,28 @@ func (f *fakeStore) SetAlbumDescription(_ context.Context, id int64, status Stat
 }
 func (f *fakeStore) AddAlbumCoverForEnrichment(_ context.Context, id int64, thumbURL, fullURL, source, pictureType, contentHash string) error {
 	f.albumCoverCalls = append(f.albumCoverCalls, addedAlbumCover{id, thumbURL, fullURL, source, pictureType})
+	return nil
+}
+func (f *fakeStore) FindArtistIDByMusicBrainzID(_ context.Context, mbid string, excludeID int64) (int64, bool, error) {
+	id, ok := f.artistsByMBID[mbid]
+	if !ok || id == excludeID {
+		return 0, false, nil
+	}
+	return id, true, nil
+}
+func (f *fakeStore) MergeArtists(_ context.Context, loserID, winnerID int64) error {
+	f.mergeArtistCalls = append(f.mergeArtistCalls, mergeCall{loserID, winnerID})
+	return nil
+}
+func (f *fakeStore) FindAlbumIDByMusicBrainzID(_ context.Context, mbid string, excludeID int64) (int64, bool, error) {
+	id, ok := f.albumsByMBID[mbid]
+	if !ok || id == excludeID {
+		return 0, false, nil
+	}
+	return id, true, nil
+}
+func (f *fakeStore) MergeAlbums(_ context.Context, loserID, winnerID int64) error {
+	f.mergeAlbumCalls = append(f.mergeAlbumCalls, mergeCall{loserID, winnerID})
 	return nil
 }
 
@@ -345,6 +381,101 @@ func TestJobSkipsAlreadyFoundKindsAndReusesCachedMBID(t *testing.T) {
 	}
 	if store.artistBioCalls[9].status != NotFound {
 		t.Fatalf("expected bio to be resolved (no wikidata relation) to not_found, got %+v", store.artistBioCalls[9])
+	}
+}
+
+// TestJobMergesDuplicateArtistWhenCurrentRowIsTheLoser is TDR 017 AC-1/2:
+// when the artist Job is currently processing turns out to share a
+// freshly-resolved MusicBrainz ID with an existing, lower-ID row, Job
+// merges the current (higher-ID) row into the existing one and stops —
+// no further facts/bio/art calls should land against the row that no
+// longer exists.
+func TestJobMergesDuplicateArtistWhenCurrentRowIsTheLoser(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/artist", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"artists": [{"id": "shared-mbid"}]}`))
+	})
+	mux.HandleFunc("/mb/artist/shared-mbid", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"life-span": {}, "area": {}, "genres": [], "relations": []}`))
+	})
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.artistsByMBID["shared-mbid"] = 2 // an existing row already carries this mbid
+	store.artists = []ArtistTarget{{ID: 5, Name: "Duplicate Artist", ArtStatus: Pending, FactsStatus: Pending, BioStatus: Pending}}
+
+	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if len(store.mergeArtistCalls) != 1 {
+		t.Fatalf("mergeArtistCalls = %+v, want exactly 1", store.mergeArtistCalls)
+	}
+	if got := store.mergeArtistCalls[0]; got.loserID != 5 || got.winnerID != 2 {
+		t.Fatalf("merge call = %+v, want {loserID:5 winnerID:2} (lower id wins)", got)
+	}
+	if _, wrote := store.artistFactsCalls[5]; wrote {
+		t.Fatal("expected no further facts write against the merged-away row")
+	}
+	if _, wrote := store.artistBioCalls[5]; wrote {
+		t.Fatal("expected no further bio write against the merged-away row")
+	}
+	if _, wrote := store.artistArtCalls[5]; wrote {
+		t.Fatal("expected no further art write against the merged-away row")
+	}
+}
+
+// TestJobMergesDuplicateArtistWhenCurrentRowIsTheWinner is the mirror
+// case: the row Job is processing has the lower ID, so it survives the
+// merge and processing continues normally afterward.
+func TestJobMergesDuplicateArtistWhenCurrentRowIsTheWinner(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/artist", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"artists": [{"id": "shared-mbid"}]}`))
+	})
+	mux.HandleFunc("/mb/artist/shared-mbid", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"life-span": {"begin": "1999"}, "area": {}, "genres": [], "relations": []}`))
+	})
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.artistsByMBID["shared-mbid"] = 9 // an existing row with a higher id — it's the loser
+	store.artists = []ArtistTarget{{ID: 1, Name: "Canonical Artist", ArtStatus: Pending, FactsStatus: Pending, BioStatus: Pending}}
+
+	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if len(store.mergeArtistCalls) != 1 {
+		t.Fatalf("mergeArtistCalls = %+v, want exactly 1", store.mergeArtistCalls)
+	}
+	if got := store.mergeArtistCalls[0]; got.loserID != 9 || got.winnerID != 1 {
+		t.Fatalf("merge call = %+v, want {loserID:9 winnerID:1}", got)
+	}
+	if store.artistFactsCalls[1].status != Found || store.artistFactsCalls[1].info.FormedYear != 1999 {
+		t.Fatalf("expected the surviving row to still be enriched normally, got %+v", store.artistFactsCalls[1])
+	}
+}
+
+// TestJobMergesDuplicateAlbumSharingReleaseGroupMBID is TDR 017 AC-5, the
+// album-flavored counterpart of the artist merge above.
+func TestJobMergesDuplicateAlbumSharingReleaseGroupMBID(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/mb/release-group", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"release-groups": [{"id": "shared-rg-mbid"}]}`))
+	})
+	mux.HandleFunc("/caa/shared-rg-mbid", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"images": []}`))
+	})
+	clients := newTestClients(t, mux)
+	store := newFakeStore()
+	store.albumsByMBID["shared-rg-mbid"] = 3
+	store.albums = []AlbumTarget{{ID: 8, Title: "Duplicate Album", ArtistName: "Some Artist", ArtStatus: Pending, FactsStatus: Pending, DescriptionStatus: Pending}}
+
+	NewJob(store, clients.mb, clients.caa, clients.wd, clients.images).Run(context.Background())
+
+	if len(store.mergeAlbumCalls) != 1 {
+		t.Fatalf("mergeAlbumCalls = %+v, want exactly 1", store.mergeAlbumCalls)
+	}
+	if got := store.mergeAlbumCalls[0]; got.loserID != 8 || got.winnerID != 3 {
+		t.Fatalf("merge call = %+v, want {loserID:8 winnerID:3}", got)
+	}
+	if _, wrote := store.albumArtCalls[8]; wrote {
+		t.Fatal("expected no further art write against the merged-away album")
 	}
 }
 
