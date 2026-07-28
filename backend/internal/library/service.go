@@ -350,6 +350,11 @@ func (s *Service) ConfirmImport(ctx context.Context, libraryID int64, sourceDesc
 			log.Printf("library: import %d: marking complete: %v", imp.ID, err)
 		}
 
+		// Copy has read everything it needs from plan's sources by now —
+		// safe to clean up any staged-upload directory among them (AC-13
+		// for uploaded imports; see cleanupStagedSources).
+		cleanupStagedSources(plan)
+
 		s.wakeEnricher()
 	}()
 

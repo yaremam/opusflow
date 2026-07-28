@@ -213,6 +213,92 @@ func TestUploadImportStagesFilesAndReturnsPlan(t *testing.T) {
 	}
 }
 
+// TestUploadThenConfirmCopiesStagedFiles is the end-to-end regression case
+// for the "staged files deleted before confirm" bug: the upload handler
+// used to defer-delete its staging directory when it returned, but the
+// plan it just handed back still points into that directory — the actual
+// copy only happens later, once the client confirms. Before the fix, the
+// upload here would leave the import Failed with every file erroring
+// "no such file"; this exercises upload -> confirm -> copy for real and
+// asserts it completes successfully.
+func TestUploadThenConfirmCopiesStagedFiles(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	libID := mustCreateLibraryForTest(t, store, t.TempDir())
+
+	data, err := os.ReadFile(filepath.Join("..", "library", "organize", "testdata", "tagged.mp3"))
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	if err := mw.WriteField("libraryId", strconv.FormatInt(libID, 10)); err != nil {
+		t.Fatal(err)
+	}
+	part, err := mw.CreateFormFile("files", "Test Artist/Test Album/song.mp3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := part.Write(data); err != nil {
+		t.Fatal(err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/api/imports/upload", &buf)
+	uploadReq.Header.Set("Content-Type", mw.FormDataContentType())
+	uploadRec := httptest.NewRecorder()
+	handler := New("", "", "", "", svc)
+	handler.ServeHTTP(uploadRec, uploadReq)
+
+	if uploadRec.Code != http.StatusOK {
+		t.Fatalf("upload status = %d, want %d, body = %s", uploadRec.Code, http.StatusOK, uploadRec.Body.String())
+	}
+	var uploaded struct {
+		Plan organize.Plan `json:"plan"`
+	}
+	if err := json.Unmarshal(uploadRec.Body.Bytes(), &uploaded); err != nil {
+		t.Fatalf("unmarshal upload response: %v, body = %s", err, uploadRec.Body.String())
+	}
+	if len(uploaded.Plan.Albums) != 1 || len(uploaded.Plan.Albums[0].Tracks) != 1 {
+		t.Fatalf("plan = %+v, want exactly one track", uploaded.Plan)
+	}
+	stagedSourcePath := uploaded.Plan.Albums[0].Tracks[0].SourcePath
+	if _, err := os.Stat(stagedSourcePath); err != nil {
+		t.Fatalf("staged file %q should still exist right after upload: %v", stagedSourcePath, err)
+	}
+
+	planJSON, err := json.Marshal(uploaded.Plan)
+	if err != nil {
+		t.Fatalf("marshal plan: %v", err)
+	}
+	confirmBody := `{"libraryId":` + strconv.FormatInt(libID, 10) + `,"sourceDescription":"upload","plan":` + string(planJSON) + `}`
+	confirmReq := httptest.NewRequest(http.MethodPost, "/api/imports", strings.NewReader(confirmBody))
+	confirmRec := httptest.NewRecorder()
+	handler.ServeHTTP(confirmRec, confirmReq)
+
+	if confirmRec.Code != http.StatusAccepted {
+		t.Fatalf("confirm status = %d, want %d, body = %s", confirmRec.Code, http.StatusAccepted, confirmRec.Body.String())
+	}
+	var imp struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.Unmarshal(confirmRec.Body.Bytes(), &imp); err != nil {
+		t.Fatalf("unmarshal import: %v", err)
+	}
+
+	done := waitForImportDone(t, svc, imp.ID)
+	if done.Status != library.ImportStatusComplete {
+		t.Fatalf("import status = %q, want %q (error = %q) — staged source file was likely deleted before the copy ran", done.Status, library.ImportStatusComplete, done.Error)
+	}
+
+	// The staging directory should be cleaned up now that the copy is done.
+	if _, err := os.Stat(filepath.Dir(stagedSourcePath)); !os.IsNotExist(err) {
+		t.Fatalf("staging dir %q should be removed after the copy completes, stat error: %v", filepath.Dir(stagedSourcePath), err)
+	}
+}
+
 func TestUploadImportRequiresLibraryID(t *testing.T) {
 	svc := lazyService(t)
 
