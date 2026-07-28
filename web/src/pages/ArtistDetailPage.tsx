@@ -1,7 +1,5 @@
 import { useMemo, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
-import { useMemo } from 'react'
-import { Link, useParams } from 'react-router'
 import {
   deleteArtist,
   deleteArtistPhoto,
@@ -76,30 +74,6 @@ export default function ArtistDetailPage() {
       <p className="crumb">
         <Link to="/artists">Artists</Link> / {artistDisplayName}
       </p>
-      <div className="detail-head">
-        <ArtTile
-          src={artist.photoUrl || artist.photoThumbUrl}
-          alt=""
-          className="detail-art round"
-          kind="artist"
-          artStatus={artist.artStatus}
-        />
-        <div className="detail-meta">
-          <div className="kind">Artist</div>
-          <h1>{artistDisplayName}</h1>
-          <div className="facts">
-            {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
-            {artist.trackCount === 1 ? '' : 's'}
-          </div>
-          <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
-          <div className="detail-secondary-actions">
-            <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
-              ⇄ Merge into…
-            </button>
-            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-              Remove artist…
-            </button>
-          </div>
       <div className="detail-banner-wrap">
         <ArtTile src={artist.bannerUrl} alt="" className="detail-banner-img" kind="artist" artStatus={artist.artStatus} />
         <div className="detail-header-body">
@@ -112,15 +86,20 @@ export default function ArtistDetailPage() {
           />
           <div className="detail-meta">
             <div className="kind">Artist</div>
-            <h1>{artist.name || 'Unknown Artist'}</h1>
+            <h1>{artistDisplayName}</h1>
             <div className="facts">
               {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
               {artist.trackCount === 1 ? '' : 's'}
             </div>
             <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
-            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-              Remove artist…
-            </button>
+            <div className="detail-secondary-actions">
+              <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
+                ⇄ Merge into…
+              </button>
+              <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+                Remove artist…
+              </button>
+            </div>
           </div>
         </div>
       </div>
