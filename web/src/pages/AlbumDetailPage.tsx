@@ -98,33 +98,6 @@ export default function AlbumDetailPage() {
       <p className="crumb">
         <Link to="/albums">Albums</Link> / {albumDisplayName}
       </p>
-      <div className="detail-head">
-        <ArtTile
-          src={album.coverUrl || album.coverThumbUrl}
-          alt=""
-          className="detail-art"
-          kind="album"
-          artStatus={album.artStatus}
-        />
-        <div className="detail-meta">
-          <div className="kind">Album</div>
-          <h1>{albumDisplayName}</h1>
-          <div className="by">
-            by <Link to={`/artists/${album.artistId}`}>{album.artistName || 'Unknown Artist'}</Link>
-          </div>
-          <div className="facts">
-            {album.year > 0 ? `${album.year} · ` : ''}
-            {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
-          </div>
-          <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
-          <div className="detail-secondary-actions">
-            <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
-              ⇄ Merge into…
-            </button>
-            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-              Remove album…
-            </button>
-          </div>
       <div className="detail-banner-wrap">
         <ArtTile src={album.bannerUrl} alt="" className="detail-banner-img" kind="album" artStatus={album.artStatus} />
         <div className="detail-header-body">
@@ -137,7 +110,7 @@ export default function AlbumDetailPage() {
           />
           <div className="detail-meta">
             <div className="kind">Album</div>
-            <h1>{album.title || 'Unknown Album'}</h1>
+            <h1>{albumDisplayName}</h1>
             <div className="by">
               by <Link to={`/artists/${album.artistId}`}>{album.artistName || 'Unknown Artist'}</Link>
             </div>
@@ -146,9 +119,14 @@ export default function AlbumDetailPage() {
               {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
             </div>
             <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
-            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-              Remove album…
-            </button>
+            <div className="detail-secondary-actions">
+              <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
+                ⇄ Merge into…
+              </button>
+              <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+                Remove album…
+              </button>
+            </div>
           </div>
         </div>
       </div>
