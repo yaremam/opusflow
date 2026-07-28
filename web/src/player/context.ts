@@ -16,29 +16,41 @@ export interface PlayableTrack {
   format: string
 }
 
-// WAVPACK_FORMAT is the one format (TDR 015 AC-6) no browser's <audio>
-// element can decode — filtered out of every queue before it's ever set,
-// so the player itself never has to special-case "can't play this."
-const WAVPACK_FORMAT = 'wv'
+// PLAYABLE_FORMATS is an allowlist of every format this app imports
+// (backend/internal/library/scan/format.go's durationParsersByExt) that a
+// browser's <audio> element can actually decode — every one except
+// WavPack (TDR 015 AC-6, the one format no browser supports at all). An
+// allowlist fails closed for any future format this app starts importing
+// but the player doesn't handle yet, rather than silently assuming it's
+// playable.
+const PLAYABLE_FORMATS = new Set(['mp3', 'flac', 'm4a', 'aac', 'ogg', 'wav'])
 
 export function isPlayable(track: PlayableTrack): boolean {
-  return track.format !== WAVPACK_FORMAT
+  return PLAYABLE_FORMATS.has(track.format)
 }
 
 export interface PlayerState {
   queue: PlayableTrack[]
   currentIndex: number // -1 = nothing loaded
   isPlaying: boolean
+  volume: number
+}
+
+// PlayerTimeState is split out of PlayerState (and given its own context,
+// see TimeContext below) because currentTime changes many times a second
+// during playback — keeping it out of the main state/context value means
+// a <audio onTimeUpdate> tick only re-renders whatever actually reads
+// PlayerTimeState (the mini-player's seek bar), not every consumer of
+// usePlayer() (every song row's PlayButton, every page that just wants
+// the stable playFrom action).
+export interface PlayerTimeState {
   currentTime: number
   duration: number
-  volume: number
 }
 
 export interface PlayerContextValue extends PlayerState {
   currentTrack: PlayableTrack | null
   playFrom: (tracks: PlayableTrack[], startIndex: number) => void
-  pause: () => void
-  resume: () => void
   togglePlayPause: () => void
   seek: (time: number) => void
   next: () => void
@@ -53,9 +65,29 @@ export const initialPlayerState: PlayerState = {
   queue: [],
   currentIndex: -1,
   isPlaying: false,
-  currentTime: 0,
-  duration: 0,
   volume: 0.7,
 }
 
+export const initialPlayerTimeState: PlayerTimeState = {
+  currentTime: 0,
+  duration: 0,
+}
+
 export const PlayerContext = createContext<PlayerContextValue | null>(null)
+export const TimeContext = createContext<PlayerTimeState>(initialPlayerTimeState)
+
+// indexAfterRemoval/indexAfterReorder are the queue-index arithmetic
+// removeFromQueue/reorderQueue need — pulled out as pure functions rather
+// than inline conditionals in a setState updater, since "how does the
+// currently-playing index shift when the queue in front of it changes"
+// is subtle enough to want to read (and eventually test) on its own.
+export function indexAfterRemoval(currentIndex: number, removedIndex: number): number {
+  return removedIndex < currentIndex ? currentIndex - 1 : currentIndex
+}
+
+export function indexAfterReorder(currentIndex: number, fromIndex: number, toIndex: number): number {
+  if (fromIndex === currentIndex) return toIndex
+  if (fromIndex < currentIndex && toIndex >= currentIndex) return currentIndex - 1
+  if (fromIndex > currentIndex && toIndex <= currentIndex) return currentIndex + 1
+  return currentIndex
+}

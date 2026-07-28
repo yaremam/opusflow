@@ -1,13 +1,8 @@
+import { formatDuration } from '../api/library'
 import { usePlayer } from '../player/usePlayer'
+import { usePlayerTime } from '../player/usePlayerTime'
 import ArtTile from './ArtTile'
 import './MiniPlayer.css'
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds < 0) return '0:00'
-  const m = Math.floor(seconds / 60)
-  const s = Math.floor(seconds % 60)
-  return `${m}:${String(s).padStart(2, '0')}`
-}
 
 interface MiniPlayerProps {
   queueOpen: boolean
@@ -20,7 +15,8 @@ interface MiniPlayerProps {
 // when no track has been played yet.
 export default function MiniPlayer({ queueOpen, onToggleQueue }: MiniPlayerProps) {
   const player = usePlayer()
-  const { currentTrack, isPlaying, currentTime, duration, volume, currentIndex, queue } = player
+  const { currentTrack, isPlaying, volume, currentIndex, queue } = player
+  const { currentTime, duration } = usePlayerTime()
 
   if (!currentTrack) return null
 
@@ -75,11 +71,11 @@ export default function MiniPlayer({ queueOpen, onToggleQueue }: MiniPlayerProps
             </button>
           </div>
           <div className="seek-row">
-            <span className="seek-time">{formatTime(currentTime)}</span>
+            <span className="seek-time">{formatDuration(Math.floor(currentTime))}</span>
             <div className="seek-track" onClick={handleSeekClick}>
               <div className="seek-fill" style={{ width: `${seekPct}%` }} />
             </div>
-            <span className="seek-time end">{formatTime(duration)}</span>
+            <span className="seek-time end">{formatDuration(Math.floor(duration))}</span>
           </div>
         </div>
 

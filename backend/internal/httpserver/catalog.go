@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"strings"
 
 	"github.com/yaremam/opusflow/backend/internal/library"
 )
@@ -409,17 +408,17 @@ func handleListSongs(svc *library.Service) http.HandlerFunc {
 // in-browser player (TDR 015) expects — set explicitly rather than
 // relying on Go's default mime package, which doesn't reliably know
 // several of these.
-func audioContentType(path string) string {
-	switch strings.ToLower(filepath.Ext(path)) {
-	case ".mp3":
+func audioContentType(format string) string {
+	switch format {
+	case "mp3":
 		return "audio/mpeg"
-	case ".flac":
+	case "flac":
 		return "audio/flac"
-	case ".m4a":
+	case "m4a":
 		return "audio/mp4"
-	case ".ogg":
+	case "ogg":
 		return "audio/ogg"
-	case ".wv":
+	case "wv":
 		return "audio/x-wavpack"
 	default:
 		return ""
@@ -457,7 +456,7 @@ func handleStreamSong(svc *library.Service) http.HandlerFunc {
 			return
 		}
 
-		if ct := audioContentType(path); ct != "" {
+		if ct := audioContentType(library.TrackFormat(path)); ct != "" {
 			w.Header().Set("Content-Type", ct)
 		}
 		http.ServeContent(w, r, filepath.Base(path), info.ModTime(), f)
