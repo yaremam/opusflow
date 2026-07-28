@@ -1,16 +1,13 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { useMemo } from 'react'
+import { Link, useParams } from 'react-router'
 import {
   deleteAlbum,
   deleteAlbumCover,
-  errorMessage,
   formatDuration,
   getAlbum,
-  pollForArtResolution,
   retryAlbumArt,
   setAlbumPrimaryCover,
   uploadAlbumArt,
-  type AlbumDetail,
   type AlbumTrack,
 } from '../api/library'
 import ArtActions from '../components/ArtActions'
@@ -19,19 +16,41 @@ import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
 import PlayButton from '../components/PlayButton'
 import RemoveModal from '../components/RemoveModal'
+import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
 import type { PlayableTrack } from '../player/context'
 import { usePlayer } from '../player/usePlayer'
 import '../styles/catalog.css'
 
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const [album, setAlbum] = useState<AlbumDetail | null>(null)
-  const [loadError, setLoadError] = useState<string | null>(null)
-  const [removing, setRemoving] = useState(false)
-  const [removeSubmitting, setRemoveSubmitting] = useState(false)
-  const [removeError, setRemoveError] = useState<string | null>(null)
+  const albumId = Number(id)
   const player = usePlayer()
+  const config = useMemo<EntityGalleryConfig<Awaited<ReturnType<typeof getAlbum>>, Awaited<ReturnType<typeof retryAlbumArt>>>>(
+    () => ({
+      fetchDetail: getAlbum,
+      retryArt: retryAlbumArt,
+      uploadImage: uploadAlbumArt,
+      setPrimaryImage: setAlbumPrimaryCover,
+      deleteImage: deleteAlbumCover,
+      deleteEntity: deleteAlbum,
+      afterRemove: '/albums',
+    }),
+    [],
+  )
+  const {
+    entity: album,
+    loadError,
+    retryArt: handleRetryArt,
+    uploadImage: handleUploadCover,
+    setPrimaryImage: handleSetPrimaryCover,
+    deleteImage: handleDeleteCover,
+    removing,
+    removeSubmitting,
+    removeError,
+    startRemove,
+    cancelRemove,
+    confirmRemove,
+  } = useEntityGallery(albumId, config)
 
   function toPlayableTrack(track: AlbumTrack): PlayableTrack {
     return {
@@ -49,61 +68,6 @@ export default function AlbumDetailPage() {
     if (!album) return
     player.playFrom(album.tracks.map(toPlayableTrack), index)
   }
-
-  async function handleRetryArt() {
-    if (!album) return
-    const queued = await retryAlbumArt(album.id)
-    setAlbum((prev) => prev && { ...prev, ...queued })
-    const resolved = await pollForArtResolution(() => getAlbum(album.id))
-    setAlbum((prev) => prev && { ...prev, ...resolved })
-  }
-
-  async function handleUploadCover(file: File) {
-    if (!album) return
-    const updated = await uploadAlbumArt(album.id, file)
-    setAlbum(updated)
-  }
-
-  async function handleSetPrimaryCover(coverId: number) {
-    if (!album) return
-    const updated = await setAlbumPrimaryCover(album.id, coverId)
-    setAlbum(updated)
-  }
-
-  async function handleDeleteCover(coverId: number, deleteFile: boolean) {
-    if (!album) return
-    const updated = await deleteAlbumCover(album.id, coverId, deleteFile)
-    setAlbum(updated)
-  }
-
-  async function handleRemove(deleteFiles: boolean) {
-    if (!album) return
-    setRemoveSubmitting(true)
-    setRemoveError(null)
-    try {
-      await deleteAlbum(album.id, deleteFiles)
-      navigate('/albums')
-    } catch (err) {
-      setRemoveError(errorMessage(err))
-      setRemoveSubmitting(false)
-    }
-  }
-
-  useEffect(() => {
-    let cancelled = false
-    setAlbum(null)
-    setLoadError(null)
-    getAlbum(Number(id))
-      .then((result) => {
-        if (!cancelled) setAlbum(result)
-      })
-      .catch((err: unknown) => {
-        if (!cancelled) setLoadError(errorMessage(err))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [id])
 
   if (loadError) {
     return (
@@ -144,7 +108,7 @@ export default function AlbumDetailPage() {
             {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
           </div>
           <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
-          <button type="button" className="btn-ghost detail-remove" onClick={() => setRemoving(true)}>
+          <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
             Remove album…
           </button>
         </div>
@@ -163,12 +127,9 @@ export default function AlbumDetailPage() {
           name={album.title || 'Unknown Album'}
           submitting={removeSubmitting}
           submitError={removeError}
-          onDeleteFiles={() => handleRemove(true)}
-          onKeepFiles={() => handleRemove(false)}
-          onCancel={() => {
-            setRemoving(false)
-            setRemoveError(null)
-          }}
+          onDeleteFiles={() => confirmRemove(true)}
+          onKeepFiles={() => confirmRemove(false)}
+          onCancel={cancelRemove}
         />
       )}
 
