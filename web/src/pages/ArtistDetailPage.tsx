@@ -1,10 +1,20 @@
-import { useMemo } from 'react'
-import { Link, useParams } from 'react-router'
-import { deleteArtist, deleteArtistPhoto, getArtist, retryArtistArt, setArtistPrimaryPhoto, uploadArtistArt } from '../api/library'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
+import {
+  deleteArtist,
+  deleteArtistPhoto,
+  getArtist,
+  listArtists,
+  mergeArtist,
+  retryArtistArt,
+  setArtistPrimaryPhoto,
+  uploadArtistArt,
+} from '../api/library'
 import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
+import MergeModal from '../components/MergeModal'
 import RemoveModal from '../components/RemoveModal'
 import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
 import '../styles/catalog.css'
@@ -12,6 +22,8 @@ import '../styles/catalog.css'
 export default function ArtistDetailPage() {
   const { id } = useParams<{ id: string }>()
   const artistId = Number(id)
+  const navigate = useNavigate()
+  const [merging, setMerging] = useState(false)
   const config = useMemo<EntityGalleryConfig<Awaited<ReturnType<typeof getArtist>>, Awaited<ReturnType<typeof retryArtistArt>>>>(
     () => ({
       fetchDetail: getArtist,
@@ -73,9 +85,14 @@ export default function ArtistDetailPage() {
             {artist.trackCount === 1 ? '' : 's'}
           </div>
           <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
-          <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-            Remove artist…
-          </button>
+          <div className="detail-secondary-actions">
+            <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
+              ⇄ Merge into…
+            </button>
+            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+              Remove artist…
+            </button>
+          </div>
         </div>
       </div>
 
@@ -95,6 +112,35 @@ export default function ArtistDetailPage() {
           onDeleteFiles={() => confirmRemove(true)}
           onKeepFiles={() => confirmRemove(false)}
           onCancel={cancelRemove}
+        />
+      )}
+
+      {merging && (
+        <MergeModal
+          label="artist"
+          sourceName={artist.name || 'Unknown Artist'}
+          sourceSub={`${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} · ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'}`}
+          effects={[
+            `Move ${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} and ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'} from "${artist.name || 'Unknown Artist'}" onto the artist you pick — combining any same-titled album instead of duplicating it.`,
+            `Move "${artist.name || 'Unknown Artist'}"'s photos into the kept artist's gallery.`,
+            `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
+          ]}
+          search={async (q) => {
+            const page = await listArtists({ q, pageSize: 20 })
+            return page.items
+              .filter((a) => a.id !== artistId)
+              .map((a) => ({
+                id: a.id,
+                name: a.name || 'Unknown Artist',
+                sub: `${a.albumCount} album${a.albumCount === 1 ? '' : 's'} · ${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
+              }))
+          }}
+          merge={(intoId) => mergeArtist(artistId, intoId).then(() => undefined)}
+          onClose={() => setMerging(false)}
+          onMerged={(intoId) => {
+            setMerging(false)
+            navigate(`/artists/${intoId}`)
+          }}
         />
       )}
 

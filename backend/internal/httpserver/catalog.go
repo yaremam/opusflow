@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -99,6 +100,42 @@ func handleDeleteArtist(svc *library.Service) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleMergeArtist folds the artist at {id} — every album, track, and
+// gallery photo it has — into the artist named by the request body's
+// intoId (TDR 018), then removes {id}. Returns the surviving artist's
+// fresh detail, since the page the request came from no longer exists.
+func handleMergeArtist(svc *library.Service) http.HandlerFunc {
+	type mergeRequest struct {
+		IntoID int64 `json:"intoId"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			return
+		}
+		var req mergeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.IntoID == 0 {
+			http.Error(w, "intoId is required", http.StatusBadRequest)
+			return
+		}
+		if err := svc.MergeArtists(r.Context(), id, req.IntoID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		target, err := svc.GetArtist(r.Context(), req.IntoID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, target)
 	}
 }
 
@@ -327,6 +364,39 @@ func handleDeleteAlbum(svc *library.Service) http.HandlerFunc {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+// handleMergeAlbum is handleMergeArtist's album counterpart.
+func handleMergeAlbum(svc *library.Service) http.HandlerFunc {
+	type mergeRequest struct {
+		IntoID int64 `json:"intoId"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid album id", http.StatusBadRequest)
+			return
+		}
+		var req mergeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.IntoID == 0 {
+			http.Error(w, "intoId is required", http.StatusBadRequest)
+			return
+		}
+		if err := svc.MergeAlbums(r.Context(), id, req.IntoID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		target, err := svc.GetAlbum(r.Context(), req.IntoID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, target)
 	}
 }
 

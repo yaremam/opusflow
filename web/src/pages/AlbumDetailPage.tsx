@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
-import { Link, useParams } from 'react-router'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
 import {
   deleteAlbum,
   deleteAlbumCover,
   formatDuration,
   getAlbum,
+  listAlbums,
+  mergeAlbum,
   retryAlbumArt,
   setAlbumPrimaryCover,
   uploadAlbumArt,
@@ -14,6 +16,7 @@ import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
+import MergeModal from '../components/MergeModal'
 import PlayButton from '../components/PlayButton'
 import RemoveModal from '../components/RemoveModal'
 import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
@@ -24,6 +27,8 @@ import '../styles/catalog.css'
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>()
   const albumId = Number(id)
+  const navigate = useNavigate()
+  const [merging, setMerging] = useState(false)
   const player = usePlayer()
   const config = useMemo<EntityGalleryConfig<Awaited<ReturnType<typeof getAlbum>>, Awaited<ReturnType<typeof retryAlbumArt>>>>(
     () => ({
@@ -108,9 +113,14 @@ export default function AlbumDetailPage() {
             {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
           </div>
           <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
-          <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-            Remove album…
-          </button>
+          <div className="detail-secondary-actions">
+            <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
+              ⇄ Merge into…
+            </button>
+            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+              Remove album…
+            </button>
+          </div>
         </div>
       </div>
 
@@ -130,6 +140,35 @@ export default function AlbumDetailPage() {
           onDeleteFiles={() => confirmRemove(true)}
           onKeepFiles={() => confirmRemove(false)}
           onCancel={cancelRemove}
+        />
+      )}
+
+      {merging && (
+        <MergeModal
+          label="album"
+          sourceName={album.title || 'Unknown Album'}
+          sourceSub={`${album.trackCount} song${album.trackCount === 1 ? '' : 's'}`}
+          effects={[
+            `Move ${album.trackCount} song${album.trackCount === 1 ? '' : 's'} from "${album.title || 'Unknown Album'}" onto the album you pick.`,
+            `Move "${album.title || 'Unknown Album'}"'s cover images into the kept album's gallery.`,
+            `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
+          ]}
+          search={async (q) => {
+            const page = await listAlbums({ q, pageSize: 20 })
+            return page.items
+              .filter((a) => a.id !== albumId && a.artistId === album.artistId)
+              .map((a) => ({
+                id: a.id,
+                name: a.title || 'Unknown Album',
+                sub: `${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
+              }))
+          }}
+          merge={(intoId) => mergeAlbum(albumId, intoId).then(() => undefined)}
+          onClose={() => setMerging(false)}
+          onMerged={(intoId) => {
+            setMerging(false)
+            navigate(`/albums/${intoId}`)
+          }}
         />
       )}
 
