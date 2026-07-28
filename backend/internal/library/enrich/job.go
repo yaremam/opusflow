@@ -159,6 +159,29 @@ func (j *Job) processArtist(ctx context.Context, a ArtistTarget) RunSummary {
 		}
 	}
 
+	// TDR 017: two artist rows resolving to the same MusicBrainz ID are
+	// really one artist, tagged inconsistently — merge them (lower ID
+	// survives) rather than continuing to enrich both separately. Checked
+	// on every pass, not just a freshly-resolved mbid, so a row that was
+	// still owed another kind (e.g. bio) on a later run still gets caught
+	// against a duplicate that appeared since.
+	if dupID, ok, err := j.store.FindArtistIDByMusicBrainzID(ctx, mbid, a.ID); err != nil {
+		log.Printf("enrich: artist %d: checking for a duplicate by musicbrainz id: %v", a.ID, err)
+	} else if ok {
+		winnerID, loserID := a.ID, dupID
+		if dupID < a.ID {
+			winnerID, loserID = dupID, a.ID
+		}
+		if err := j.store.MergeArtists(ctx, loserID, winnerID); err != nil {
+			log.Printf("enrich: merging duplicate artist %d into %d (shared musicbrainz id %s): %v", loserID, winnerID, mbid, err)
+		} else {
+			log.Printf("enrich: merged duplicate artist %d into %d (shared musicbrainz id %s)", loserID, winnerID, mbid)
+			if loserID == a.ID {
+				return RunSummary{}
+			}
+		}
+	}
+
 	info, err := j.mb.LookupArtist(ctx, mbid)
 	if err != nil {
 		return j.markArtistUnresolved(ctx, a, Failed)
@@ -270,6 +293,26 @@ func (j *Job) processAlbum(ctx context.Context, al AlbumTarget) RunSummary {
 		mbid = found
 		if err := j.store.SetAlbumMusicBrainzID(ctx, al.ID, mbid); err != nil {
 			log.Printf("enrich: album %d: caching musicbrainz id: %v", al.ID, err)
+		}
+	}
+
+	// TDR 017: see processArtist's identical check — two album rows
+	// resolving to the same release-group MBID get merged (lower ID
+	// survives) instead of enriched separately.
+	if dupID, ok, err := j.store.FindAlbumIDByMusicBrainzID(ctx, mbid, al.ID); err != nil {
+		log.Printf("enrich: album %d: checking for a duplicate by musicbrainz id: %v", al.ID, err)
+	} else if ok {
+		winnerID, loserID := al.ID, dupID
+		if dupID < al.ID {
+			winnerID, loserID = dupID, al.ID
+		}
+		if err := j.store.MergeAlbums(ctx, loserID, winnerID); err != nil {
+			log.Printf("enrich: merging duplicate album %d into %d (shared musicbrainz id %s): %v", loserID, winnerID, mbid, err)
+		} else {
+			log.Printf("enrich: merged duplicate album %d into %d (shared musicbrainz id %s)", loserID, winnerID, mbid)
+			if loserID == al.ID {
+				return RunSummary{}
+			}
 		}
 	}
 

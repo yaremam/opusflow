@@ -59,4 +59,13 @@ type Store interface {
 	SetAlbumFacts(ctx context.Context, id int64, status Status, info ReleaseGroupInfo) error
 	SetAlbumDescription(ctx context.Context, id int64, status Status, description, sourceURL string) error
 	AddAlbumCoverForEnrichment(ctx context.Context, id int64, thumbURL, fullURL, source, pictureType, contentHash string) error
+
+	// FindArtistIDByMusicBrainzID/FindAlbumIDByMusicBrainzID/MergeArtists/
+	// MergeAlbums back TDR 017: once two rows resolve to the same
+	// MusicBrainz ID, Job merges them into one instead of leaving separate
+	// duplicates.
+	FindArtistIDByMusicBrainzID(ctx context.Context, mbid string, excludeID int64) (int64, bool, error)
+	MergeArtists(ctx context.Context, loserID, winnerID int64) error
+	FindAlbumIDByMusicBrainzID(ctx context.Context, mbid string, excludeID int64) (int64, bool, error)
+	MergeAlbums(ctx context.Context, loserID, winnerID int64) error
 }
