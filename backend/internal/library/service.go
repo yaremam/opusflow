@@ -39,14 +39,51 @@ type MetadataSearch interface {
 	ReleaseTracks(ctx context.Context, releaseMBID string) ([]enrich.Track, error)
 }
 
-// ImportStore is the persistence Service needs — library and import
-// management plus browsing the artist/album/song catalog those imports
-// populate, plus organize.Store's methods so it can be handed straight to a
-// Copier. *Store satisfies this as its one production adapter; tests
-// substitute an in-memory fake so orchestration logic (validation,
-// copy-goroutine timing, list-options normalization) can be tested without
-// a database.
-type ImportStore interface {
+// GalleryStore is the artist/album image-gallery persistence Service needs
+// (TDR 014) — kept as its own interface so a test (or future caller) that
+// only cares about gallery behavior depends on, and fakes, just this
+// eight-method slice rather than ImportStore's full width.
+type GalleryStore interface {
+	ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistPhoto, error)
+	AddArtistPhoto(ctx context.Context, artistID int64, thumbURL, fullURL, source, contentHash string) (ArtistPhoto, error)
+	SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error
+	DeleteArtistPhoto(ctx context.Context, artistID, photoID int64) (thumbPath, fullPath string, err error)
+
+	ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCover, error)
+	AddAlbumCover(ctx context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) (AlbumCover, error)
+	SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error
+	DeleteAlbumCover(ctx context.Context, albumID, coverID int64) (thumbPath, fullPath string, err error)
+}
+
+// EnrichmentStore is the background artwork-job persistence Service needs
+// (TDR 003/007) — resetting an entity's art status for a retry, and
+// recording a lookup's outcome (which, on Found, adds into the gallery
+// above as a side effect; see SetArtistArt/SetAlbumArt's own doc comments).
+type EnrichmentStore interface {
+	ResetArtistArt(ctx context.Context, id int64) error
+	ResetAlbumArt(ctx context.Context, id int64) error
+	SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
+	SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
+}
+
+// CatalogReader is the artist/album/song browsing and direct-deletion
+// persistence Service needs (TDR 002/005) — listing/paginating the
+// catalog those imports populate, and removing an entity from it.
+type CatalogReader interface {
+	DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error
+	DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error
+
+	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
+	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
+	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
+	GetAlbum(ctx context.Context, id int64) (AlbumDetail, error)
+	ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error)
+	GetSongPath(ctx context.Context, id int64) (string, error)
+}
+
+// ImportRecorder is library and import bookkeeping persistence (TDR 005/006),
+// plus organize.Store's methods so it can be handed straight to a Copier.
+type ImportRecorder interface {
 	organize.Store
 
 	CreateLibrary(ctx context.Context, name, rootPath string) (Library, error)
@@ -59,31 +96,23 @@ type ImportStore interface {
 	ListImports(ctx context.Context) ([]Import, error)
 	MarkImportComplete(ctx context.Context, id int64) error
 	MarkImportFailed(ctx context.Context, id int64, errMsg string) error
+}
 
-	DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error
-	DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error
-
-	ResetArtistArt(ctx context.Context, id int64) error
-	ResetAlbumArt(ctx context.Context, id int64) error
-	SetArtistArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
-	SetAlbumArt(ctx context.Context, id int64, status enrich.Status, thumbPath, fullPath string) error
-
-	ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistPhoto, error)
-	AddArtistPhoto(ctx context.Context, artistID int64, thumbURL, fullURL, source, contentHash string) (ArtistPhoto, error)
-	SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error
-	DeleteArtistPhoto(ctx context.Context, artistID, photoID int64) (thumbPath, fullPath string, err error)
-
-	ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCover, error)
-	AddAlbumCover(ctx context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) (AlbumCover, error)
-	SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error
-	DeleteAlbumCover(ctx context.Context, albumID, coverID int64) (thumbPath, fullPath string, err error)
-
-	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
-	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
-	ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error)
-	GetAlbum(ctx context.Context, id int64) (AlbumDetail, error)
-	ListSongs(ctx context.Context, opts ListOptions) (Page[Song], error)
-	GetSongPath(ctx context.Context, id int64) (string, error)
+// ImportStore is the persistence Service actually depends on — the union
+// of the four cohesion-scoped interfaces above. *Store satisfies it as its
+// one production adapter; tests substitute an in-memory fake so
+// orchestration logic (validation, copy-goroutine timing, list-options
+// normalization) can be tested without a database. Splitting it into four
+// named pieces doesn't change what a whole-Service test's fake has to
+// implement (it still needs all of them), but it does mean each concern's
+// method list is declared, and can be depended on, on its own, instead of
+// one 32-method interface with a single production adapter — a seam that
+// wasn't earning its width.
+type ImportStore interface {
+	GalleryStore
+	EnrichmentStore
+	CatalogReader
+	ImportRecorder
 }
 
 // defaultPageSize/maxPageSize bound ListOptions.PageSize once normalized by
