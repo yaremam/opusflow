@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api/library'
+import '../styles/modal.css'
 import './MergeModal.css'
 
 export interface MergeCandidate {
