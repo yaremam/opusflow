@@ -1,10 +1,12 @@
-import { useMemo } from 'react'
-import { Link, useParams } from 'react-router'
+import { useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router'
 import {
   deleteAlbum,
   deleteAlbumCover,
   formatDuration,
   getAlbum,
+  listAlbums,
+  mergeAlbum,
   retryAlbumArt,
   setAlbumBannerCover,
   setAlbumPrimaryCover,
@@ -15,6 +17,7 @@ import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
 import InfoBlock from '../components/InfoBlock'
+import MergeModal from '../components/MergeModal'
 import PlayButton from '../components/PlayButton'
 import RemoveModal from '../components/RemoveModal'
 import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
@@ -25,6 +28,8 @@ import '../styles/catalog.css'
 export default function AlbumDetailPage() {
   const { id } = useParams<{ id: string }>()
   const albumId = Number(id)
+  const navigate = useNavigate()
+  const [merging, setMerging] = useState(false)
   const player = usePlayer()
   const config = useMemo<EntityGalleryConfig<Awaited<ReturnType<typeof getAlbum>>, Awaited<ReturnType<typeof retryAlbumArt>>>>(
     () => ({
@@ -85,13 +90,41 @@ export default function AlbumDetailPage() {
 
   if (!album) return null
 
+  const albumDisplayName = album.title || 'Unknown Album'
   const totalSeconds = album.tracks.reduce((sum, t) => sum + t.durationSeconds, 0)
 
   return (
     <div className="page-shell">
       <p className="crumb">
-        <Link to="/albums">Albums</Link> / {album.title || 'Unknown Album'}
+        <Link to="/albums">Albums</Link> / {albumDisplayName}
       </p>
+      <div className="detail-head">
+        <ArtTile
+          src={album.coverUrl || album.coverThumbUrl}
+          alt=""
+          className="detail-art"
+          kind="album"
+          artStatus={album.artStatus}
+        />
+        <div className="detail-meta">
+          <div className="kind">Album</div>
+          <h1>{albumDisplayName}</h1>
+          <div className="by">
+            by <Link to={`/artists/${album.artistId}`}>{album.artistName || 'Unknown Artist'}</Link>
+          </div>
+          <div className="facts">
+            {album.year > 0 ? `${album.year} · ` : ''}
+            {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
+          </div>
+          <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
+          <div className="detail-secondary-actions">
+            <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
+              ⇄ Merge into…
+            </button>
+            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+              Remove album…
+            </button>
+          </div>
       <div className="detail-banner-wrap">
         <ArtTile src={album.bannerUrl} alt="" className="detail-banner-img" kind="album" artStatus={album.artStatus} />
         <div className="detail-header-body">
@@ -131,12 +164,41 @@ export default function AlbumDetailPage() {
 
       {removing && (
         <RemoveModal
-          name={album.title || 'Unknown Album'}
+          name={albumDisplayName}
           submitting={removeSubmitting}
           submitError={removeError}
           onDeleteFiles={() => confirmRemove(true)}
           onKeepFiles={() => confirmRemove(false)}
           onCancel={cancelRemove}
+        />
+      )}
+
+      {merging && (
+        <MergeModal
+          label="album"
+          sourceName={albumDisplayName}
+          sourceSub={`${album.trackCount} song${album.trackCount === 1 ? '' : 's'}`}
+          effects={[
+            `Move ${album.trackCount} song${album.trackCount === 1 ? '' : 's'} from "${albumDisplayName}" onto the album you pick.`,
+            `Move "${albumDisplayName}"'s cover images into the kept album's gallery.`,
+            `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
+          ]}
+          search={async (q) => {
+            const page = await listAlbums({ q, pageSize: 20 })
+            return page.items
+              .filter((a) => a.id !== albumId && a.artistId === album.artistId)
+              .map((a) => ({
+                id: a.id,
+                name: a.title || 'Unknown Album',
+                sub: `${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
+              }))
+          }}
+          merge={(intoId) => mergeAlbum(albumId, intoId)}
+          onClose={() => setMerging(false)}
+          onMerged={(intoId) => {
+            setMerging(false)
+            navigate(`/albums/${intoId}`)
+          }}
         />
       )}
 

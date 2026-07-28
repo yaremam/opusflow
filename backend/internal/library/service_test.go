@@ -23,6 +23,8 @@ type fakeImportStore struct {
 	errors         []string
 	deletedArtists []int64
 	deletedAlbums  []int64
+	mergedArtists  []mergeCall
+	mergedAlbums   []mergeCall
 
 	nextLibID   int64
 	libraries   map[int64]Library
@@ -194,6 +196,22 @@ func (f *fakeImportStore) DeleteAlbum(_ context.Context, id int64, deleteFiles b
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletedAlbums = append(f.deletedAlbums, id)
+	return nil
+}
+
+type mergeCall struct{ loserID, winnerID int64 }
+
+func (f *fakeImportStore) MergeArtists(_ context.Context, loserID, winnerID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mergedArtists = append(f.mergedArtists, mergeCall{loserID, winnerID})
+	return nil
+}
+
+func (f *fakeImportStore) MergeAlbums(_ context.Context, loserID, winnerID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.mergedAlbums = append(f.mergedAlbums, mergeCall{loserID, winnerID})
 	return nil
 }
 
@@ -721,6 +739,30 @@ func TestDeleteAlbumDelegatesToStore(t *testing.T) {
 	}
 	if len(store.deletedAlbums) != 1 || store.deletedAlbums[0] != 7 {
 		t.Fatalf("deletedAlbums = %+v, want [7]", store.deletedAlbums)
+	}
+}
+
+func TestMergeArtistsDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.MergeArtists(ctx(), 5, 2); err != nil {
+		t.Fatalf("MergeArtists: %v", err)
+	}
+	if len(store.mergedArtists) != 1 || store.mergedArtists[0] != (mergeCall{5, 2}) {
+		t.Fatalf("mergedArtists = %+v, want [{5 2}]", store.mergedArtists)
+	}
+}
+
+func TestMergeAlbumsDelegatesToStore(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.MergeAlbums(ctx(), 8, 3); err != nil {
+		t.Fatalf("MergeAlbums: %v", err)
+	}
+	if len(store.mergedAlbums) != 1 || store.mergedAlbums[0] != (mergeCall{8, 3}) {
+		t.Fatalf("mergedAlbums = %+v, want [{8 3}]", store.mergedAlbums)
 	}
 }
 

@@ -10,6 +10,7 @@ import {
   type ReleaseGroupMatch,
   type ReleaseMatch,
 } from '../api/library'
+import '../styles/modal.css'
 import './MetadataLookupModal.css'
 
 type Step = 'artist' | 'album' | 'release' | 'tracks'

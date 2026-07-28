@@ -1,0 +1,153 @@
+/* Reuses the shared "mdl-*" search/step modal chrome from
+   ../styles/modal.css (imported in MergeModal.tsx alongside this file) —
+   scrim, header, step indicator, body scaffold, result-list/card are
+   byte-identical to MetadataLookupModal's, which this mirrors. Only what
+   genuinely differs between the two lives here: a narrower panel (simpler
+   single-field flow), a full-width search input (no adjacent button, so
+   no need for MetadataLookupModal's .mdl-field-row flex layout), initials
+   avatars instead of a single glyph, and a right-only footer (no "back"
+   step to balance against a left-aligned action). */
+.mdl-panel {
+  width: 100%;
+  max-width: 560px;
+  max-height: 92vh;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.mdl-search-input {
+  width: 100%;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  color: var(--paper-50);
+  font: inherit;
+  font-size: 0.92rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+}
+.mdl-search-input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mdl-empty {
+  text-align: center;
+  padding: 2rem 1rem;
+  color: var(--mist-400);
+  font-size: 0.86rem;
+}
+
+.mdl-result-avatar {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-700);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--mist-400);
+}
+.mdl-result-arrow {
+  flex-shrink: 0;
+  color: var(--mist-400);
+}
+
+/* ---------- confirm step ---------- */
+.merge-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  margin-bottom: 1.3rem;
+}
+.merge-card {
+  flex: 1;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.8rem 0.9rem;
+  text-align: center;
+}
+.merge-card .role {
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  margin-bottom: 0.4rem;
+}
+.merge-card.loser .role {
+  color: var(--bad);
+}
+.merge-card.winner .role {
+  color: var(--good);
+}
+.merge-card .avatar {
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 50%;
+  margin: 0 auto 0.5rem;
+  background: var(--ink-700);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--mist-400);
+}
+.merge-card .name {
+  font-weight: 700;
+  font-size: 0.88rem;
+}
+.merge-card .meta {
+  font-size: 0.74rem;
+  color: var(--mist-400);
+  margin-top: 0.2rem;
+}
+.merge-arrow {
+  flex-shrink: 0;
+  color: var(--mist-400);
+  font-size: 1.3rem;
+}
+
+.merge-effects {
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1rem;
+  font-size: 0.86rem;
+}
+.merge-effects ul {
+  margin: 0.5rem 0 0;
+  padding-left: 1.2rem;
+  color: var(--mist-400);
+}
+.merge-effects li {
+  margin-bottom: 0.3rem;
+}
+.merge-effects .warn-line {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.8rem;
+  color: var(--warn);
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.mdl-foot {
+  padding: 0.9rem 1.3rem;
+  border-top: 1px solid var(--border);
+  background: var(--ink-800);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.6rem;
+  flex-shrink: 0;
+}

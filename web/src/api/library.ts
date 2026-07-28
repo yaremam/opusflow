@@ -480,6 +480,18 @@ export function deleteAlbum(id: number, deleteFiles: boolean): Promise<void> {
   return request(`/api/library/albums/${id}?deleteFiles=${deleteFiles}`, { method: 'DELETE' })
 }
 
+// mergeArtist/mergeAlbum fold id — every album, track, and gallery image
+// it has — into intoId, then remove id (issue #31's manual merge tool).
+// Returns intoId's fresh detail, since id's own page no longer exists
+// once this resolves.
+export function mergeArtist(id: number, intoId: number): Promise<ArtistDetail> {
+  return postJSON(`/api/library/artists/${id}/merge`, { intoId })
+}
+
+export function mergeAlbum(id: number, intoId: number): Promise<AlbumDetail> {
+  return postJSON(`/api/library/albums/${id}/merge`, { intoId })
+}
+
 function listParams(params: ListParams): string {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))

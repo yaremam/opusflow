@@ -456,8 +456,13 @@
   color: var(--mist-400);
   margin-top: 0.5rem;
 }
-.detail-remove {
+.detail-secondary-actions {
+  display: flex;
+  gap: 0.5rem;
   margin-top: 0.85rem;
+}
+.detail-remove {
+  margin-top: 0;
 }
 
 table.track-table {

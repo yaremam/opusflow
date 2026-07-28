@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/yaremam/opusflow/backend/internal/library"
@@ -234,6 +235,155 @@ func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
 	if _, err := svc.GetArtist(context.Background(), id); err == nil {
 		t.Fatal("expected artist to be removed")
 	}
+}
+
+func TestMergeArtistEndpointMergesAndReturnsWinner(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Loser Artist", "Album", "Song", 1, 2020)
+	mustInsertTrack(t, store, importID, "Winner Artist", "Other Album", "Song", 1, 2020)
+	loser := findArtistByNameForTest(t, svc, "Loser Artist")
+	winner := findArtistByNameForTest(t, svc, "Winner Artist")
+
+	body := `{"intoId":` + strconv.FormatInt(winner.ID, 10) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(loser.ID, 10)+"/merge", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.ArtistDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ID != winner.ID || len(got.Albums) != 2 {
+		t.Fatalf("response = %+v, want the winner's detail with both albums", got)
+	}
+	if _, err := svc.GetArtist(context.Background(), loser.ID); err == nil {
+		t.Fatal("expected the loser artist to be gone")
+	}
+}
+
+func TestMergeArtistEndpointRequiresIntoID(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Solo Artist", "Album", "Song", 1, 2020)
+	id := findArtistByNameForTest(t, svc, "Solo Artist").ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/merge", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestMergeArtistEndpointSelfMergeIsBadRequest(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Solo Artist", "Album", "Song", 1, 2020)
+	id := findArtistByNameForTest(t, svc, "Solo Artist").ID
+
+	body := `{"intoId":` + strconv.FormatInt(id, 10) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/merge", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func TestMergeArtistEndpointNotFound(t *testing.T) {
+	_, svc := testStoreAndService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/999999/merge", strings.NewReader(`{"intoId":888888}`))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
+func TestMergeAlbumEndpointMergesAndReturnsWinner(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Loser Album", "Song", 1, 2020)
+	mustInsertTrack(t, store, importID, "Artist", "Winner Album", "Song", 1, 2020)
+	loser := findAlbumByTitleForTest(t, svc, "Loser Album")
+	winner := findAlbumByTitleForTest(t, svc, "Winner Album")
+
+	body := `{"intoId":` + strconv.FormatInt(winner.ID, 10) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(loser.ID, 10)+"/merge", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.AlbumDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.ID != winner.ID || len(got.Tracks) != 2 {
+		t.Fatalf("response = %+v, want the winner's detail with both tracks", got)
+	}
+	if _, err := svc.GetAlbum(context.Background(), loser.ID); err == nil {
+		t.Fatal("expected the loser album to be gone")
+	}
+}
+
+func TestMergeAlbumEndpointDifferentArtistsIsBadRequest(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist One", "Album", "Song", 1, 2020)
+	mustInsertTrack(t, store, importID, "Artist Two", "Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{PageSize: 100})
+	if len(albums.Items) != 2 {
+		t.Fatalf("albums = %+v, want 2", albums.Items)
+	}
+
+	body := `{"intoId":` + strconv.FormatInt(albums.Items[1].ID, 10) + `}`
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(albums.Items[0].ID, 10)+"/merge", strings.NewReader(body))
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
+	}
+}
+
+func findArtistByNameForTest(t *testing.T, svc *library.Service, name string) library.Artist {
+	t.Helper()
+	page, err := svc.ListArtists(context.Background(), library.ListOptions{Query: name, PageSize: 100})
+	if err != nil {
+		t.Fatalf("ListArtists: %v", err)
+	}
+	for _, a := range page.Items {
+		if a.Name == name {
+			return a
+		}
+	}
+	t.Fatalf("artist %q not found", name)
+	return library.Artist{}
+}
+
+func findAlbumByTitleForTest(t *testing.T, svc *library.Service, title string) library.Album {
+	t.Helper()
+	page, err := svc.ListAlbums(context.Background(), library.ListOptions{Query: title, PageSize: 100})
+	if err != nil {
+		t.Fatalf("ListAlbums: %v", err)
+	}
+	for _, al := range page.Items {
+		if al.Title == title {
+			return al
+		}
+	}
+	t.Fatalf("album %q not found", title)
+	return library.Album{}
 }
 
 func TestRetryArtistArtEndpointResetsStatusToPending(t *testing.T) {

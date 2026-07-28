@@ -2,6 +2,7 @@ package httpserver
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -100,6 +101,48 @@ func handleDeleteArtist(svc *library.Service) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// handleMerge folds the entity at {id} — every album/track/photo (an
+// artist) or track/cover (an album) it has — into the entity named by the
+// request body's intoId (TDR 018), then removes {id}. Returns the
+// survivor's fresh detail, since the page the request came from no longer
+// exists. Shared implementation behind handleMergeArtist/handleMergeAlbum
+// below — identical except which Service methods they close over.
+func handleMerge[D any](entityLabel string, getDetail func(ctx context.Context, id int64) (D, error), merge func(ctx context.Context, id, intoID int64) error) http.HandlerFunc {
+	type mergeRequest struct {
+		IntoID int64 `json:"intoId"`
+	}
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid "+entityLabel+" id", http.StatusBadRequest)
+			return
+		}
+		var req mergeRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "invalid JSON body", http.StatusBadRequest)
+			return
+		}
+		if req.IntoID == 0 {
+			http.Error(w, "intoId is required", http.StatusBadRequest)
+			return
+		}
+		if err := merge(r.Context(), id, req.IntoID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		target, err := getDetail(r.Context(), req.IntoID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, target)
+	}
+}
+
+func handleMergeArtist(svc *library.Service) http.HandlerFunc {
+	return handleMerge("artist", svc.GetArtist, svc.MergeArtists)
 }
 
 // galleryRoutes configures the four generic gallery handlers below for one
@@ -327,6 +370,11 @@ func handleDeleteAlbum(svc *library.Service) http.HandlerFunc {
 		}
 		w.WriteHeader(http.StatusNoContent)
 	}
+}
+
+// handleMergeAlbum is handleMergeArtist's album counterpart.
+func handleMergeAlbum(svc *library.Service) http.HandlerFunc {
+	return handleMerge("album", svc.GetAlbum, svc.MergeAlbums)
 }
 
 func handleListSongs(svc *library.Service) http.HandlerFunc {

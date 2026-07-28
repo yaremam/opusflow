@@ -74,6 +74,8 @@ type EnrichmentStore interface {
 type CatalogReader interface {
 	DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error
 	DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error
+	MergeArtists(ctx context.Context, loserID, winnerID int64) error
+	MergeAlbums(ctx context.Context, loserID, winnerID int64) error
 
 	ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error)
 	GetArtist(ctx context.Context, id int64) (ArtistDetail, error)
@@ -404,6 +406,20 @@ func (s *Service) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) e
 		}
 	}
 	return nil
+}
+
+// MergeArtists folds id — every album, track, and gallery photo it has —
+// into intoID, then removes id (TDR 018's manual merge tool; also used
+// internally, TDR 017, when enrichment notices two rows share a
+// MusicBrainz ID). id is always the one that stops existing; intoID is
+// the one the caller keeps browsing to afterward.
+func (s *Service) MergeArtists(ctx context.Context, id, intoID int64) error {
+	return s.store.MergeArtists(ctx, id, intoID)
+}
+
+// MergeAlbums is MergeArtists's album counterpart.
+func (s *Service) MergeAlbums(ctx context.Context, id, intoID int64) error {
+	return s.store.MergeAlbums(ctx, id, intoID)
 }
 
 // RetryArtistArt resets an artist's art status to pending and wakes the

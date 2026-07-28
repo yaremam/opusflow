@@ -1,0 +1,168 @@
+/* Shared chrome for the app's "mdl-*" search-and-step modals
+   (MetadataLookupModal, MergeModal) — scrim, header, step indicator, body
+   scaffold, and result-list/card, which those two components render
+   identically. Each component's own stylesheet keeps only what differs
+   between them (panel width, search-input layout, result-avatar styling,
+   footer alignment) — see the comment at the top of each. */
+.mdl-scrim {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 10, 14, 0.6);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 4vh 1rem;
+  z-index: 10;
+}
+
+.mdl-head {
+  padding: 1.1rem 1.3rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--ink-800);
+  flex-shrink: 0;
+}
+.mdl-head-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.mdl-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent-strong);
+  margin: 0 0 0.25rem;
+}
+.mdl-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.01em;
+  text-wrap: balance;
+}
+.mdl-close {
+  background: none;
+  border: none;
+  color: var(--mist-400);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.3rem;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.mdl-close:hover {
+  background: var(--ink-700);
+  color: var(--paper-50);
+}
+.mdl-close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mdl-steps {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.95rem;
+}
+.mdl-step {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--mist-400);
+  padding-bottom: 0.6rem;
+  border-bottom: 2px solid var(--border);
+}
+.mdl-dot {
+  width: 1.1rem;
+  height: 1.1rem;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-700);
+  color: var(--mist-400);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.66rem;
+  font-weight: 700;
+}
+.mdl-step.done {
+  color: var(--paper-50);
+  border-color: var(--good);
+}
+.mdl-step.done .mdl-dot {
+  background: var(--good);
+  color: var(--ink-950);
+}
+.mdl-step.current {
+  color: var(--paper-50);
+  border-color: var(--accent);
+}
+.mdl-step.current .mdl-dot {
+  background: var(--accent);
+  color: var(--ink-950);
+}
+
+.mdl-body {
+  padding: 1.2rem 1.3rem;
+  overflow-y: auto;
+  flex: 1 1 auto;
+}
+.mdl-hint {
+  font-size: 0.82rem;
+  color: var(--mist-400);
+  margin: 0 0 1rem;
+}
+.mdl-error {
+  color: var(--bad);
+  background: var(--bad-bg);
+  border-radius: 8px;
+  padding: 0.6rem 0.8rem;
+  font-size: 0.82rem;
+  margin: 0 0 1rem;
+}
+
+.mdl-result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.mdl-result-card {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.7rem 0.9rem;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  color: inherit;
+  font: inherit;
+}
+.mdl-result-card:hover {
+  border-color: var(--accent);
+  background: var(--accent-wash);
+}
+.mdl-result-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.mdl-result-main {
+  flex: 1;
+  min-width: 0;
+}
+.mdl-result-title {
+  font-weight: 700;
+  font-size: 0.92rem;
+}
+.mdl-result-sub {
+  font-size: 0.78rem;
+  color: var(--mist-400);
+  margin-top: 0.15rem;
+}
