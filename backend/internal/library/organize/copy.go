@@ -124,6 +124,8 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		if f, err := os.Open(tr.DestPath); err == nil {
 			if d, err := parser(f); err == nil {
 				duration = int(d.Seconds())
+			} else {
+				log.Printf("library: import %d: %s: parsing duration: %v", importID, tr.DestPath, err)
 			}
 			f.Close()
 		}

@@ -19,14 +19,13 @@ const wvBlockHeaderSize = 32
 const wvUnknownTotalSamples = 0xFFFFFFFF
 
 // wvSampleRates is WavPack's fixed table of standard sample rates, indexed
-// by the 4-bit rate index packed into a block's flags (bits 23-26). Index
-// 15 means "not one of these" — the real rate then lives in a decoder-config
-// extension sub-block this parser doesn't chase, so it's treated as an
-// error rather than guessed (same "don't have what's needed, don't guess"
-// stance mp3.go already takes without a VBR header).
-var wvSampleRates = [15]uint32{
+// by the 4-bit rate index packed into a block's flags (bits 23-26). All 16
+// index values (0-15) are standard rates in WavPack's own table — there is
+// no "not one of these" sentinel among them (that case doesn't arise for
+// this 4-bit field), so any index in range maps directly.
+var wvSampleRates = [16]uint32{
 	6000, 8000, 9600, 11025, 12000, 16000, 22050, 24000, 32000,
-	44100, 48000, 64000, 88200, 96000, 192000,
+	44100, 48000, 64000, 88200, 96000, 176400, 192000,
 }
 
 type wvBlockHeader struct {
@@ -52,12 +51,9 @@ func readWVBlockHeader(f *os.File) (wvBlockHeader, error) {
 	}, nil
 }
 
-func wvSampleRate(flags uint32) (uint32, error) {
+func wvSampleRate(flags uint32) uint32 {
 	idx := (flags >> 23) & 0xF
-	if int(idx) >= len(wvSampleRates) {
-		return 0, fmt.Errorf("non-standard WavPack sample rate (index %d)", idx)
-	}
-	return wvSampleRates[idx], nil
+	return wvSampleRates[idx]
 }
 
 // WavPack parses a .wv file's duration from its first block header's
@@ -75,13 +71,7 @@ func WavPack(f *os.File) (time.Duration, error) {
 	if err != nil {
 		return 0, fmt.Errorf("reading WavPack block header: %w", err)
 	}
-	rate, err := wvSampleRate(first.flags)
-	if err != nil {
-		return 0, err
-	}
-	if rate == 0 {
-		return 0, fmt.Errorf("invalid WavPack sample rate")
-	}
+	rate := wvSampleRate(first.flags)
 
 	if first.totalSamples != wvUnknownTotalSamples {
 		return secondsToDuration(float64(first.totalSamples), float64(rate)), nil
