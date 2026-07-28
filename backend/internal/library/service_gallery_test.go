@@ -174,3 +174,63 @@ func TestServiceDeleteAlbumCoverPropagatesNotFound(t *testing.T) {
 		t.Fatalf("DeleteAlbumCover error = %v, want ErrAlbumCoverNotFound", err)
 	}
 }
+
+func TestServiceDeleteArtistRemovesArtworkFilesWhenRequested(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	dir := t.TempDir()
+	svc.SetImages(enrich.NewImageStore(dir))
+
+	if _, err := svc.UploadArtistArt(ctx(), 1, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	photo := store.artistPhotos[1][0]
+	diskPath := dir + photo.ThumbURL[len("/artwork"):]
+
+	if err := svc.DeleteArtist(ctx(), 1, true); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
+	}
+	if _, err := os.Stat(diskPath); !os.IsNotExist(err) {
+		t.Fatalf("expected artwork file %q to be removed, stat error: %v", diskPath, err)
+	}
+}
+
+func TestServiceDeleteArtistKeepsArtworkFilesByDefault(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	dir := t.TempDir()
+	svc.SetImages(enrich.NewImageStore(dir))
+
+	if _, err := svc.UploadArtistArt(ctx(), 1, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	photo := store.artistPhotos[1][0]
+	diskPath := dir + photo.ThumbURL[len("/artwork"):]
+
+	if err := svc.DeleteArtist(ctx(), 1, false); err != nil {
+		t.Fatalf("DeleteArtist: %v", err)
+	}
+	if _, err := os.Stat(diskPath); err != nil {
+		t.Fatalf("expected artwork file %q to survive a keep-file delete, stat error: %v", diskPath, err)
+	}
+}
+
+func TestServiceDeleteAlbumRemovesArtworkFilesWhenRequested(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	dir := t.TempDir()
+	svc.SetImages(enrich.NewImageStore(dir))
+
+	if _, err := svc.UploadAlbumArt(ctx(), 7, onePixelPNG()); err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	cover := store.albumCovers[7][0]
+	diskPath := dir + cover.ThumbURL[len("/artwork"):]
+
+	if err := svc.DeleteAlbum(ctx(), 7, true); err != nil {
+		t.Fatalf("DeleteAlbum: %v", err)
+	}
+	if _, err := os.Stat(diskPath); !os.IsNotExist(err) {
+		t.Fatalf("expected artwork file %q to be removed, stat error: %v", diskPath, err)
+	}
+}
