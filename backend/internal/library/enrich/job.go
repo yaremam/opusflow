@@ -103,6 +103,37 @@ func needsWork(status Status) bool {
 	return status == Pending || status == Failed
 }
 
+// mergeIfDuplicate checks whether entityID shares mbid with another row
+// (TDR 017: two rows resolving to the same MusicBrainz ID are really one
+// entity, tagged inconsistently) and, if so, merges them — lower ID
+// survives — rather than continuing to enrich both separately. Checked on
+// every pass, not just a freshly-resolved mbid, so a row that was still
+// owed another kind (e.g. bio) on a later run still gets caught against a
+// duplicate that appeared since. Shared by processArtist/processAlbum,
+// which differ only in which Store methods to call. Returns whether
+// entityID itself was the loser (folded away) — callers must stop
+// processing it if so.
+func mergeIfDuplicate(ctx context.Context, label string, entityID int64, mbid string, find func(ctx context.Context, mbid string, excludeID int64) (int64, bool, error), merge func(ctx context.Context, loserID, winnerID int64) error) bool {
+	dupID, ok, err := find(ctx, mbid, entityID)
+	if err != nil {
+		log.Printf("enrich: %s %d: checking for a duplicate by musicbrainz id: %v", label, entityID, err)
+		return false
+	}
+	if !ok {
+		return false
+	}
+	winnerID, loserID := entityID, dupID
+	if dupID < entityID {
+		winnerID, loserID = dupID, entityID
+	}
+	if err := merge(ctx, loserID, winnerID); err != nil {
+		log.Printf("enrich: merging duplicate %s %d into %d (shared musicbrainz id %s): %v", label, loserID, winnerID, mbid, err)
+		return false
+	}
+	log.Printf("enrich: merged duplicate %s %d into %d (shared musicbrainz id %s)", label, loserID, winnerID, mbid)
+	return loserID == entityID
+}
+
 // settle writes status for one kind if it's still open (pending or
 // failed); a kind some earlier run already settled (found/not_found) is
 // left untouched. label identifies the write for the log line a failed
@@ -159,27 +190,8 @@ func (j *Job) processArtist(ctx context.Context, a ArtistTarget) RunSummary {
 		}
 	}
 
-	// TDR 017: two artist rows resolving to the same MusicBrainz ID are
-	// really one artist, tagged inconsistently — merge them (lower ID
-	// survives) rather than continuing to enrich both separately. Checked
-	// on every pass, not just a freshly-resolved mbid, so a row that was
-	// still owed another kind (e.g. bio) on a later run still gets caught
-	// against a duplicate that appeared since.
-	if dupID, ok, err := j.store.FindArtistIDByMusicBrainzID(ctx, mbid, a.ID); err != nil {
-		log.Printf("enrich: artist %d: checking for a duplicate by musicbrainz id: %v", a.ID, err)
-	} else if ok {
-		winnerID, loserID := a.ID, dupID
-		if dupID < a.ID {
-			winnerID, loserID = dupID, a.ID
-		}
-		if err := j.store.MergeArtists(ctx, loserID, winnerID); err != nil {
-			log.Printf("enrich: merging duplicate artist %d into %d (shared musicbrainz id %s): %v", loserID, winnerID, mbid, err)
-		} else {
-			log.Printf("enrich: merged duplicate artist %d into %d (shared musicbrainz id %s)", loserID, winnerID, mbid)
-			if loserID == a.ID {
-				return RunSummary{}
-			}
-		}
+	if mergeIfDuplicate(ctx, "artist", a.ID, mbid, j.store.FindArtistIDByMusicBrainzID, j.store.MergeArtists) {
+		return RunSummary{}
 	}
 
 	info, err := j.mb.LookupArtist(ctx, mbid)
@@ -296,24 +308,8 @@ func (j *Job) processAlbum(ctx context.Context, al AlbumTarget) RunSummary {
 		}
 	}
 
-	// TDR 017: see processArtist's identical check — two album rows
-	// resolving to the same release-group MBID get merged (lower ID
-	// survives) instead of enriched separately.
-	if dupID, ok, err := j.store.FindAlbumIDByMusicBrainzID(ctx, mbid, al.ID); err != nil {
-		log.Printf("enrich: album %d: checking for a duplicate by musicbrainz id: %v", al.ID, err)
-	} else if ok {
-		winnerID, loserID := al.ID, dupID
-		if dupID < al.ID {
-			winnerID, loserID = dupID, al.ID
-		}
-		if err := j.store.MergeAlbums(ctx, loserID, winnerID); err != nil {
-			log.Printf("enrich: merging duplicate album %d into %d (shared musicbrainz id %s): %v", loserID, winnerID, mbid, err)
-		} else {
-			log.Printf("enrich: merged duplicate album %d into %d (shared musicbrainz id %s)", loserID, winnerID, mbid)
-			if loserID == al.ID {
-				return RunSummary{}
-			}
-		}
+	if mergeIfDuplicate(ctx, "album", al.ID, mbid, j.store.FindAlbumIDByMusicBrainzID, j.store.MergeAlbums) {
+		return RunSummary{}
 	}
 
 	var sum RunSummary

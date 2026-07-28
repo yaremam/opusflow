@@ -7,45 +7,51 @@ import (
 	"fmt"
 )
 
-// FindArtistIDByMusicBrainzID returns the ID of an artist (other than
-// excludeID) already carrying mbid, if one exists — used by the
-// background enrichment job (TDR 017) to notice two rows have resolved to
-// the same real-world artist. A blank mbid never matches anything.
-func (s *Store) FindArtistIDByMusicBrainzID(ctx context.Context, mbid string, excludeID int64) (int64, bool, error) {
+// findIDByMusicBrainzID is FindArtistIDByMusicBrainzID/
+// FindAlbumIDByMusicBrainzID's shared implementation, parameterized by
+// table the same way galleryTable-based helpers elsewhere in this
+// package are. A blank mbid never matches anything.
+func findIDByMusicBrainzID(ctx context.Context, db *sql.DB, table, mbid string, excludeID int64) (int64, bool, error) {
 	if mbid == "" {
 		return 0, false, nil
 	}
 	var id int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM artists WHERE musicbrainz_id = $1 AND id != $2 LIMIT 1
-	`, mbid, excludeID).Scan(&id)
+	err := db.QueryRowContext(ctx, fmt.Sprintf(`
+		SELECT id FROM %s WHERE musicbrainz_id = $1 AND id != $2 LIMIT 1
+	`, table), mbid, excludeID).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}
 	if err != nil {
-		return 0, false, fmt.Errorf("finding artist by musicbrainz id: %w", err)
+		return 0, false, fmt.Errorf("finding %s by musicbrainz id: %w", table, err)
 	}
 	return id, true, nil
+}
+
+// FindArtistIDByMusicBrainzID returns the ID of an artist (other than
+// excludeID) already carrying mbid, if one exists — used by the
+// background enrichment job (TDR 017) to notice two rows have resolved to
+// the same real-world artist.
+func (s *Store) FindArtistIDByMusicBrainzID(ctx context.Context, mbid string, excludeID int64) (int64, bool, error) {
+	return findIDByMusicBrainzID(ctx, s.db, "artists", mbid, excludeID)
 }
 
 // FindAlbumIDByMusicBrainzID is FindArtistIDByMusicBrainzID's album
 // counterpart, matching on release-group MBID.
 func (s *Store) FindAlbumIDByMusicBrainzID(ctx context.Context, mbid string, excludeID int64) (int64, bool, error) {
-	if mbid == "" {
-		return 0, false, nil
-	}
-	var id int64
-	err := s.db.QueryRowContext(ctx, `
-		SELECT id FROM albums WHERE musicbrainz_id = $1 AND id != $2 LIMIT 1
-	`, mbid, excludeID).Scan(&id)
-	if errors.Is(err, sql.ErrNoRows) {
-		return 0, false, nil
-	}
-	if err != nil {
-		return 0, false, fmt.Errorf("finding album by musicbrainz id: %w", err)
-	}
-	return id, true, nil
+	return findIDByMusicBrainzID(ctx, s.db, "albums", mbid, excludeID)
 }
+
+// ErrCannotMergeIntoSelf is returned by MergeArtists/MergeAlbums when
+// loserID and winnerID are the same row — always a caller bug (TDR 017's
+// automatic dedup never constructs this pair) or bad client input (TDR
+// 018's manual merge tool), never a legitimate merge.
+var ErrCannotMergeIntoSelf = errors.New("cannot merge an entity into itself")
+
+// ErrAlbumsBelongToDifferentArtists is returned by MergeAlbums when the
+// two albums aren't under the same artist — that's an artist merge, not
+// an album one (see MergeAlbums's doc comment).
+var ErrAlbumsBelongToDifferentArtists = errors.New("albums belong to different artists")
 
 // MergeArtists reassigns every album, track, and gallery photo from
 // loserID onto winnerID, then removes the now-empty loserID row. Used by
@@ -56,7 +62,7 @@ func (s *Store) FindAlbumIDByMusicBrainzID(ctx context.Context, mbid string, exc
 // this app renames on-disk files after import today.
 func (s *Store) MergeArtists(ctx context.Context, loserID, winnerID int64) error {
 	if loserID == winnerID {
-		return fmt.Errorf("cannot merge artist %d into itself", loserID)
+		return ErrCannotMergeIntoSelf
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -65,43 +71,28 @@ func (s *Store) MergeArtists(ctx context.Context, loserID, winnerID int64) error
 	}
 	defer tx.Rollback()
 
-	rows, err := tx.QueryContext(ctx, `SELECT id, title FROM albums WHERE artist_id = $1`, loserID)
+	loserAlbums, err := queryAlbumTitles(ctx, tx, loserID)
 	if err != nil {
 		return fmt.Errorf("listing loser's albums: %w", err)
 	}
-	type albumRow struct {
-		id    int64
-		title string
+	winnerAlbumsByTitle, err := queryAlbumTitles(ctx, tx, winnerID)
+	if err != nil {
+		return fmt.Errorf("listing winner's albums: %w", err)
 	}
-	var loserAlbums []albumRow
-	for rows.Next() {
-		var a albumRow
-		if err := rows.Scan(&a.id, &a.title); err != nil {
-			rows.Close()
-			return fmt.Errorf("scanning loser album: %w", err)
-		}
-		loserAlbums = append(loserAlbums, a)
+	winnerAlbumIDByTitle := make(map[string]int64, len(winnerAlbumsByTitle))
+	for _, wa := range winnerAlbumsByTitle {
+		winnerAlbumIDByTitle[wa.title] = wa.id
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return err
-	}
-	rows.Close()
 
 	for _, la := range loserAlbums {
-		var winnerAlbumID int64
-		err := tx.QueryRowContext(ctx, `SELECT id FROM albums WHERE artist_id = $1 AND title = $2`, winnerID, la.title).Scan(&winnerAlbumID)
-		if errors.Is(err, sql.ErrNoRows) {
-			if _, err := tx.ExecContext(ctx, `UPDATE albums SET artist_id = $1 WHERE id = $2`, winnerID, la.id); err != nil {
-				return fmt.Errorf("reassigning album %d: %w", la.id, err)
+		if winnerAlbumID, collides := winnerAlbumIDByTitle[la.title]; collides {
+			if err := mergeAlbumRows(ctx, tx, la.id, winnerAlbumID); err != nil {
+				return fmt.Errorf("folding same-titled album %d into %d: %w", la.id, winnerAlbumID, err)
 			}
 			continue
 		}
-		if err != nil {
-			return fmt.Errorf("checking for a same-titled album: %w", err)
-		}
-		if err := mergeAlbumRows(ctx, tx, la.id, winnerAlbumID); err != nil {
-			return fmt.Errorf("folding same-titled album %d into %d: %w", la.id, winnerAlbumID, err)
+		if _, err := tx.ExecContext(ctx, `UPDATE albums SET artist_id = $1 WHERE id = $2`, winnerID, la.id); err != nil {
+			return fmt.Errorf("reassigning album %d: %w", la.id, err)
 		}
 	}
 
@@ -111,7 +102,7 @@ func (s *Store) MergeArtists(ctx context.Context, loserID, winnerID int64) error
 	if _, err := tx.ExecContext(ctx, `UPDATE artist_photos SET artist_id = $1 WHERE artist_id = $2`, winnerID, loserID); err != nil {
 		return fmt.Errorf("reassigning artist photos: %w", err)
 	}
-	if err := dedupeSingleFlag(ctx, tx, "artist_photos", "artist_id", winnerID, "is_primary"); err != nil {
+	if err := dedupeSingleFlag(ctx, tx, artistPhotoTable, winnerID); err != nil {
 		return fmt.Errorf("deduping primary photo: %w", err)
 	}
 
@@ -134,7 +125,7 @@ func (s *Store) MergeArtists(ctx context.Context, loserID, winnerID int64) error
 // same-titled-album collision) and the manual merge tool (TDR 018).
 func (s *Store) MergeAlbums(ctx context.Context, loserID, winnerID int64) error {
 	if loserID == winnerID {
-		return fmt.Errorf("cannot merge album %d into itself", loserID)
+		return ErrCannotMergeIntoSelf
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -143,23 +134,35 @@ func (s *Store) MergeAlbums(ctx context.Context, loserID, winnerID int64) error 
 	}
 	defer tx.Rollback()
 
-	var loserArtistID, winnerArtistID int64
-	err = tx.QueryRowContext(ctx, `SELECT artist_id FROM albums WHERE id = $1`, loserID).Scan(&loserArtistID)
-	if errors.Is(err, sql.ErrNoRows) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, artist_id FROM albums WHERE id IN ($1, $2)`, loserID, winnerID)
+	if err != nil {
+		return fmt.Errorf("looking up albums' artists: %w", err)
+	}
+	artistIDByAlbum := make(map[int64]int64, 2)
+	for rows.Next() {
+		var albumID, artistID int64
+		if err := rows.Scan(&albumID, &artistID); err != nil {
+			rows.Close()
+			return fmt.Errorf("scanning album artist: %w", err)
+		}
+		artistIDByAlbum[albumID] = artistID
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+
+	loserArtistID, ok := artistIDByAlbum[loserID]
+	if !ok {
 		return ErrAlbumNotFound
 	}
-	if err != nil {
-		return fmt.Errorf("looking up loser album's artist: %w", err)
-	}
-	err = tx.QueryRowContext(ctx, `SELECT artist_id FROM albums WHERE id = $1`, winnerID).Scan(&winnerArtistID)
-	if errors.Is(err, sql.ErrNoRows) {
+	winnerArtistID, ok := artistIDByAlbum[winnerID]
+	if !ok {
 		return ErrAlbumNotFound
-	}
-	if err != nil {
-		return fmt.Errorf("looking up winner album's artist: %w", err)
 	}
 	if loserArtistID != winnerArtistID {
-		return fmt.Errorf("cannot merge album %d into %d: they belong to different artists", loserID, winnerID)
+		return ErrAlbumsBelongToDifferentArtists
 	}
 
 	if err := mergeAlbumRows(ctx, tx, loserID, winnerID); err != nil {
@@ -181,7 +184,7 @@ func mergeAlbumRows(ctx context.Context, tx *sql.Tx, loserAlbumID, winnerAlbumID
 	if _, err := tx.ExecContext(ctx, `UPDATE album_covers SET album_id = $1 WHERE album_id = $2`, winnerAlbumID, loserAlbumID); err != nil {
 		return fmt.Errorf("reassigning album covers: %w", err)
 	}
-	if err := dedupeSingleFlag(ctx, tx, "album_covers", "album_id", winnerAlbumID, "is_primary"); err != nil {
+	if err := dedupeSingleFlag(ctx, tx, albumCoverTable, winnerAlbumID); err != nil {
 		return fmt.Errorf("deduping primary cover: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM albums WHERE id = $1`, loserAlbumID); err != nil {
@@ -190,23 +193,49 @@ func mergeAlbumRows(ctx context.Context, tx *sql.Tx, loserAlbumID, winnerAlbumID
 	return nil
 }
 
-// dedupeSingleFlag ensures at most one row in table (scoped by
-// fkCol = fkID) has flagCol = true, keeping whichever already was (oldest
-// on a tie) and clearing the rest. Needed after a merge: two
+// albumRow is queryAlbumTitles' result row: just enough to detect and act
+// on a same-titled-album collision during MergeArtists.
+type albumRow struct {
+	id    int64
+	title string
+}
+
+// queryAlbumTitles lists an artist's albums' IDs and titles, used by
+// MergeArtists to detect same-titled albums that need folding together
+// rather than simply reassigned.
+func queryAlbumTitles(ctx context.Context, tx *sql.Tx, artistID int64) ([]albumRow, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, title FROM albums WHERE artist_id = $1`, artistID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var albums []albumRow
+	for rows.Next() {
+		var a albumRow
+		if err := rows.Scan(&a.id, &a.title); err != nil {
+			return nil, err
+		}
+		albums = append(albums, a)
+	}
+	return albums, rows.Err()
+}
+
+// dedupeSingleFlag ensures at most one row in t's table (scoped by
+// t.fkColumn = fkID) has is_primary = true, keeping whichever already was
+// (oldest on a tie) and clearing the rest. Needed after a merge: two
 // independently-primary galleries colliding into one row's gallery would
 // otherwise leave two rows flagged true at once, breaking the "exactly
 // one primary" invariant TDR 014 already relies on elsewhere
-// (setGalleryPrimary, deleteGalleryRow's promotion). Parameterized by
-// flagCol (not hardcoded to "is_primary") so covering a future second
-// flag, like TDR 016's "banner", is a one-line addition at the call site.
-func dedupeSingleFlag(ctx context.Context, tx *sql.Tx, table, fkCol string, fkID int64, flagCol string) error {
+// (setGalleryPrimary, deleteGalleryRow's promotion).
+func dedupeSingleFlag(ctx context.Context, tx *sql.Tx, t galleryTable, fkID int64) error {
 	_, err := tx.ExecContext(ctx, fmt.Sprintf(`
-		UPDATE %s SET %s = FALSE WHERE %s = $1 AND %s = TRUE AND id != (
-			SELECT id FROM %s WHERE %s = $1 AND %s = TRUE ORDER BY created_at ASC, id ASC LIMIT 1
+		UPDATE %s SET is_primary = FALSE WHERE %s = $1 AND is_primary = TRUE AND id != (
+			SELECT id FROM %s WHERE %s = $1 AND is_primary = TRUE ORDER BY created_at ASC, id ASC LIMIT 1
 		)
-	`, table, flagCol, fkCol, flagCol, table, fkCol, flagCol), fkID)
+	`, t.name, t.fkColumn, t.name, t.fkColumn), fkID)
 	if err != nil {
-		return fmt.Errorf("deduping %s.%s: %w", table, flagCol, err)
+		return fmt.Errorf("deduping %s.is_primary: %w", t.name, err)
 	}
 	return nil
 }

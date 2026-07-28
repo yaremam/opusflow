@@ -164,8 +164,8 @@ func TestMergeArtistsRejectsSelfMerge(t *testing.T) {
 	insertTrackFor(t, s, "Solo Artist", "Album")
 	a := findArtistByName(t, s, "Solo Artist")
 
-	if err := s.MergeArtists(ctx(), a.ID, a.ID); err == nil {
-		t.Fatal("expected an error merging an artist into itself")
+	if err := s.MergeArtists(ctx(), a.ID, a.ID); !errors.Is(err, ErrCannotMergeIntoSelf) {
+		t.Fatalf("expected ErrCannotMergeIntoSelf, got %v", err)
 	}
 }
 
@@ -279,8 +279,8 @@ func TestMergeAlbumsRejectsDifferentArtists(t *testing.T) {
 	loserAlbum := oneDetail.Albums[0]
 	winnerAlbum := twoDetail.Albums[0]
 
-	if err := s.MergeAlbums(ctx(), loserAlbum.ID, winnerAlbum.ID); err == nil {
-		t.Fatal("expected an error merging albums that belong to different artists")
+	if err := s.MergeAlbums(ctx(), loserAlbum.ID, winnerAlbum.ID); !errors.Is(err, ErrAlbumsBelongToDifferentArtists) {
+		t.Fatalf("expected ErrAlbumsBelongToDifferentArtists, got %v", err)
 	}
 }
 
@@ -289,8 +289,8 @@ func TestMergeAlbumsRejectsSelfMerge(t *testing.T) {
 	insertTrackFor(t, s, "Artist", "Album")
 	a := findAlbumByTitle(t, s, "Album")
 
-	if err := s.MergeAlbums(ctx(), a.ID, a.ID); err == nil {
-		t.Fatal("expected an error merging an album into itself")
+	if err := s.MergeAlbums(ctx(), a.ID, a.ID); !errors.Is(err, ErrCannotMergeIntoSelf) {
+		t.Fatalf("expected ErrCannotMergeIntoSelf, got %v", err)
 	}
 }
 
