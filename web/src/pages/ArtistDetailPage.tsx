@@ -1,6 +1,14 @@
 import { useMemo } from 'react'
 import { Link, useParams } from 'react-router'
-import { deleteArtist, deleteArtistPhoto, getArtist, retryArtistArt, setArtistPrimaryPhoto, uploadArtistArt } from '../api/library'
+import {
+  deleteArtist,
+  deleteArtistPhoto,
+  getArtist,
+  retryArtistArt,
+  setArtistBannerPhoto,
+  setArtistPrimaryPhoto,
+  uploadArtistArt,
+} from '../api/library'
 import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
@@ -18,6 +26,7 @@ export default function ArtistDetailPage() {
       retryArt: retryArtistArt,
       uploadImage: uploadArtistArt,
       setPrimaryImage: setArtistPrimaryPhoto,
+      setBannerImage: setArtistBannerPhoto,
       deleteImage: deleteArtistPhoto,
       deleteEntity: deleteArtist,
       afterRemove: '/artists',
@@ -30,6 +39,7 @@ export default function ArtistDetailPage() {
     retryArt: handleRetryArt,
     uploadImage: handleUploadPhoto,
     setPrimaryImage: handleSetPrimaryPhoto,
+    setBannerImage: handleSetBannerPhoto,
     deleteImage: handleDeletePhoto,
     removing,
     removeSubmitting,
@@ -57,25 +67,28 @@ export default function ArtistDetailPage() {
       <p className="crumb">
         <Link to="/artists">Artists</Link> / {artist.name || 'Unknown Artist'}
       </p>
-      <div className="detail-head">
-        <ArtTile
-          src={artist.photoUrl || artist.photoThumbUrl}
-          alt=""
-          className="detail-art round"
-          kind="artist"
-          artStatus={artist.artStatus}
-        />
-        <div className="detail-meta">
-          <div className="kind">Artist</div>
-          <h1>{artist.name || 'Unknown Artist'}</h1>
-          <div className="facts">
-            {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
-            {artist.trackCount === 1 ? '' : 's'}
+      <div className="detail-banner-wrap">
+        <ArtTile src={artist.bannerUrl} alt="" className="detail-banner-img" kind="artist" artStatus={artist.artStatus} />
+        <div className="detail-header-body">
+          <ArtTile
+            src={artist.photoUrl || artist.photoThumbUrl}
+            alt=""
+            className="detail-avatar"
+            kind="artist"
+            artStatus={artist.artStatus}
+          />
+          <div className="detail-meta">
+            <div className="kind">Artist</div>
+            <h1>{artist.name || 'Unknown Artist'}</h1>
+            <div className="facts">
+              {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
+              {artist.trackCount === 1 ? '' : 's'}
+            </div>
+            <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
+            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+              Remove artist…
+            </button>
           </div>
-          <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
-          <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-            Remove artist…
-          </button>
         </div>
       </div>
 
@@ -84,6 +97,7 @@ export default function ArtistDetailPage() {
         label="photo"
         onUpload={handleUploadPhoto}
         onSetPrimary={handleSetPrimaryPhoto}
+        onSetBanner={handleSetBannerPhoto}
         onDelete={handleDeletePhoto}
       />
 
