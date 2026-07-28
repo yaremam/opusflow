@@ -135,6 +135,67 @@ func TestSetArtistPrimaryPhotoNotFound(t *testing.T) {
 	}
 }
 
+// TestSetArtistBannerPhotoIsIndependentOfPrimary is TDR 016's core
+// invariant: banner and primary are separate flags on the same rows —
+// setting one must never move or clear the other, and the same photo is
+// allowed to hold both at once.
+func TestSetArtistBannerPhotoIsIndependentOfPrimary(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+
+	first, _ := s.AddArtistPhoto(ctx(), artist.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "hash-a")
+	second, _ := s.AddArtistPhoto(ctx(), artist.ID, "/b/thumb.jpg", "/b/full.jpg", "upload", "hash-b")
+
+	if err := s.SetArtistBannerPhoto(ctx(), artist.ID, second.ID); err != nil {
+		t.Fatalf("SetArtistBannerPhoto: %v", err)
+	}
+
+	photos, err := s.ListArtistPhotos(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("ListArtistPhotos: %v", err)
+	}
+	for _, p := range photos {
+		wantBanner := p.ID == second.ID
+		if p.IsBanner != wantBanner {
+			t.Fatalf("photo %d IsBanner = %v, want %v", p.ID, p.IsBanner, wantBanner)
+		}
+		if p.ID == first.ID && !p.IsPrimary {
+			t.Fatalf("photo %d (the first added) should still be primary — setting banner must not disturb it", p.ID)
+		}
+	}
+}
+
+func TestSetArtistBannerPhotoCanMatchPrimary(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+
+	first, _ := s.AddArtistPhoto(ctx(), artist.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "hash-a")
+
+	if err := s.SetArtistBannerPhoto(ctx(), artist.ID, first.ID); err != nil {
+		t.Fatalf("SetArtistBannerPhoto: %v", err)
+	}
+
+	photos, err := s.ListArtistPhotos(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("ListArtistPhotos: %v", err)
+	}
+	if len(photos) != 1 || !photos[0].IsPrimary || !photos[0].IsBanner {
+		t.Fatalf("photos = %+v, want the one photo both primary and banner — the same image is allowed to hold both roles", photos)
+	}
+}
+
+func TestSetArtistBannerPhotoNotFound(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+
+	if err := s.SetArtistBannerPhoto(ctx(), artist.ID, 999999); !errors.Is(err, ErrArtistPhotoNotFound) {
+		t.Fatalf("SetArtistBannerPhoto(nonexistent) = %v, want ErrArtistPhotoNotFound", err)
+	}
+}
+
 func TestDeleteArtistPhotoRemovesRow(t *testing.T) {
 	s := testStore(t)
 	insertTrackFor(t, s, "Gallery Artist", "Album")
@@ -214,6 +275,59 @@ func TestGetArtistIncludesPhotoGallery(t *testing.T) {
 	}
 	if len(detail.Photos) != 2 {
 		t.Fatalf("len(Photos) = %d, want 2", len(detail.Photos))
+	}
+}
+
+// TestGetArtistBannerURLFallsBackToPrimary is TDR 016 AC-3: an artist
+// whose gallery has no photo explicitly flagged as banner yet (every
+// artist immediately after this ships) must still show a real image as
+// the header banner, not a blank one — the primary photo, until a
+// reviewer picks a banner explicitly.
+func TestGetArtistBannerURLFallsBackToPrimary(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+	s.AddArtistPhoto(ctx(), artist.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "hash-a")
+
+	detail, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if detail.BannerURL != "/a/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the primary photo's full URL as fallback", detail.BannerURL)
+	}
+}
+
+func TestGetArtistBannerURLUsesExplicitBanner(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+	s.AddArtistPhoto(ctx(), artist.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "hash-a")
+	second, _ := s.AddArtistPhoto(ctx(), artist.ID, "/b/thumb.jpg", "/b/full.jpg", "upload", "hash-b")
+	if err := s.SetArtistBannerPhoto(ctx(), artist.ID, second.ID); err != nil {
+		t.Fatalf("SetArtistBannerPhoto: %v", err)
+	}
+
+	detail, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if detail.BannerURL != "/b/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the explicitly-flagged banner photo (not the primary, which is still /a/full.jpg)", detail.BannerURL)
+	}
+}
+
+func TestGetArtistBannerURLBlankWithNoPhotos(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Gallery Artist", "Album")
+	artist := findArtistByName(t, s, "Gallery Artist")
+
+	detail, err := s.GetArtist(ctx(), artist.ID)
+	if err != nil {
+		t.Fatalf("GetArtist: %v", err)
+	}
+	if detail.BannerURL != "" {
+		t.Fatalf("BannerURL = %q, want blank for an artist with an empty gallery", detail.BannerURL)
 	}
 }
 
@@ -304,6 +418,43 @@ func TestSetAlbumPrimaryCoverSwitchesPrimary(t *testing.T) {
 	}
 }
 
+func TestSetAlbumBannerCoverIsIndependentOfPrimary(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Gallery Album")
+	album := findAlbumByTitle(t, s, "Gallery Album")
+
+	first, _ := s.AddAlbumCover(ctx(), album.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "", "hash-a")
+	second, _ := s.AddAlbumCover(ctx(), album.ID, "/b/thumb.jpg", "/b/full.jpg", "upload", "", "hash-b")
+
+	if err := s.SetAlbumBannerCover(ctx(), album.ID, second.ID); err != nil {
+		t.Fatalf("SetAlbumBannerCover: %v", err)
+	}
+
+	covers, err := s.ListAlbumCovers(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("ListAlbumCovers: %v", err)
+	}
+	for _, c := range covers {
+		wantBanner := c.ID == second.ID
+		if c.IsBanner != wantBanner {
+			t.Fatalf("cover %d IsBanner = %v, want %v", c.ID, c.IsBanner, wantBanner)
+		}
+		if c.ID == first.ID && !c.IsPrimary {
+			t.Fatalf("cover %d (the first added) should still be primary — setting banner must not disturb it", c.ID)
+		}
+	}
+}
+
+func TestSetAlbumBannerCoverNotFound(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Gallery Album")
+	album := findAlbumByTitle(t, s, "Gallery Album")
+
+	if err := s.SetAlbumBannerCover(ctx(), album.ID, 999999); !errors.Is(err, ErrAlbumCoverNotFound) {
+		t.Fatalf("SetAlbumBannerCover(nonexistent) = %v, want ErrAlbumCoverNotFound", err)
+	}
+}
+
 func TestDeleteAlbumCoverPromotesNewPrimary(t *testing.T) {
 	s := testStore(t)
 	insertTrackFor(t, s, "Artist", "Gallery Album")
@@ -338,6 +489,42 @@ func TestGetAlbumIncludesCoverGallery(t *testing.T) {
 	}
 	if len(detail.Covers) != 2 {
 		t.Fatalf("len(Covers) = %d, want 2", len(detail.Covers))
+	}
+}
+
+// TestGetAlbumBannerURLFallsBackToPrimary is TDR 016 AC-3's album
+// counterpart to TestGetArtistBannerURLFallsBackToPrimary.
+func TestGetAlbumBannerURLFallsBackToPrimary(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Gallery Album")
+	album := findAlbumByTitle(t, s, "Gallery Album")
+	s.AddAlbumCover(ctx(), album.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "front", "hash-a")
+
+	detail, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if detail.BannerURL != "/a/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the primary cover's full URL as fallback", detail.BannerURL)
+	}
+}
+
+func TestGetAlbumBannerURLUsesExplicitBanner(t *testing.T) {
+	s := testStore(t)
+	insertTrackFor(t, s, "Artist", "Gallery Album")
+	album := findAlbumByTitle(t, s, "Gallery Album")
+	s.AddAlbumCover(ctx(), album.ID, "/a/thumb.jpg", "/a/full.jpg", "upload", "front", "hash-a")
+	second, _ := s.AddAlbumCover(ctx(), album.ID, "/b/thumb.jpg", "/b/full.jpg", "upload", "back", "hash-b")
+	if err := s.SetAlbumBannerCover(ctx(), album.ID, second.ID); err != nil {
+		t.Fatalf("SetAlbumBannerCover: %v", err)
+	}
+
+	detail, err := s.GetAlbum(ctx(), album.ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	if detail.BannerURL != "/b/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the explicitly-flagged banner cover (not the primary, which is still /a/full.jpg)", detail.BannerURL)
 	}
 }
 

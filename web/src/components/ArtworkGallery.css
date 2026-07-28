@@ -10,115 +10,239 @@
   margin: 0 0 0.75rem;
 }
 
-.gallery-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
-  gap: 0.9rem;
+/* ---------- viewer: one small active image, click-to-page ---------- */
+.gallery-viewer {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
 }
 
-.gallery-tile {
-  background: var(--ink-900);
+.gallery-nav {
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
   border: 1px solid var(--border);
+  background: var(--ink-900);
+  color: var(--paper-50);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 1.05rem;
+  margin-top: 2.3rem;
+}
+.gallery-nav:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+  color: var(--accent-strong);
+}
+.gallery-nav:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.gallery-stage {
+  position: relative;
+  width: 9rem;
+  height: 9rem;
+  flex-shrink: 0;
   border-radius: 12px;
   overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--ink-900);
 }
-.gallery-tile.is-primary {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px var(--accent);
-}
-.gallery-tile .thumb-wrap {
-  position: relative;
-  aspect-ratio: 1;
-}
-.gallery-tile .thumb-wrap img {
+.gallery-stage-img {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
 }
-.gallery-tile .primary-badge {
+
+.gallery-badges {
   position: absolute;
   top: 0.4rem;
   left: 0.4rem;
-  background: var(--accent);
-  color: #0c1613;
-  font-size: 0.64rem;
-  font-weight: 800;
-  letter-spacing: 0.03em;
-  padding: 0.2rem 0.45rem;
-  border-radius: 100px;
-}
-.gallery-tile .caption {
-  padding: 0.5rem 0.6rem 0.1rem;
-  font-size: 0.72rem;
-  font-weight: 700;
-  color: var(--paper-50);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.gallery-tile .source {
-  padding: 0 0.6rem 0.55rem;
-  font-size: 0.68rem;
-  color: var(--mist-400);
-}
-.gallery-tile .tile-actions {
-  display: flex;
-  border-top: 1px solid var(--border);
-}
-.gallery-tile .tile-actions button {
-  flex: 1;
-  background: transparent;
-  border: none;
-  color: var(--mist-400);
-  font-size: 0.68rem;
-  font-weight: 700;
-  padding: 0.5rem 0.3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.3rem;
-}
-.gallery-tile .tile-actions button:hover:not(:disabled) {
-  background: var(--ink-800);
-  color: var(--paper-50);
-}
-.gallery-tile .tile-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-.gallery-tile .tile-actions button.remove:hover:not(:disabled) {
-  color: var(--bad);
-  background: var(--bad-bg);
-}
-.gallery-tile .tile-actions button + button {
-  border-left: 1px solid var(--border);
-}
-
-.gallery-add {
-  border: 1.5px dashed var(--border);
-  border-radius: 12px;
-  aspect-ratio: 1;
   display: flex;
   flex-direction: column;
+  gap: 0.25rem;
+  z-index: 2;
+  pointer-events: none;
+}
+.gallery-badge {
+  font-size: 0.6rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  padding: 0.18rem 0.45rem;
+  border-radius: 100px;
+  align-self: flex-start;
+}
+.gallery-badge.primary {
+  background: var(--accent);
+  color: #0c1613;
+}
+.gallery-badge.banner {
+  background: rgba(16, 20, 26, 0.65);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+/* click zones: cover half the image each; a low-opacity chevron stays
+   visible at rest (discoverable without hovering first) and brightens on
+   hover/focus */
+.gallery-page-zone {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  border: none;
+  background: transparent;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  padding: 0;
+  z-index: 1;
+}
+.gallery-page-zone.left {
+  left: 0;
+  justify-content: flex-start;
+}
+.gallery-page-zone.right {
+  right: 0;
+  justify-content: flex-end;
+}
+.gallery-page-zone span {
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.5rem 0.35rem;
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+.gallery-page-zone:hover span,
+.gallery-page-zone:focus-visible span {
+  opacity: 1;
+}
+
+.gallery-expand {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  z-index: 2;
+  width: 1.7rem;
+  height: 1.7rem;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(16, 20, 26, 0.6);
+  color: #fff;
+  display: flex;
   align-items: center;
   justify-content: center;
+}
+.gallery-expand:hover {
+  background: rgba(16, 20, 26, 0.85);
+}
+.gallery-expand svg {
+  width: 0.85rem;
+  height: 0.85rem;
+}
+
+/* ---------- caption + per-image actions, below the viewer ---------- */
+.gallery-below {
+  margin-top: 0.7rem;
+}
+.gallery-caption {
+  font-size: 0.86rem;
+  font-weight: 700;
+}
+.gallery-source {
+  font-weight: 500;
+  color: var(--mist-400);
+}
+.gallery-actions {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.gallery-actions button {
   background: transparent;
+  border: 1px solid var(--border);
   color: var(--mist-400);
   font-size: 0.74rem;
   font-weight: 700;
+  padding: 0.35rem 0.6rem;
+  border-radius: 7px;
 }
-.gallery-add:hover:not(:disabled) {
+.gallery-actions button:hover:not(:disabled) {
+  background: var(--ink-800);
+  color: var(--paper-50);
+}
+.gallery-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.gallery-actions button.remove:hover:not(:disabled) {
+  color: var(--bad);
+  border-color: var(--bad);
+  background: var(--bad-bg);
+}
+.gallery-actions button.add:hover:not(:disabled) {
   border-color: var(--accent-strong);
   color: var(--accent-strong);
   background: var(--accent-wash);
 }
-.gallery-add:disabled {
-  opacity: 0.6;
-  cursor: default;
+
+/* ---------- full-screen view ---------- */
+.gallery-fullview {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(8, 10, 14, 0.9);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  padding: 2rem;
 }
-.gallery-add svg {
-  width: 1.4rem;
-  height: 1.4rem;
+.gallery-fv-stage {
+  position: relative;
+  width: min(80vw, 80vh, 640px);
+  height: min(80vw, 80vh, 640px);
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--ink-900);
+  box-shadow: var(--shadow);
+}
+.gallery-fv-img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: contain;
+  background: var(--ink-950);
+}
+.gallery-fv-close {
+  position: absolute;
+  top: 1.1rem;
+  right: 1.3rem;
+  width: 2.3rem;
+  height: 2.3rem;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(16, 20, 26, 0.6);
+  color: #fff;
+  font-size: 1.05rem;
+}
+.gallery-fv-close:hover {
+  background: rgba(16, 20, 26, 0.9);
+}
+.gallery-fv-caption {
+  color: var(--mist-400);
+  font-size: 0.85rem;
+}
+
+@media (max-width: 640px) {
+  .gallery-fv-stage {
+    width: 88vw;
+    height: 88vw;
+  }
 }

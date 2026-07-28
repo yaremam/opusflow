@@ -55,6 +55,36 @@ func TestServiceSetArtistPrimaryPhotoPropagatesNotFound(t *testing.T) {
 	}
 }
 
+func TestServiceSetArtistBannerPhotoDelegates(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	if _, err := svc.UploadArtistArt(ctx(), 1, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	second, _ := store.AddArtistPhoto(ctx(), 1, "/b/thumb.jpg", "/b/full.jpg", "upload", "hash-b")
+
+	if err := svc.SetArtistBannerPhoto(ctx(), 1, second.ID); err != nil {
+		t.Fatalf("SetArtistBannerPhoto: %v", err)
+	}
+	photos, _ := svc.ListArtistPhotos(ctx(), 1)
+	for _, p := range photos {
+		if p.ID == second.ID && !p.IsBanner {
+			t.Fatalf("photo %d not marked banner after SetArtistBannerPhoto", p.ID)
+		}
+	}
+}
+
+func TestServiceSetArtistBannerPhotoPropagatesNotFound(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.SetArtistBannerPhoto(ctx(), 1, 999); err != ErrArtistPhotoNotFound {
+		t.Fatalf("SetArtistBannerPhoto error = %v, want ErrArtistPhotoNotFound", err)
+	}
+}
+
 func TestServiceDeleteArtistPhotoKeepsFileByDefault(t *testing.T) {
 	store := newCatalogCapturingStore()
 	svc := NewService(store, newRecordingCopier())
@@ -143,6 +173,36 @@ func TestServiceSetAlbumPrimaryCoverDelegates(t *testing.T) {
 		if c.ID == second.ID && !c.IsPrimary {
 			t.Fatalf("cover %d not marked primary after SetAlbumPrimaryCover", c.ID)
 		}
+	}
+}
+
+func TestServiceSetAlbumBannerCoverDelegates(t *testing.T) {
+	store := newCatalogCapturingStore()
+	svc := NewService(store, newRecordingCopier())
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+
+	if _, err := svc.UploadAlbumArt(ctx(), 7, onePixelPNG()); err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	second, _ := store.AddAlbumCover(ctx(), 7, "/b/thumb.jpg", "/b/full.jpg", "upload", "", "hash-b")
+
+	if err := svc.SetAlbumBannerCover(ctx(), 7, second.ID); err != nil {
+		t.Fatalf("SetAlbumBannerCover: %v", err)
+	}
+	covers, _ := svc.ListAlbumCovers(ctx(), 7)
+	for _, c := range covers {
+		if c.ID == second.ID && !c.IsBanner {
+			t.Fatalf("cover %d not marked banner after SetAlbumBannerCover", c.ID)
+		}
+	}
+}
+
+func TestServiceSetAlbumBannerCoverPropagatesNotFound(t *testing.T) {
+	store := newFakeImportStore()
+	svc := NewService(store, newRecordingCopier())
+
+	if err := svc.SetAlbumBannerCover(ctx(), 7, 999); err != ErrAlbumCoverNotFound {
+		t.Fatalf("SetAlbumBannerCover error = %v, want ErrAlbumCoverNotFound", err)
 	}
 }
 

@@ -116,19 +116,26 @@ func TrackFormat(path string) string {
 }
 
 // ArtistDetail is a single artist plus every album attributed to them,
-// newest first, and their full photo gallery (TDR 014).
+// newest first, and their full photo gallery (TDR 014). BannerURL is the
+// detail page header's banner image (TDR 016) — the gallery photo flagged
+// IsBanner, falling back to the primary photo when none is flagged yet,
+// entirely via artistBannerJoin's ORDER BY; never blank while the gallery
+// has any photo at all.
 type ArtistDetail struct {
 	Artist
-	Albums []Album       `json:"albums"`
-	Photos []ArtistPhoto `json:"photos"`
+	Albums    []Album       `json:"albums"`
+	Photos    []ArtistPhoto `json:"photos"`
+	BannerURL string        `json:"bannerUrl"`
 }
 
 // AlbumDetail is a single album plus its full track listing, ordered by
-// track number, and its full cover gallery (TDR 014).
+// track number, and its full cover gallery (TDR 014). BannerURL is TDR
+// 016's header banner image — see ArtistDetail.BannerURL.
 type AlbumDetail struct {
 	Album
-	Tracks []AlbumTrack `json:"tracks"`
-	Covers []AlbumCover `json:"covers"`
+	Tracks    []AlbumTrack `json:"tracks"`
+	Covers    []AlbumCover `json:"covers"`
+	BannerURL string       `json:"bannerUrl"`
 }
 
 // ListOptions controls sorting, filtering, and pagination shared by
@@ -183,6 +190,29 @@ const albumPrimaryCoverJoin = `
 		ORDER BY is_primary DESC, created_at ASC, id ASC
 		LIMIT 1
 	) ac ON true`
+
+// artistBannerJoin/albumCoverBannerJoin derive the detail page header's
+// banner image (TDR 016): the gallery image flagged is_banner if any,
+// else falling back to the primary image, else the oldest — all in one
+// ORDER BY rather than a separate join-plus-COALESCE, since "no banner
+// chosen yet" (every existing gallery, until a reviewer picks one) must
+// still render a real image, not a blank header. Detail-fetch only
+// (GetArtist/GetAlbum), not the list/tile queries — a grid tile has no
+// banner to show.
+const artistBannerJoin = `
+	LEFT JOIN LATERAL (
+		SELECT full_path FROM artist_photos
+		WHERE artist_id = a.id
+		ORDER BY is_banner DESC, is_primary DESC, created_at ASC, id ASC
+		LIMIT 1
+	) abn ON true`
+const albumCoverBannerJoin = `
+	LEFT JOIN LATERAL (
+		SELECT full_path FROM album_covers
+		WHERE album_id = al.id
+		ORDER BY is_banner DESC, is_primary DESC, created_at ASC, id ASC
+		LIMIT 1
+	) acbn ON true`
 
 // scanArtistEnrich/scanAlbumEnrich are the *sql.Row/*sql.Rows destinations
 // matching artistEnrichCols/albumEnrichCols, in order.
@@ -287,12 +317,14 @@ func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist]
 func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	var d ArtistDetail
 	dest := append([]any{&d.ID, &d.Name, &d.CreatedAt, &d.AlbumCount, &d.TrackCount}, scanArtistEnrich(&d.Artist)...)
+	dest = append(dest, &d.BannerURL)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT a.id, a.name, a.created_at,
 		       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
 		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
-		       `+artistEnrichCols+`
-		FROM artists a`+artistPrimaryPhotoJoin+`
+		       `+artistEnrichCols+`,
+		       COALESCE(abn.full_path, '')
+		FROM artists a`+artistPrimaryPhotoJoin+artistBannerJoin+`
 		WHERE a.id = $1
 	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -382,12 +414,14 @@ func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], 
 func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	var d AlbumDetail
 	dest := append([]any{&d.ID, &d.Title, &d.ArtistID, &d.ArtistName, &d.Year, &d.CreatedAt, &d.TrackCount}, scanAlbumEnrich(&d.Album)...)
+	dest = append(dest, &d.BannerURL)
 	err := s.db.QueryRowContext(ctx, `
 		SELECT al.id, al.title, al.artist_id, ar.name, al.year, al.created_at,
 		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
-		       `+albumEnrichCols+`
+		       `+albumEnrichCols+`,
+		       COALESCE(acbn.full_path, '')
 		FROM albums al
-		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+`
+		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+albumCoverBannerJoin+`
 		WHERE al.id = $1
 	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -18,19 +18,25 @@ var ErrAlbumCoverNotFound = errors.New("album cover not found")
 
 // ArtistPhoto is one image in an artist's photo gallery (TDR 014).
 // Exactly one photo per artist has IsPrimary set — that's the one used as
-// the artist's thumbnail in list views and grid tiles.
+// the artist's thumbnail in list views and grid tiles. Independently, at
+// most one photo has IsBanner set — that's the one used as the detail
+// page's header banner (TDR 016); unlike IsPrimary it may be unset for a
+// gallery that hasn't had a banner chosen yet.
 type ArtistPhoto struct {
 	ID        int64     `json:"id"`
 	ThumbURL  string    `json:"thumbUrl"`
 	FullURL   string    `json:"fullUrl"`
 	Source    string    `json:"source"`
 	IsPrimary bool      `json:"isPrimary"`
+	IsBanner  bool      `json:"isBanner"`
 	CreatedAt time.Time `json:"createdAt"`
 }
 
 // AlbumCover is one image in an album's cover gallery (TDR 014).
 // PictureType is the Cover Art Archive/APIC/PICTURE type label ("front",
-// "back", "booklet", ...) when known, empty for manual uploads.
+// "back", "booklet", ...) when known, empty for manual uploads. IsBanner
+// is TDR 016's independent, optional "used as the header banner" flag —
+// see ArtistPhoto.IsBanner.
 type AlbumCover struct {
 	ID          int64     `json:"id"`
 	ThumbURL    string    `json:"thumbUrl"`
@@ -38,6 +44,7 @@ type AlbumCover struct {
 	Source      string    `json:"source"`
 	PictureType string    `json:"pictureType,omitempty"`
 	IsPrimary   bool      `json:"isPrimary"`
+	IsBanner    bool      `json:"isBanner"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
@@ -53,6 +60,7 @@ type galleryRow struct {
 	Source      string
 	PictureType string
 	IsPrimary   bool
+	IsBanner    bool
 	CreatedAt   time.Time
 }
 
@@ -73,9 +81,9 @@ var albumCoverTable = galleryTable{name: "album_covers", fkColumn: "album_id", h
 // they were added — the shared implementation behind
 // ListArtistPhotos/ListAlbumCovers.
 func (s *Store) listGalleryRows(ctx context.Context, t galleryTable, entityID int64) ([]galleryRow, error) {
-	cols := "id, thumb_path, full_path, source, is_primary, created_at"
+	cols := "id, thumb_path, full_path, source, is_primary, is_banner, created_at"
 	if t.hasPictureType {
-		cols = "id, thumb_path, full_path, source, picture_type, is_primary, created_at"
+		cols = "id, thumb_path, full_path, source, picture_type, is_primary, is_banner, created_at"
 	}
 	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(`
 		SELECT %s FROM %s WHERE %s = $1
@@ -91,9 +99,9 @@ func (s *Store) listGalleryRows(ctx context.Context, t galleryTable, entityID in
 		var g galleryRow
 		var scanErr error
 		if t.hasPictureType {
-			scanErr = rows.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.CreatedAt)
+			scanErr = rows.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 		} else {
-			scanErr = rows.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.CreatedAt)
+			scanErr = rows.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 		}
 		if scanErr != nil {
 			return nil, scanErr
@@ -117,32 +125,32 @@ func (s *Store) insertGalleryRow(ctx context.Context, t galleryTable, entityID i
 			INSERT INTO %s (%s, thumb_path, full_path, source, picture_type, content_hash, is_primary)
 			SELECT $1, $2, $3, $4, $5, $6, NOT EXISTS (SELECT 1 FROM %s WHERE %s = $1)
 			WHERE $6 = '' OR NOT EXISTS (SELECT 1 FROM %s WHERE %s = $1 AND content_hash = $6)
-			RETURNING id, thumb_path, full_path, source, picture_type, is_primary, created_at
+			RETURNING id, thumb_path, full_path, source, picture_type, is_primary, is_banner, created_at
 		`, t.name, t.fkColumn, t.name, t.fkColumn, t.name, t.fkColumn),
 			entityID, thumbURL, fullURL, source, pictureType, contentHash,
-		).Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.CreatedAt)
+		).Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 	} else {
 		err = s.db.QueryRowContext(ctx, fmt.Sprintf(`
 			INSERT INTO %s (%s, thumb_path, full_path, source, content_hash, is_primary)
 			SELECT $1, $2, $3, $4, $5, NOT EXISTS (SELECT 1 FROM %s WHERE %s = $1)
 			WHERE $5 = '' OR NOT EXISTS (SELECT 1 FROM %s WHERE %s = $1 AND content_hash = $5)
-			RETURNING id, thumb_path, full_path, source, is_primary, created_at
+			RETURNING id, thumb_path, full_path, source, is_primary, is_banner, created_at
 		`, t.name, t.fkColumn, t.name, t.fkColumn, t.name, t.fkColumn),
 			entityID, thumbURL, fullURL, source, contentHash,
-		).Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.CreatedAt)
+		).Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 	}
 	if errors.Is(err, sql.ErrNoRows) {
-		selectCols := "id, thumb_path, full_path, source, is_primary, created_at"
+		selectCols := "id, thumb_path, full_path, source, is_primary, is_banner, created_at"
 		if t.hasPictureType {
-			selectCols = "id, thumb_path, full_path, source, picture_type, is_primary, created_at"
+			selectCols = "id, thumb_path, full_path, source, picture_type, is_primary, is_banner, created_at"
 		}
 		row := s.db.QueryRowContext(ctx, fmt.Sprintf(`
 			SELECT %s FROM %s WHERE %s = $1 AND content_hash = $2
 		`, selectCols, t.name, t.fkColumn), entityID, contentHash)
 		if t.hasPictureType {
-			err = row.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.CreatedAt)
+			err = row.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.PictureType, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 		} else {
-			err = row.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.CreatedAt)
+			err = row.Scan(&g.ID, &g.ThumbURL, &g.FullURL, &g.Source, &g.IsPrimary, &g.IsBanner, &g.CreatedAt)
 		}
 	}
 	if err != nil {
@@ -151,23 +159,26 @@ func (s *Store) insertGalleryRow(ctx context.Context, t galleryTable, entityID i
 	return g, nil
 }
 
-// setGalleryPrimary marks imageID as t's primary image for entityID,
-// clearing the flag from every other image in the same gallery first —
-// shared implementation behind
-// SetArtistPrimaryPhoto/SetAlbumPrimaryCover.
-func (s *Store) setGalleryPrimary(ctx context.Context, t galleryTable, entityID, imageID int64, notFound error) error {
+// setGalleryFlag marks imageID as t's column-flagged image for entityID
+// (column is "is_primary" or "is_banner"), clearing the flag from every
+// other image in the same gallery first — shared implementation behind
+// SetArtistPrimaryPhoto/SetAlbumPrimaryCover and
+// SetArtistBannerPhoto/SetAlbumBannerCover (TDR 016). Both flags are
+// independent columns on the same row, so setting one never touches the
+// other — an image is free to be both primary and banner at once.
+func (s *Store) setGalleryFlag(ctx context.Context, t galleryTable, entityID, imageID int64, column string, notFound error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET is_primary = FALSE WHERE %s = $1`, t.name, t.fkColumn), entityID); err != nil {
-		return fmt.Errorf("clearing existing primary: %w", err)
+	if _, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET %s = FALSE WHERE %s = $1`, t.name, column, t.fkColumn), entityID); err != nil {
+		return fmt.Errorf("clearing existing %s: %w", column, err)
 	}
-	res, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET is_primary = TRUE WHERE id = $1 AND %s = $2`, t.name, t.fkColumn), imageID, entityID)
+	res, err := tx.ExecContext(ctx, fmt.Sprintf(`UPDATE %s SET %s = TRUE WHERE id = $1 AND %s = $2`, t.name, column, t.fkColumn), imageID, entityID)
 	if err != nil {
-		return fmt.Errorf("setting primary: %w", err)
+		return fmt.Errorf("setting %s: %w", column, err)
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return notFound
@@ -226,7 +237,7 @@ func (s *Store) ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistP
 	}
 	photos := make([]ArtistPhoto, len(rows))
 	for i, r := range rows {
-		photos[i] = ArtistPhoto{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, IsPrimary: r.IsPrimary, CreatedAt: r.CreatedAt}
+		photos[i] = ArtistPhoto{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, IsPrimary: r.IsPrimary, IsBanner: r.IsBanner, CreatedAt: r.CreatedAt}
 	}
 	return photos, nil
 }
@@ -241,13 +252,20 @@ func (s *Store) AddArtistPhoto(ctx context.Context, artistID int64, thumbURL, fu
 	if err != nil {
 		return ArtistPhoto{}, fmt.Errorf("adding artist photo: %w", err)
 	}
-	return ArtistPhoto{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, IsPrimary: r.IsPrimary, CreatedAt: r.CreatedAt}, nil
+	return ArtistPhoto{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, IsPrimary: r.IsPrimary, IsBanner: r.IsBanner, CreatedAt: r.CreatedAt}, nil
 }
 
 // SetArtistPrimaryPhoto marks photoID as the artist's primary photo,
 // clearing the flag from every other photo in the gallery.
 func (s *Store) SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error {
-	return s.setGalleryPrimary(ctx, artistPhotoTable, artistID, photoID, ErrArtistPhotoNotFound)
+	return s.setGalleryFlag(ctx, artistPhotoTable, artistID, photoID, "is_primary", ErrArtistPhotoNotFound)
+}
+
+// SetArtistBannerPhoto marks photoID as the artist's header-banner photo
+// (TDR 016), clearing the flag from every other photo in the gallery.
+// Independent of IsPrimary — see ArtistPhoto.IsBanner.
+func (s *Store) SetArtistBannerPhoto(ctx context.Context, artistID, photoID int64) error {
+	return s.setGalleryFlag(ctx, artistPhotoTable, artistID, photoID, "is_banner", ErrArtistPhotoNotFound)
 }
 
 // DeleteArtistPhoto removes a photo from an artist's gallery, promoting
@@ -268,7 +286,7 @@ func (s *Store) ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCove
 	}
 	covers := make([]AlbumCover, len(rows))
 	for i, r := range rows {
-		covers[i] = AlbumCover{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, PictureType: r.PictureType, IsPrimary: r.IsPrimary, CreatedAt: r.CreatedAt}
+		covers[i] = AlbumCover{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, PictureType: r.PictureType, IsPrimary: r.IsPrimary, IsBanner: r.IsBanner, CreatedAt: r.CreatedAt}
 	}
 	return covers, nil
 }
@@ -282,7 +300,7 @@ func (s *Store) AddAlbumCover(ctx context.Context, albumID int64, thumbURL, full
 	if err != nil {
 		return AlbumCover{}, fmt.Errorf("adding album cover: %w", err)
 	}
-	return AlbumCover{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, PictureType: r.PictureType, IsPrimary: r.IsPrimary, CreatedAt: r.CreatedAt}, nil
+	return AlbumCover{ID: r.ID, ThumbURL: r.ThumbURL, FullURL: r.FullURL, Source: r.Source, PictureType: r.PictureType, IsPrimary: r.IsPrimary, IsBanner: r.IsBanner, CreatedAt: r.CreatedAt}, nil
 }
 
 // AddAlbumCoverForEnrichment is AddAlbumCover, discarding the created row —
@@ -298,7 +316,14 @@ func (s *Store) AddAlbumCoverForEnrichment(ctx context.Context, albumID int64, t
 // SetAlbumPrimaryCover marks coverID as the album's primary cover,
 // clearing the flag from every other cover in the gallery.
 func (s *Store) SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error {
-	return s.setGalleryPrimary(ctx, albumCoverTable, albumID, coverID, ErrAlbumCoverNotFound)
+	return s.setGalleryFlag(ctx, albumCoverTable, albumID, coverID, "is_primary", ErrAlbumCoverNotFound)
+}
+
+// SetAlbumBannerCover marks coverID as the album's header-banner cover
+// (TDR 016), clearing the flag from every other cover in the gallery.
+// Independent of IsPrimary — see AlbumCover.IsBanner.
+func (s *Store) SetAlbumBannerCover(ctx context.Context, albumID, coverID int64) error {
+	return s.setGalleryFlag(ctx, albumCoverTable, albumID, coverID, "is_banner", ErrAlbumCoverNotFound)
 }
 
 // DeleteAlbumCover removes a cover from an album's gallery, promoting the

@@ -113,6 +113,7 @@ type galleryRoutes[D any] struct {
 	retryArt     func(ctx context.Context, id int64) error
 	uploadArt    func(ctx context.Context, id int64, data []byte) (D, error)
 	setPrimary   func(ctx context.Context, entityID, imageID int64) error
+	setBanner    func(ctx context.Context, entityID, imageID int64) error
 	deleteImage  func(ctx context.Context, entityID, imageID int64, deleteFile bool) error
 }
 
@@ -124,6 +125,7 @@ func artistGalleryRoutes(svc *library.Service) galleryRoutes[library.ArtistDetai
 		retryArt:     svc.RetryArtistArt,
 		uploadArt:    svc.UploadArtistArt,
 		setPrimary:   svc.SetArtistPrimaryPhoto,
+		setBanner:    svc.SetArtistBannerPhoto,
 		deleteImage:  svc.DeleteArtistPhoto,
 	}
 }
@@ -136,6 +138,7 @@ func albumGalleryRoutes(svc *library.Service) galleryRoutes[library.AlbumDetail]
 		retryArt:     svc.RetryAlbumArt,
 		uploadArt:    svc.UploadAlbumArt,
 		setPrimary:   svc.SetAlbumPrimaryCover,
+		setBanner:    svc.SetAlbumBannerCover,
 		deleteImage:  svc.DeleteAlbumCover,
 	}
 }
@@ -237,6 +240,34 @@ func handleSetGalleryPrimary[D any](cfg galleryRoutes[D]) http.HandlerFunc {
 			return
 		}
 		if err := cfg.setPrimary(r.Context(), entityID, imageID); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		detail, err := cfg.getDetail(r.Context(), entityID)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusOK, detail)
+	}
+}
+
+// handleSetGalleryBanner marks one image in an entity's gallery as the
+// detail page header's banner (TDR 016), independent of primary — see
+// handleSetGalleryPrimary, which this otherwise mirrors exactly.
+func handleSetGalleryBanner[D any](cfg galleryRoutes[D]) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		entityID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid "+cfg.entityLabel+" id", http.StatusBadRequest)
+			return
+		}
+		imageID, err := strconv.ParseInt(r.PathValue(cfg.imageIDParam), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid image id", http.StatusBadRequest)
+			return
+		}
+		if err := cfg.setBanner(r.Context(), entityID, imageID); err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
