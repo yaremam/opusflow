@@ -1,6 +1,7 @@
 package httpserver
 
 import (
+	"context"
 	"errors"
 	"io"
 	"net/http"
@@ -101,60 +102,76 @@ func handleDeleteArtist(svc *library.Service) http.HandlerFunc {
 	}
 }
 
-// handleRetryArtistArt queues a fresh art lookup for one artist (TDR 007)
-// and wakes the background enrichment job immediately — the response
-// carries the artist as of right now (status back to pending), so the
-// frontend has something to poll GetArtist against without an extra round
-// trip.
-func handleRetryArtistArt(svc *library.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid artist id", http.StatusBadRequest)
-			return
-		}
-		if err := svc.RetryArtistArt(r.Context(), id); err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		artist, err := svc.GetArtist(r.Context(), id)
-		if err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusAccepted, artist)
+// galleryRoutes configures the four generic gallery handlers below for one
+// entity kind (D is ArtistDetail or AlbumDetail) — request parsing and
+// response shape are identical for an artist's photos and an album's
+// covers; these closures are the only thing that varies.
+type galleryRoutes[D any] struct {
+	entityLabel  string // "artist" | "album", for error messages
+	imageIDParam string // "photoId" | "coverId"
+	getDetail    func(ctx context.Context, id int64) (D, error)
+	retryArt     func(ctx context.Context, id int64) error
+	uploadArt    func(ctx context.Context, id int64, data []byte) (D, error)
+	setPrimary   func(ctx context.Context, entityID, imageID int64) error
+	deleteImage  func(ctx context.Context, entityID, imageID int64, deleteFile bool) error
+}
+
+func artistGalleryRoutes(svc *library.Service) galleryRoutes[library.ArtistDetail] {
+	return galleryRoutes[library.ArtistDetail]{
+		entityLabel:  "artist",
+		imageIDParam: "photoId",
+		getDetail:    svc.GetArtist,
+		retryArt:     svc.RetryArtistArt,
+		uploadArt:    svc.UploadArtistArt,
+		setPrimary:   svc.SetArtistPrimaryPhoto,
+		deleteImage:  svc.DeleteArtistPhoto,
 	}
 }
 
-// handleRetryAlbumArt is handleRetryArtistArt's album counterpart.
-func handleRetryAlbumArt(svc *library.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid album id", http.StatusBadRequest)
-			return
-		}
-		if err := svc.RetryAlbumArt(r.Context(), id); err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		album, err := svc.GetAlbum(r.Context(), id)
-		if err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusAccepted, album)
+func albumGalleryRoutes(svc *library.Service) galleryRoutes[library.AlbumDetail] {
+	return galleryRoutes[library.AlbumDetail]{
+		entityLabel:  "album",
+		imageIDParam: "coverId",
+		getDetail:    svc.GetAlbum,
+		retryArt:     svc.RetryAlbumArt,
+		uploadArt:    svc.UploadAlbumArt,
+		setPrimary:   svc.SetAlbumPrimaryCover,
+		deleteImage:  svc.DeleteAlbumCover,
 	}
 }
 
-// handleUploadArtistArt saves a manually-uploaded photo (TDR 007), bypassing
+// handleRetryArt queues a fresh art lookup for one entity (TDR 007) and
+// wakes the background enrichment job immediately — the response carries
+// the entity as of right now (status back to pending), so the frontend has
+// something to poll against without an extra round trip.
+func handleRetryArt[D any](cfg galleryRoutes[D]) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		if err != nil {
+			http.Error(w, "invalid "+cfg.entityLabel+" id", http.StatusBadRequest)
+			return
+		}
+		if err := cfg.retryArt(r.Context(), id); err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		detail, err := cfg.getDetail(r.Context(), id)
+		if err != nil {
+			http.Error(w, err.Error(), libraryErrorStatus(err))
+			return
+		}
+		writeJSON(w, http.StatusAccepted, detail)
+	}
+}
+
+// handleUploadArt saves a manually-uploaded photo/cover (TDR 007), bypassing
 // MusicBrainz/Cover Art Archive entirely — synchronous, no queueing/polling:
-// the response already reflects the new photo.
-func handleUploadArtistArt(svc *library.Service) http.HandlerFunc {
+// the response already reflects the new image.
+func handleUploadArt[D any](cfg galleryRoutes[D]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			http.Error(w, "invalid "+cfg.entityLabel+" id", http.StatusBadRequest)
 			return
 		}
 		data, err := readUploadedImage(w, r)
@@ -162,34 +179,12 @@ func handleUploadArtistArt(svc *library.Service) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		artist, err := svc.UploadArtistArt(r.Context(), id, data)
+		detail, err := cfg.uploadArt(r.Context(), id, data)
 		if err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, artist)
-	}
-}
-
-// handleUploadAlbumArt is handleUploadArtistArt's album counterpart.
-func handleUploadAlbumArt(svc *library.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid album id", http.StatusBadRequest)
-			return
-		}
-		data, err := readUploadedImage(w, r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		album, err := svc.UploadAlbumArt(r.Context(), id, data)
-		if err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusOK, album)
+		writeJSON(w, http.StatusOK, detail)
 	}
 }
 
@@ -225,48 +220,48 @@ func parseDeleteFile(r *http.Request) (bool, error) {
 	}
 }
 
-// handleSetArtistPrimaryPhoto marks one photo in an artist's gallery as
-// the one shown in list views and grid tiles (AC-2), returning the
-// artist's full detail (gallery included) so the frontend can re-render
-// without a second round trip.
-func handleSetArtistPrimaryPhoto(svc *library.Service) http.HandlerFunc {
+// handleSetGalleryPrimary marks one image in an entity's gallery as the
+// one shown in list views and grid tiles (AC-2), returning the entity's
+// full detail (gallery included) so the frontend can re-render without a
+// second round trip.
+func handleSetGalleryPrimary[D any](cfg galleryRoutes[D]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		artistID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		entityID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			http.Error(w, "invalid "+cfg.entityLabel+" id", http.StatusBadRequest)
 			return
 		}
-		photoID, err := strconv.ParseInt(r.PathValue("photoId"), 10, 64)
+		imageID, err := strconv.ParseInt(r.PathValue(cfg.imageIDParam), 10, 64)
 		if err != nil {
-			http.Error(w, "invalid photo id", http.StatusBadRequest)
+			http.Error(w, "invalid image id", http.StatusBadRequest)
 			return
 		}
-		if err := svc.SetArtistPrimaryPhoto(r.Context(), artistID, photoID); err != nil {
+		if err := cfg.setPrimary(r.Context(), entityID, imageID); err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		artist, err := svc.GetArtist(r.Context(), artistID)
+		detail, err := cfg.getDetail(r.Context(), entityID)
 		if err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, artist)
+		writeJSON(w, http.StatusOK, detail)
 	}
 }
 
-// handleDeleteArtistPhoto removes one photo from an artist's gallery
+// handleDeleteGalleryImage removes one image from an entity's gallery
 // (AC-4), optionally also deleting its file from disk per the required
 // deleteFile query param (see parseDeleteFile).
-func handleDeleteArtistPhoto(svc *library.Service) http.HandlerFunc {
+func handleDeleteGalleryImage[D any](cfg galleryRoutes[D]) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		artistID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+		entityID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
-			http.Error(w, "invalid artist id", http.StatusBadRequest)
+			http.Error(w, "invalid "+cfg.entityLabel+" id", http.StatusBadRequest)
 			return
 		}
-		photoID, err := strconv.ParseInt(r.PathValue("photoId"), 10, 64)
+		imageID, err := strconv.ParseInt(r.PathValue(cfg.imageIDParam), 10, 64)
 		if err != nil {
-			http.Error(w, "invalid photo id", http.StatusBadRequest)
+			http.Error(w, "invalid image id", http.StatusBadRequest)
 			return
 		}
 		deleteFile, err := parseDeleteFile(r)
@@ -274,74 +269,16 @@ func handleDeleteArtistPhoto(svc *library.Service) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
-		if err := svc.DeleteArtistPhoto(r.Context(), artistID, photoID, deleteFile); err != nil {
+		if err := cfg.deleteImage(r.Context(), entityID, imageID, deleteFile); err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		artist, err := svc.GetArtist(r.Context(), artistID)
-		if err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusOK, artist)
-	}
-}
-
-// handleSetAlbumPrimaryCover is handleSetArtistPrimaryPhoto's album
-// counterpart.
-func handleSetAlbumPrimaryCover(svc *library.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid album id", http.StatusBadRequest)
-			return
-		}
-		coverID, err := strconv.ParseInt(r.PathValue("coverId"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid cover id", http.StatusBadRequest)
-			return
-		}
-		if err := svc.SetAlbumPrimaryCover(r.Context(), albumID, coverID); err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		album, err := svc.GetAlbum(r.Context(), albumID)
+		detail, err := cfg.getDetail(r.Context(), entityID)
 		if err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
-		writeJSON(w, http.StatusOK, album)
-	}
-}
-
-// handleDeleteAlbumCover is handleDeleteArtistPhoto's album counterpart.
-func handleDeleteAlbumCover(svc *library.Service) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		albumID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid album id", http.StatusBadRequest)
-			return
-		}
-		coverID, err := strconv.ParseInt(r.PathValue("coverId"), 10, 64)
-		if err != nil {
-			http.Error(w, "invalid cover id", http.StatusBadRequest)
-			return
-		}
-		deleteFile, err := parseDeleteFile(r)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
-		}
-		if err := svc.DeleteAlbumCover(r.Context(), albumID, coverID, deleteFile); err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		album, err := svc.GetAlbum(r.Context(), albumID)
-		if err != nil {
-			http.Error(w, err.Error(), libraryErrorStatus(err))
-			return
-		}
-		writeJSON(w, http.StatusOK, album)
+		writeJSON(w, http.StatusOK, detail)
 	}
 }
 
