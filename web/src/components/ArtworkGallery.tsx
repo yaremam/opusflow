@@ -25,6 +25,22 @@ interface ArtworkGalleryProps {
   onDelete: (id: number, deleteFile: boolean) => Promise<void>
 }
 
+// PageZones is the pair of invisible left/right click zones layered over
+// the active image — shared between the inline stage and the full-screen
+// view, which page the same way.
+function PageZones({ onPrev, onNext, label }: { onPrev: () => void; onNext: () => void; label: string }) {
+  return (
+    <>
+      <button type="button" className="gallery-page-zone left" onClick={onPrev} aria-label={`Previous ${label}`}>
+        <span>‹</span>
+      </button>
+      <button type="button" className="gallery-page-zone right" onClick={onNext} aria-label={`Next ${label}`}>
+        <span>›</span>
+      </button>
+    </>
+  )
+}
+
 // sourceLabel turns a raw source string ("cover_art_archive", "upload", …)
 // into the label a reviewer recognizes — the backend value is whatever's
 // convenient to store and match on, not necessarily display-ready.
@@ -66,12 +82,22 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
 
   const activeIndex = images.length === 0 ? 0 : Math.min(current, images.length - 1)
   const active = images[activeIndex] as GalleryImage | undefined
+  const imageCount = images.length
 
+  // Functional updates so goPrev/goNext don't close over activeIndex —
+  // lets the keydown listener below depend only on imageCount/expanded
+  // instead of reattaching on every single navigation.
   function goPrev() {
-    setCurrent((activeIndex - 1 + images.length) % images.length)
+    setCurrent((c) => {
+      const idx = imageCount === 0 ? 0 : Math.min(c, imageCount - 1)
+      return (idx - 1 + imageCount) % imageCount
+    })
   }
   function goNext() {
-    setCurrent((activeIndex + 1) % images.length)
+    setCurrent((c) => {
+      const idx = imageCount === 0 ? 0 : Math.min(c, imageCount - 1)
+      return (idx + 1) % imageCount
+    })
   }
 
   // Arrow-key paging (AC-5) — skipped while focus is in a text field
@@ -79,7 +105,7 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
   // typing (e.g. a search box), and always active while the full-screen
   // view is open since that's a modal context.
   useEffect(() => {
-    if (images.length < 2) return
+    if (imageCount < 2) return
     function handleKeyDown(e: KeyboardEvent) {
       const typing = document.activeElement instanceof HTMLInputElement || document.activeElement instanceof HTMLTextAreaElement
       if (typing && !expanded) return
@@ -90,7 +116,7 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
     document.addEventListener('keydown', handleKeyDown)
     return () => document.removeEventListener('keydown', handleKeyDown)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [images.length, activeIndex, expanded])
+  }, [imageCount, expanded])
 
   async function handleFileChosen(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -107,23 +133,11 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
     }
   }
 
-  async function handleSetPrimary(id: number) {
+  async function handleSetFlag(id: number, action: (id: number) => Promise<void>) {
     setBusyId(id)
     setActionError(null)
     try {
-      await onSetPrimary(id)
-    } catch (err) {
-      setActionError(errorMessage(err))
-    } finally {
-      setBusyId(null)
-    }
-  }
-
-  async function handleSetBanner(id: number) {
-    setBusyId(id)
-    setActionError(null)
-    try {
-      await onSetBanner(id)
+      await action(id)
     } catch (err) {
       setActionError(errorMessage(err))
     } finally {
@@ -168,16 +182,7 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
               {active.isBanner && <span className="gallery-badge banner">⬒ Banner</span>}
             </div>
             <img src={active.thumbUrl} alt="" className="gallery-stage-img" />
-            {images.length > 1 && (
-              <>
-                <button type="button" className="gallery-page-zone left" onClick={goPrev} aria-label={`Previous ${label}`}>
-                  <span>‹</span>
-                </button>
-                <button type="button" className="gallery-page-zone right" onClick={goNext} aria-label={`Next ${label}`}>
-                  <span>›</span>
-                </button>
-              </>
-            )}
+            {imageCount > 1 && <PageZones onPrev={goPrev} onNext={goNext} label={label} />}
             <button type="button" className="gallery-expand" onClick={() => setExpanded(true)} title="View full size" aria-label="View full size">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5" />
@@ -199,12 +204,12 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
         )}
         <div className="gallery-actions">
           {active && !active.isPrimary && (
-            <button type="button" disabled={busyId === active.id} onClick={() => handleSetPrimary(active.id)}>
+            <button type="button" disabled={busyId === active.id} onClick={() => handleSetFlag(active.id, onSetPrimary)}>
               ☆ Primary
             </button>
           )}
           {active && !active.isBanner && (
-            <button type="button" disabled={busyId === active.id} onClick={() => handleSetBanner(active.id)}>
+            <button type="button" disabled={busyId === active.id} onClick={() => handleSetFlag(active.id, onSetBanner)}>
               ⬒ Banner
             </button>
           )}
@@ -227,16 +232,7 @@ export default function ArtworkGallery({ images, label, onUpload, onSetPrimary, 
           </button>
           <div className="gallery-fv-stage">
             <img src={active.fullUrl || active.thumbUrl} alt="" className="gallery-fv-img" />
-            {images.length > 1 && (
-              <>
-                <button type="button" className="gallery-page-zone left" onClick={goPrev} aria-label={`Previous ${label}`}>
-                  <span>‹</span>
-                </button>
-                <button type="button" className="gallery-page-zone right" onClick={goNext} aria-label={`Next ${label}`}>
-                  <span>›</span>
-                </button>
-              </>
-            )}
+            {imageCount > 1 && <PageZones onPrev={goPrev} onNext={goNext} label={label} />}
           </div>
           <div className="gallery-fv-caption">
             {active.pictureType || sourceLabel(active.source)}
