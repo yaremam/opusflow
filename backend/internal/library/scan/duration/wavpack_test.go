@@ -88,14 +88,33 @@ func TestWavPackRejectsWrongMagic(t *testing.T) {
 	}
 }
 
-func TestWavPackNonStandardSampleRateIsAnError(t *testing.T) {
-	// Rate index 15 (0xF) means "not one of the standard rates" — this
-	// hand-rolled parser doesn't chase the decoder-config extension block
-	// that would carry the real rate, so it errors rather than guessing.
-	block := wvBlock(88200, 0, 88200, flagsForRateIndex(15), 100)
-	f := writeTempWV(t, block)
+func TestWavPackHighResSampleRates(t *testing.T) {
+	// Indices 14 and 15 are the two high-res standard rates (176400 and
+	// 192000) — previously mismapped by a table missing the 176400 entry,
+	// which shifted 192000 into index 14 and made the real index-15 rate
+	// (192000) wrongly look "non-standard". 176,400 total samples at each
+	// rate is exactly 1 second, so a wrong rate would show up as a wrong
+	// duration rather than just an error.
+	tests := []struct {
+		name string
+		idx  uint32
+		rate uint32
+	}{
+		{"176400Hz", 14, 176400},
+		{"192000Hz", 15, 192000},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			block := wvBlock(tt.rate, 0, tt.rate, flagsForRateIndex(tt.idx), 100)
+			f := writeTempWV(t, block)
 
-	if _, err := WavPack(f); err == nil {
-		t.Fatal("expected an error for a non-standard sample rate index")
+			d, err := WavPack(f)
+			if err != nil {
+				t.Fatalf("WavPack: %v", err)
+			}
+			if got := d.Seconds(); got < 0.99 || got > 1.01 {
+				t.Fatalf("duration = %v, want ~1s at %d Hz", d, tt.rate)
+			}
+		})
 	}
 }

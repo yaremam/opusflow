@@ -13,6 +13,7 @@ export interface EntityGalleryConfig<Detail extends { artStatus: ArtStatus }, Ar
   retryArt: (id: number) => Promise<ArtSummary>
   uploadImage: (id: number, file: File) => Promise<Detail>
   setPrimaryImage: (id: number, imageId: number) => Promise<Detail>
+  setBannerImage: (id: number, imageId: number) => Promise<Detail>
   deleteImage: (id: number, imageId: number, deleteFile: boolean) => Promise<Detail>
   deleteEntity: (id: number, deleteFiles: boolean) => Promise<void>
   afterRemove: string // route to navigate to once deleteEntity resolves
@@ -66,6 +67,10 @@ export function useEntityGallery<Detail extends { artStatus: ArtStatus }, ArtSum
     setEntity(await cfg.setPrimaryImage(id, imageId))
   }
 
+  async function setBannerImage(imageId: number) {
+    setEntity(await cfg.setBannerImage(id, imageId))
+  }
+
   async function deleteImage(imageId: number, deleteFile: boolean) {
     setEntity(await cfg.deleteImage(id, imageId, deleteFile))
   }
@@ -97,6 +102,7 @@ export function useEntityGallery<Detail extends { artStatus: ArtStatus }, ArtSum
     retryArt,
     uploadImage,
     setPrimaryImage,
+    setBannerImage,
     deleteImage,
     removing,
     removeSubmitting,

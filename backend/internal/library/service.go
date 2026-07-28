@@ -40,18 +40,20 @@ type MetadataSearch interface {
 }
 
 // GalleryStore is the artist/album image-gallery persistence Service needs
-// (TDR 014) — kept as its own interface so a test (or future caller) that
-// only cares about gallery behavior depends on, and fakes, just this
-// eight-method slice rather than ImportStore's full width.
+// (TDR 014, TDR 016) — kept as its own interface so a test (or future
+// caller) that only cares about gallery behavior depends on, and fakes,
+// just this slice rather than ImportStore's full width.
 type GalleryStore interface {
 	ListArtistPhotos(ctx context.Context, artistID int64) ([]ArtistPhoto, error)
 	AddArtistPhoto(ctx context.Context, artistID int64, thumbURL, fullURL, source, contentHash string) (ArtistPhoto, error)
 	SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID int64) error
+	SetArtistBannerPhoto(ctx context.Context, artistID, photoID int64) error
 	DeleteArtistPhoto(ctx context.Context, artistID, photoID int64) (thumbPath, fullPath string, err error)
 
 	ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCover, error)
 	AddAlbumCover(ctx context.Context, albumID int64, thumbURL, fullURL, source, pictureType, contentHash string) (AlbumCover, error)
 	SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error
+	SetAlbumBannerCover(ctx context.Context, albumID, coverID int64) error
 	DeleteAlbumCover(ctx context.Context, albumID, coverID int64) (thumbPath, fullPath string, err error)
 }
 
@@ -352,6 +354,11 @@ func (s *Service) ConfirmImport(ctx context.Context, libraryID int64, sourceDesc
 			log.Printf("library: import %d: marking complete: %v", imp.ID, err)
 		}
 
+		// Copy has read everything it needs from plan's sources by now —
+		// safe to clean up any staged-upload directory among them (AC-13
+		// for uploaded imports; see cleanupStagedSources).
+		cleanupStagedSources(plan)
+
 		s.wakeEnricher()
 	}()
 
@@ -369,15 +376,36 @@ func (s *Service) ListImports(ctx context.Context) ([]Import, error) {
 }
 
 // DeleteArtist removes an artist and everything attributed to them,
-// optionally deleting their files from disk too (AC-13).
+// optionally deleting their files from disk too (AC-13). Gallery rows
+// (artist_photos) cascade with the artist row, but the image files
+// themselves live outside the DB, so they're cleaned up here too — same
+// deleteFiles gate as track files, since orphaned artwork is exactly the
+// on-disk-leftover case AC-13 exists to avoid.
 func (s *Service) DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error {
-	return s.store.DeleteArtist(ctx, id, deleteFiles)
+	if err := s.store.DeleteArtist(ctx, id, deleteFiles); err != nil {
+		return err
+	}
+	if deleteFiles && s.images != nil {
+		if err := s.images.DeleteAll("artist", id); err != nil {
+			log.Printf("library: artist %d: deleting artwork files: %v", id, err)
+		}
+	}
+	return nil
 }
 
 // DeleteAlbum removes an album and its tracks, optionally deleting their
-// files from disk too (AC-13).
+// files from disk too (AC-13). See DeleteArtist for why album_covers'
+// image files need their own cleanup alongside the cascaded DB rows.
 func (s *Service) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error {
-	return s.store.DeleteAlbum(ctx, id, deleteFiles)
+	if err := s.store.DeleteAlbum(ctx, id, deleteFiles); err != nil {
+		return err
+	}
+	if deleteFiles && s.images != nil {
+		if err := s.images.DeleteAll("album", id); err != nil {
+			log.Printf("library: album %d: deleting artwork files: %v", id, err)
+		}
+	}
+	return nil
 }
 
 // MergeArtists folds id — every album, track, and gallery photo it has —
@@ -491,6 +519,12 @@ func (s *Service) SetArtistPrimaryPhoto(ctx context.Context, artistID, photoID i
 	return s.store.SetArtistPrimaryPhoto(ctx, artistID, photoID)
 }
 
+// SetArtistBannerPhoto marks photoID as this artist's detail page header
+// banner (TDR 016) — independent of SetArtistPrimaryPhoto.
+func (s *Service) SetArtistBannerPhoto(ctx context.Context, artistID, photoID int64) error {
+	return s.store.SetArtistBannerPhoto(ctx, artistID, photoID)
+}
+
 // DeleteArtistPhoto removes a photo from an artist's gallery (AC-4),
 // optionally also deleting its files from disk — the same explicit
 // keep-vs-delete-file choice DeleteArtist/DeleteAlbum already offer for
@@ -518,6 +552,12 @@ func (s *Service) ListAlbumCovers(ctx context.Context, albumID int64) ([]AlbumCo
 // grid tiles for this album (AC-2).
 func (s *Service) SetAlbumPrimaryCover(ctx context.Context, albumID, coverID int64) error {
 	return s.store.SetAlbumPrimaryCover(ctx, albumID, coverID)
+}
+
+// SetAlbumBannerCover marks coverID as this album's detail page header
+// banner (TDR 016) — independent of SetAlbumPrimaryCover.
+func (s *Service) SetAlbumBannerCover(ctx context.Context, albumID, coverID int64) error {
+	return s.store.SetAlbumBannerCover(ctx, albumID, coverID)
 }
 
 // DeleteAlbumCover is DeleteArtistPhoto's album counterpart.

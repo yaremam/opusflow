@@ -8,6 +8,7 @@ import {
   listAlbums,
   mergeAlbum,
   retryAlbumArt,
+  setAlbumBannerCover,
   setAlbumPrimaryCover,
   uploadAlbumArt,
   type AlbumTrack,
@@ -36,6 +37,7 @@ export default function AlbumDetailPage() {
       retryArt: retryAlbumArt,
       uploadImage: uploadAlbumArt,
       setPrimaryImage: setAlbumPrimaryCover,
+      setBannerImage: setAlbumBannerCover,
       deleteImage: deleteAlbumCover,
       deleteEntity: deleteAlbum,
       afterRemove: '/albums',
@@ -48,6 +50,7 @@ export default function AlbumDetailPage() {
     retryArt: handleRetryArt,
     uploadImage: handleUploadCover,
     setPrimaryImage: handleSetPrimaryCover,
+    setBannerImage: handleSetBannerCover,
     deleteImage: handleDeleteCover,
     removing,
     removeSubmitting,
@@ -122,6 +125,31 @@ export default function AlbumDetailPage() {
               Remove album…
             </button>
           </div>
+      <div className="detail-banner-wrap">
+        <ArtTile src={album.bannerUrl} alt="" className="detail-banner-img" kind="album" artStatus={album.artStatus} />
+        <div className="detail-header-body">
+          <ArtTile
+            src={album.coverUrl || album.coverThumbUrl}
+            alt=""
+            className="detail-avatar"
+            kind="album"
+            artStatus={album.artStatus}
+          />
+          <div className="detail-meta">
+            <div className="kind">Album</div>
+            <h1>{album.title || 'Unknown Album'}</h1>
+            <div className="by">
+              by <Link to={`/artists/${album.artistId}`}>{album.artistName || 'Unknown Artist'}</Link>
+            </div>
+            <div className="facts">
+              {album.year > 0 ? `${album.year} · ` : ''}
+              {album.trackCount} song{album.trackCount === 1 ? '' : 's'} · {formatDuration(totalSeconds)}
+            </div>
+            <ArtActions thumbUrl={album.coverThumbUrl} artStatus={album.artStatus} onRetry={handleRetryArt} />
+            <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
+              Remove album…
+            </button>
+          </div>
         </div>
       </div>
 
@@ -130,6 +158,7 @@ export default function AlbumDetailPage() {
         label="cover"
         onUpload={handleUploadCover}
         onSetPrimary={handleSetPrimaryCover}
+        onSetBanner={handleSetBannerCover}
         onDelete={handleDeleteCover}
       />
 

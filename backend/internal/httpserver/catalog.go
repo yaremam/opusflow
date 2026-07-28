@@ -155,7 +155,6 @@ type galleryRoutes[D any] struct {
 	getDetail    func(ctx context.Context, id int64) (D, error)
 	retryArt     func(ctx context.Context, id int64) error
 	uploadArt    func(ctx context.Context, id int64, data []byte) (D, error)
-	setPrimary   func(ctx context.Context, entityID, imageID int64) error
 	deleteImage  func(ctx context.Context, entityID, imageID int64, deleteFile bool) error
 }
 
@@ -166,7 +165,6 @@ func artistGalleryRoutes(svc *library.Service) galleryRoutes[library.ArtistDetai
 		getDetail:    svc.GetArtist,
 		retryArt:     svc.RetryArtistArt,
 		uploadArt:    svc.UploadArtistArt,
-		setPrimary:   svc.SetArtistPrimaryPhoto,
 		deleteImage:  svc.DeleteArtistPhoto,
 	}
 }
@@ -178,7 +176,6 @@ func albumGalleryRoutes(svc *library.Service) galleryRoutes[library.AlbumDetail]
 		getDetail:    svc.GetAlbum,
 		retryArt:     svc.RetryAlbumArt,
 		uploadArt:    svc.UploadAlbumArt,
-		setPrimary:   svc.SetAlbumPrimaryCover,
 		deleteImage:  svc.DeleteAlbumCover,
 	}
 }
@@ -263,11 +260,13 @@ func parseDeleteFile(r *http.Request) (bool, error) {
 	}
 }
 
-// handleSetGalleryPrimary marks one image in an entity's gallery as the
-// one shown in list views and grid tiles (AC-2), returning the entity's
-// full detail (gallery included) so the frontend can re-render without a
-// second round trip.
-func handleSetGalleryPrimary[D any](cfg galleryRoutes[D]) http.HandlerFunc {
+// handleSetGalleryFlag marks one image in an entity's gallery via set —
+// either a Store's SetXPrimaryY (the one shown in list views and grid
+// tiles, AC-2) or SetXBannerY (the detail page header's banner, TDR 016);
+// both are independent flags with an identical request/response shape.
+// Returns the entity's full detail (gallery included) so the frontend can
+// re-render without a second round trip.
+func handleSetGalleryFlag[D any](cfg galleryRoutes[D], set func(ctx context.Context, entityID, imageID int64) error) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		entityID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 		if err != nil {
@@ -279,7 +278,7 @@ func handleSetGalleryPrimary[D any](cfg galleryRoutes[D]) http.HandlerFunc {
 			http.Error(w, "invalid image id", http.StatusBadRequest)
 			return
 		}
-		if err := cfg.setPrimary(r.Context(), entityID, imageID); err != nil {
+		if err := set(r.Context(), entityID, imageID); err != nil {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}

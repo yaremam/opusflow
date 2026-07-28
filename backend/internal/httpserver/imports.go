@@ -166,12 +166,22 @@ func handleUploadImport(svc *library.Service) http.HandlerFunc {
 			return
 		}
 
-		stagingDir, err := os.MkdirTemp("", "opusflow-upload-")
+		stagingDir, err := library.NewUploadStagingDir()
 		if err != nil {
 			http.Error(w, "staging upload", http.StatusInternalServerError)
 			return
 		}
-		defer os.RemoveAll(stagingDir)
+		// Only cleaned up here if this handler bails out before ever
+		// handing the plan back to the client — once a client has the
+		// plan, its SourcePaths point into stagingDir and it needs to
+		// survive until the later confirm request's copy has read them
+		// (see library.ConfirmImport's post-copy cleanupStagedSources).
+		keepStaged := false
+		defer func() {
+			if !keepStaged {
+				os.RemoveAll(stagingDir)
+			}
+		}()
 
 		files := r.MultipartForm.File["files"]
 		if len(files) == 0 {
@@ -195,6 +205,7 @@ func handleUploadImport(svc *library.Service) http.HandlerFunc {
 			http.Error(w, err.Error(), libraryErrorStatus(err))
 			return
 		}
+		keepStaged = true
 		writeJSON(w, http.StatusOK, resp)
 	}
 }

@@ -289,6 +289,24 @@ func (f *fakeImportStore) SetArtistPrimaryPhoto(_ context.Context, artistID, pho
 	return nil
 }
 
+func (f *fakeImportStore) SetArtistBannerPhoto(_ context.Context, artistID, photoID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	photos, ok := f.artistPhotos[artistID]
+	if !ok {
+		return ErrArtistPhotoNotFound
+	}
+	found := false
+	for i := range photos {
+		photos[i].IsBanner = photos[i].ID == photoID
+		found = found || photos[i].IsBanner
+	}
+	if !found {
+		return ErrArtistPhotoNotFound
+	}
+	return nil
+}
+
 func (f *fakeImportStore) DeleteArtistPhoto(_ context.Context, artistID, photoID int64) (string, string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -328,6 +346,24 @@ func (f *fakeImportStore) SetAlbumPrimaryCover(_ context.Context, albumID, cover
 	for i := range covers {
 		covers[i].IsPrimary = covers[i].ID == coverID
 		found = found || covers[i].IsPrimary
+	}
+	if !found {
+		return ErrAlbumCoverNotFound
+	}
+	return nil
+}
+
+func (f *fakeImportStore) SetAlbumBannerCover(_ context.Context, albumID, coverID int64) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	covers, ok := f.albumCovers[albumID]
+	if !ok {
+		return ErrAlbumCoverNotFound
+	}
+	found := false
+	for i := range covers {
+		covers[i].IsBanner = covers[i].ID == coverID
+		found = found || covers[i].IsBanner
 	}
 	if !found {
 		return ErrAlbumCoverNotFound

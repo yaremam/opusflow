@@ -163,13 +163,16 @@ export interface AlbumTrack {
 // ArtistPhoto/AlbumCover are one image in an artist's/album's gallery (TDR
 // 014) — exactly one per entity has isPrimary set, which is the one
 // reflected in photoThumbUrl/coverThumbUrl above for list views and grid
-// tiles that only have room for one image.
+// tiles that only have room for one image. isBanner is TDR 016's second,
+// independent flag — at most one image also has it set, and it need not
+// be the same image as the primary one.
 export interface ArtistPhoto {
   id: number
   thumbUrl: string
   fullUrl: string
   source: string
   isPrimary: boolean
+  isBanner: boolean
   createdAt: string
 }
 
@@ -180,17 +183,23 @@ export interface AlbumCover {
   source: string
   pictureType?: string
   isPrimary: boolean
+  isBanner: boolean
   createdAt: string
 }
 
+// bannerUrl (TDR 016) is the detail page header's banner image — the
+// gallery image flagged isBanner, falling back to the primary image when
+// none is flagged yet (never blank while the gallery has any image).
 export interface ArtistDetail extends Artist {
   albums: Album[]
   photos: ArtistPhoto[]
+  bannerUrl: string
 }
 
 export interface AlbumDetail extends Album {
   tracks: AlbumTrack[]
   covers: AlbumCover[]
+  bannerUrl: string
 }
 
 export interface Page<T> {
@@ -297,12 +306,23 @@ export function setArtistPrimaryPhoto(artistId: number, photoId: number): Promis
   return postJSON(`/api/library/artists/${artistId}/photos/${photoId}/primary`, {})
 }
 
+// setArtistBannerPhoto/setAlbumBannerCover mark one gallery image as the
+// detail page header's banner (TDR 016) — independent of the primary
+// image set above.
+export function setArtistBannerPhoto(artistId: number, photoId: number): Promise<ArtistDetail> {
+  return postJSON(`/api/library/artists/${artistId}/photos/${photoId}/banner`, {})
+}
+
 export function deleteArtistPhoto(artistId: number, photoId: number, deleteFile: boolean): Promise<ArtistDetail> {
   return request(`/api/library/artists/${artistId}/photos/${photoId}?deleteFile=${deleteFile}`, { method: 'DELETE' })
 }
 
 export function setAlbumPrimaryCover(albumId: number, coverId: number): Promise<AlbumDetail> {
   return postJSON(`/api/library/albums/${albumId}/covers/${coverId}/primary`, {})
+}
+
+export function setAlbumBannerCover(albumId: number, coverId: number): Promise<AlbumDetail> {
+  return postJSON(`/api/library/albums/${albumId}/covers/${coverId}/banner`, {})
 }
 
 export function deleteAlbumCover(albumId: number, coverId: number, deleteFile: boolean): Promise<AlbumDetail> {

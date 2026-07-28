@@ -674,6 +674,57 @@ func TestSetArtistPrimaryPhotoEndpointNotFound(t *testing.T) {
 	}
 }
 
+func TestSetArtistBannerPhotoEndpointSwitchesBanner(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	if _, err := svc.UploadArtistArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadArtistArt: %v", err)
+	}
+	second, err := store.AddArtistPhoto(context.Background(), id, "/artwork/artist/x/thumb.jpg", "/artwork/artist/x/full.jpg", "upload", "hash-b")
+	if err != nil {
+		t.Fatalf("AddArtistPhoto: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(second.ID, 10)+"/banner", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.ArtistDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.BannerURL != "/artwork/artist/x/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the newly-banner photo's full URL", got.BannerURL)
+	}
+	if len(got.Photos) != 2 {
+		t.Fatalf("len(Photos) = %d, want 2", len(got.Photos))
+	}
+}
+
+func TestSetArtistBannerPhotoEndpointNotFound(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Gallery Artist", "Album", "Song", 1, 2020)
+	artists, _ := svc.ListArtists(context.Background(), library.ListOptions{})
+	id := artists.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999/banner", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+}
+
 func TestDeleteArtistPhotoEndpointRequiresDeleteFileParam(t *testing.T) {
 	_, svc := testStoreAndService(t)
 
@@ -771,6 +822,57 @@ func TestSetAlbumPrimaryCoverEndpointSwitchesPrimary(t *testing.T) {
 	}
 	if len(got.Covers) != 2 {
 		t.Fatalf("len(Covers) = %d, want 2", len(got.Covers))
+	}
+}
+
+func TestSetAlbumBannerCoverEndpointSwitchesBanner(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	svc.SetImages(enrich.NewImageStore(t.TempDir()))
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Gallery Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	if _, err := svc.UploadAlbumArt(context.Background(), id, onePixelPNG()); err != nil {
+		t.Fatalf("UploadAlbumArt: %v", err)
+	}
+	second, err := store.AddAlbumCover(context.Background(), id, "/artwork/album/x/thumb.jpg", "/artwork/album/x/full.jpg", "upload", "", "hash-b")
+	if err != nil {
+		t.Fatalf("AddAlbumCover: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(second.ID, 10)+"/banner", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var got library.AlbumDetail
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal: %v, body = %s", err, rec.Body.String())
+	}
+	if got.BannerURL != "/artwork/album/x/full.jpg" {
+		t.Fatalf("BannerURL = %q, want the newly-banner cover's full URL", got.BannerURL)
+	}
+	if len(got.Covers) != 2 {
+		t.Fatalf("len(Covers) = %d, want 2", len(got.Covers))
+	}
+}
+
+func TestSetAlbumBannerCoverEndpointNotFound(t *testing.T) {
+	store, svc := testStoreAndService(t)
+	importID := mustCreateImportForTest(t, store)
+	mustInsertTrack(t, store, importID, "Artist", "Gallery Album", "Song", 1, 2020)
+	albums, _ := svc.ListAlbums(context.Background(), library.ListOptions{})
+	id := albums.Items[0].ID
+
+	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/999999/banner", nil)
+	rec := httptest.NewRecorder()
+	New("", "", "", "", svc).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
 	}
 }
 

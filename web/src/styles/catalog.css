@@ -163,25 +163,27 @@
 }
 
 /* Shared artwork-tile rules (ArtTile component): apply to every art slot —
-   album-card .art, artist-card/chip .avatar, detail-art, song-row .thumb.
-   Each is either a real <img> or a "placeholder" variant showing a
-   refined glyph on the app's existing ink-gradient tile. */
+   album-card .art, artist-card/chip .avatar, detail-avatar, detail-banner-img,
+   song-row .thumb. Each is either a real <img> or a "placeholder" variant
+   showing a refined glyph on the app's existing ink-gradient tile. */
 .art img,
 .avatar img,
-.detail-art img,
+.detail-avatar img,
+.detail-banner-img img,
 .thumb img {
   width: 100%;
   height: 100%;
   display: block;
   object-fit: cover;
 }
-/* .placeholder is applied to the same element as .art/.avatar/.detail-art/
-   .thumb (ArtTile renders one div, not a nested pair) — it must only add
-   the gradient fill and centering, never touch sizing, or it fights the
-   base class's width/height and the tile collapses/stretches. */
+/* .placeholder is applied to the same element as .art/.avatar/.detail-avatar/
+   .detail-banner-img/.thumb (ArtTile renders one div, not a nested pair) —
+   it must only add the gradient fill and centering, never touch sizing, or
+   it fights the base class's width/height and the tile collapses/stretches. */
 .art.placeholder,
 .avatar.placeholder,
-.detail-art.placeholder,
+.detail-avatar.placeholder,
+.detail-banner-img.placeholder,
 .thumb.placeholder {
   background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
   display: flex;
@@ -226,9 +228,17 @@
   color: var(--mist-400);
   opacity: 0.75;
 }
-.detail-art.placeholder svg {
+.detail-avatar.placeholder svg {
   width: 36%;
   height: 36%;
+  color: var(--mist-400);
+  opacity: 0.75;
+}
+/* fixed rem size rather than a % of the box — .detail-banner-img is wide
+   and short, so sizing off either dimension alone would look disproportionate */
+.detail-banner-img.placeholder svg {
+  width: 2.75rem;
+  height: 2.75rem;
   color: var(--mist-400);
   opacity: 0.75;
 }
@@ -372,23 +382,51 @@
   padding: 0 0.15rem;
 }
 
-.detail-head {
+/* Detail page header (TDR 016): a wide banner image with a circular
+   avatar overlapping its bottom edge — banner and avatar are two
+   independently-chosen gallery images (see ArtworkGallery's "Set as
+   primary"/"Set as banner"), never derived from one another. Same
+   structure for both artist and album pages (AC-9). */
+.detail-banner-wrap {
+  position: relative;
+  margin: 0.9rem 0 3.6rem;
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.detail-banner-img {
+  display: block;
+  width: 100%;
+  height: 11rem;
+}
+/* scrim so header-body's white text stays legible over any banner image */
+.detail-banner-wrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(16, 20, 26, 0.05) 40%, rgba(12, 15, 20, 0.68) 100%);
+  pointer-events: none;
+}
+.detail-header-body {
+  position: relative;
   display: flex;
-  gap: 1.5rem;
   align-items: flex-end;
+  gap: 1.3rem;
+  padding: 0 1.6rem;
+  margin-top: -3.2rem;
   flex-wrap: wrap;
 }
-.detail-art {
-  width: 11rem;
-  height: 11rem;
+.detail-avatar {
+  width: 7.4rem;
+  height: 7.4rem;
   flex-shrink: 0;
-  border-radius: 12px;
+  border-radius: 50%;
+  border: 4px solid var(--ink-900);
   box-shadow: var(--shadow);
-  border: 1px solid var(--border);
   overflow: hidden;
 }
-.detail-art.round {
-  border-radius: 50%;
+.detail-meta {
+  padding-bottom: 0.4rem;
 }
 .detail-meta .kind {
   font-size: 0.72rem;
