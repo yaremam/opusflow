@@ -64,10 +64,12 @@ export default function ArtistDetailPage() {
 
   if (!artist) return null
 
+  const artistDisplayName = artist.name || 'Unknown Artist'
+
   return (
     <div className="page-shell">
       <p className="crumb">
-        <Link to="/artists">Artists</Link> / {artist.name || 'Unknown Artist'}
+        <Link to="/artists">Artists</Link> / {artistDisplayName}
       </p>
       <div className="detail-head">
         <ArtTile
@@ -79,7 +81,7 @@ export default function ArtistDetailPage() {
         />
         <div className="detail-meta">
           <div className="kind">Artist</div>
-          <h1>{artist.name || 'Unknown Artist'}</h1>
+          <h1>{artistDisplayName}</h1>
           <div className="facts">
             {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
             {artist.trackCount === 1 ? '' : 's'}
@@ -106,7 +108,7 @@ export default function ArtistDetailPage() {
 
       {removing && (
         <RemoveModal
-          name={artist.name || 'Unknown Artist'}
+          name={artistDisplayName}
           submitting={removeSubmitting}
           submitError={removeError}
           onDeleteFiles={() => confirmRemove(true)}
@@ -118,11 +120,11 @@ export default function ArtistDetailPage() {
       {merging && (
         <MergeModal
           label="artist"
-          sourceName={artist.name || 'Unknown Artist'}
+          sourceName={artistDisplayName}
           sourceSub={`${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} · ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'}`}
           effects={[
-            `Move ${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} and ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'} from "${artist.name || 'Unknown Artist'}" onto the artist you pick — combining any same-titled album instead of duplicating it.`,
-            `Move "${artist.name || 'Unknown Artist'}"'s photos into the kept artist's gallery.`,
+            `Move ${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} and ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'} from "${artistDisplayName}" onto the artist you pick — combining any same-titled album instead of duplicating it.`,
+            `Move "${artistDisplayName}"'s photos into the kept artist's gallery.`,
             `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
           ]}
           search={async (q) => {
@@ -135,7 +137,7 @@ export default function ArtistDetailPage() {
                 sub: `${a.albumCount} album${a.albumCount === 1 ? '' : 's'} · ${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
               }))
           }}
-          merge={(intoId) => mergeArtist(artistId, intoId).then(() => undefined)}
+          merge={(intoId) => mergeArtist(artistId, intoId)}
           onClose={() => setMerging(false)}
           onMerged={(intoId) => {
             setMerging(false)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { errorMessage } from '../api/library'
 import './MergeModal.css'
 
@@ -18,7 +18,7 @@ interface MergeModalProps {
   // by this component itself.
   effects: string[]
   search: (query: string) => Promise<MergeCandidate[]>
-  merge: (intoId: number) => Promise<void>
+  merge: (intoId: number) => Promise<unknown>
   onClose: () => void
   onMerged: (intoId: number) => void
 }
@@ -44,6 +44,7 @@ function initials(name: string): string {
 // same kind of decision.
 export default function MergeModal({ label, sourceName, sourceSub, effects, search, merge, onClose, onMerged }: MergeModalProps) {
   const [query, setQuery] = useState('')
+  const [debouncedQuery, setDebouncedQuery] = useState('')
   const [results, setResults] = useState<MergeCandidate[]>([])
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState<string | null>(null)
@@ -51,11 +52,28 @@ export default function MergeModal({ label, sourceName, sourceSub, effects, sear
   const [submitting, setSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<string | null>(null)
 
+  // search is read from a ref, not the effect's dependency array — the
+  // caller passes a fresh closure every render (it captures the entity
+  // id), so depending on it directly would re-run the search on any
+  // unrelated parent re-render, not just when the user actually types.
+  const searchRef = useRef(search)
+  useEffect(() => {
+    searchRef.current = search
+  }, [search])
+
+  // Debounce the query itself so a paused-on keystroke fires one request
+  // instead of one per character typed.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(query), 250)
+    return () => clearTimeout(t)
+  }, [query])
+
   useEffect(() => {
     let cancelled = false
     setSearching(true)
     setSearchError(null)
-    search(query)
+    searchRef
+      .current(debouncedQuery)
       .then((r) => {
         if (!cancelled) setResults(r)
       })
@@ -68,7 +86,7 @@ export default function MergeModal({ label, sourceName, sourceSub, effects, sear
     return () => {
       cancelled = true
     }
-  }, [query, search])
+  }, [debouncedQuery])
 
   async function handleConfirm() {
     if (!target) return

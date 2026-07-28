@@ -87,12 +87,13 @@ export default function AlbumDetailPage() {
 
   if (!album) return null
 
+  const albumDisplayName = album.title || 'Unknown Album'
   const totalSeconds = album.tracks.reduce((sum, t) => sum + t.durationSeconds, 0)
 
   return (
     <div className="page-shell">
       <p className="crumb">
-        <Link to="/albums">Albums</Link> / {album.title || 'Unknown Album'}
+        <Link to="/albums">Albums</Link> / {albumDisplayName}
       </p>
       <div className="detail-head">
         <ArtTile
@@ -104,7 +105,7 @@ export default function AlbumDetailPage() {
         />
         <div className="detail-meta">
           <div className="kind">Album</div>
-          <h1>{album.title || 'Unknown Album'}</h1>
+          <h1>{albumDisplayName}</h1>
           <div className="by">
             by <Link to={`/artists/${album.artistId}`}>{album.artistName || 'Unknown Artist'}</Link>
           </div>
@@ -134,7 +135,7 @@ export default function AlbumDetailPage() {
 
       {removing && (
         <RemoveModal
-          name={album.title || 'Unknown Album'}
+          name={albumDisplayName}
           submitting={removeSubmitting}
           submitError={removeError}
           onDeleteFiles={() => confirmRemove(true)}
@@ -146,11 +147,11 @@ export default function AlbumDetailPage() {
       {merging && (
         <MergeModal
           label="album"
-          sourceName={album.title || 'Unknown Album'}
+          sourceName={albumDisplayName}
           sourceSub={`${album.trackCount} song${album.trackCount === 1 ? '' : 's'}`}
           effects={[
-            `Move ${album.trackCount} song${album.trackCount === 1 ? '' : 's'} from "${album.title || 'Unknown Album'}" onto the album you pick.`,
-            `Move "${album.title || 'Unknown Album'}"'s cover images into the kept album's gallery.`,
+            `Move ${album.trackCount} song${album.trackCount === 1 ? '' : 's'} from "${albumDisplayName}" onto the album you pick.`,
+            `Move "${albumDisplayName}"'s cover images into the kept album's gallery.`,
             `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
           ]}
           search={async (q) => {
@@ -163,7 +164,7 @@ export default function AlbumDetailPage() {
                 sub: `${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
               }))
           }}
-          merge={(intoId) => mergeAlbum(albumId, intoId).then(() => undefined)}
+          merge={(intoId) => mergeAlbum(albumId, intoId)}
           onClose={() => setMerging(false)}
           onMerged={(intoId) => {
             setMerging(false)
