@@ -110,3 +110,18 @@ func (st *ImageStore) Delete(thumbURL, fullURL string) error {
 	}
 	return nil
 }
+
+// DeleteAll removes every image Save has ever written for the given
+// kind/id — the whole <dir>/<kind>/<id>/ directory, covering every hash
+// subdirectory at once. Used when the artist/album itself is deleted
+// (AC-13): the DB rows for its gallery entries are already gone via
+// ON DELETE CASCADE, so walking Delete per-entry is unnecessary — id is
+// never shared between two different artists/albums (see Save), so
+// wiping the whole directory can't affect another entity's artwork.
+func (st *ImageStore) DeleteAll(kind string, id int64) error {
+	dir := filepath.Join(st.dir, kind, strconv.FormatInt(id, 10))
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("removing %s: %w", dir, err)
+	}
+	return nil
+}

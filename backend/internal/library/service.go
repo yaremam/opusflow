@@ -367,15 +367,36 @@ func (s *Service) ListImports(ctx context.Context) ([]Import, error) {
 }
 
 // DeleteArtist removes an artist and everything attributed to them,
-// optionally deleting their files from disk too (AC-13).
+// optionally deleting their files from disk too (AC-13). Gallery rows
+// (artist_photos) cascade with the artist row, but the image files
+// themselves live outside the DB, so they're cleaned up here too — same
+// deleteFiles gate as track files, since orphaned artwork is exactly the
+// on-disk-leftover case AC-13 exists to avoid.
 func (s *Service) DeleteArtist(ctx context.Context, id int64, deleteFiles bool) error {
-	return s.store.DeleteArtist(ctx, id, deleteFiles)
+	if err := s.store.DeleteArtist(ctx, id, deleteFiles); err != nil {
+		return err
+	}
+	if deleteFiles && s.images != nil {
+		if err := s.images.DeleteAll("artist", id); err != nil {
+			log.Printf("library: artist %d: deleting artwork files: %v", id, err)
+		}
+	}
+	return nil
 }
 
 // DeleteAlbum removes an album and its tracks, optionally deleting their
-// files from disk too (AC-13).
+// files from disk too (AC-13). See DeleteArtist for why album_covers'
+// image files need their own cleanup alongside the cascaded DB rows.
 func (s *Service) DeleteAlbum(ctx context.Context, id int64, deleteFiles bool) error {
-	return s.store.DeleteAlbum(ctx, id, deleteFiles)
+	if err := s.store.DeleteAlbum(ctx, id, deleteFiles); err != nil {
+		return err
+	}
+	if deleteFiles && s.images != nil {
+		if err := s.images.DeleteAll("album", id); err != nil {
+			log.Printf("library: album %d: deleting artwork files: %v", id, err)
+		}
+	}
+	return nil
 }
 
 // RetryArtistArt resets an artist's art status to pending and wakes the

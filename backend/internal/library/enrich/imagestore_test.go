@@ -153,3 +153,50 @@ func TestImageStoreDeleteIgnoresBlankURLs(t *testing.T) {
 		t.Fatalf("Delete(\"\", \"\") = %v, want nil", err)
 	}
 }
+
+func TestImageStoreDeleteAllRemovesEveryHashDir(t *testing.T) {
+	dir := t.TempDir()
+	st := NewImageStore(dir)
+
+	if _, _, _, err := st.Save("artist", 3, testPNG(t, 200, 200)); err != nil {
+		t.Fatalf("Save #1: %v", err)
+	}
+	if _, _, _, err := st.Save("artist", 3, testPNG(t, 200, 201)); err != nil {
+		t.Fatalf("Save #2: %v", err)
+	}
+	entityDir := dir + "/artist/3"
+
+	if err := st.DeleteAll("artist", 3); err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if _, err := os.Stat(entityDir); !os.IsNotExist(err) {
+		t.Fatalf("entity dir %q still exists after DeleteAll", entityDir)
+	}
+}
+
+func TestImageStoreDeleteAllDoesNotAffectOtherEntities(t *testing.T) {
+	dir := t.TempDir()
+	st := NewImageStore(dir)
+
+	if _, _, _, err := st.Save("artist", 3, testPNG(t, 200, 200)); err != nil {
+		t.Fatalf("Save artist 3: %v", err)
+	}
+	if _, _, _, err := st.Save("artist", 4, testPNG(t, 200, 200)); err != nil {
+		t.Fatalf("Save artist 4: %v", err)
+	}
+	otherDir := dir + "/artist/4"
+
+	if err := st.DeleteAll("artist", 3); err != nil {
+		t.Fatalf("DeleteAll: %v", err)
+	}
+	if _, err := os.Stat(otherDir); err != nil {
+		t.Fatalf("expected artist 4's artwork to survive, stat error: %v", err)
+	}
+}
+
+func TestImageStoreDeleteAllOnMissingDirIsNotAnError(t *testing.T) {
+	st := NewImageStore(t.TempDir())
+	if err := st.DeleteAll("artist", 999); err != nil {
+		t.Fatalf("DeleteAll on nonexistent dir = %v, want nil", err)
+	}
+}
