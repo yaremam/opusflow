@@ -1,6 +1,15 @@
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrLastToken is returned by DeleteToken when id is the only token left —
+// deleting it would lock every device, including whoever's making this
+// request, out of the entire app with no way back in short of a database
+// edit (issue #59).
+var ErrLastToken = errors.New("cannot delete the last remaining pairing token")
 
 // Service is the seam httpserver's token endpoints and cmd/server's
 // bootstrap step both sit behind — the one place that generates a
@@ -54,5 +63,12 @@ func (s *Service) ListTokens(ctx context.Context) ([]Token, error) {
 }
 
 func (s *Service) DeleteToken(ctx context.Context, id int64) error {
+	count, err := s.store.Count(ctx)
+	if err != nil {
+		return err
+	}
+	if count <= 1 {
+		return ErrLastToken
+	}
 	return s.store.Delete(ctx, id)
 }

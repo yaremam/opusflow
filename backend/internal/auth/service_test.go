@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"errors"
+	"testing"
+)
 
 func TestCreateTokenReturnsPlaintextOnceAndStoresOnlyItsHash(t *testing.T) {
 	store := testStore(t)
@@ -34,13 +37,21 @@ func TestListAndDeleteToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateToken: %v", err)
 	}
+	// A second token so deleting the first isn't deleting the last one
+	// remaining — that's TestDeleteTokenRefusesToDeleteTheLastRemainingOne's
+	// job (issue #59: deleting every token, including the default one,
+	// locked the whole app out).
+	_, _, err = svc.CreateToken(ctx(), "Tablet")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
 
 	list, err := svc.ListTokens(ctx())
 	if err != nil {
 		t.Fatalf("ListTokens: %v", err)
 	}
-	if len(list) != 1 || list[0].ID != tok.ID {
-		t.Fatalf("ListTokens = %+v, want one row matching %+v", list, tok)
+	if len(list) != 2 {
+		t.Fatalf("ListTokens = %+v, want two rows", list)
 	}
 
 	if err := svc.DeleteToken(ctx(), tok.ID); err != nil {
@@ -51,7 +62,30 @@ func TestListAndDeleteToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTokens: %v", err)
 	}
-	if len(list) != 0 {
-		t.Fatalf("ListTokens after delete = %+v, want empty", list)
+	if len(list) != 1 || list[0].ID == tok.ID {
+		t.Fatalf("ListTokens after delete = %+v, want only the surviving token", list)
+	}
+}
+
+func TestDeleteTokenRefusesToDeleteTheLastRemainingOne(t *testing.T) {
+	store := testStore(t)
+	svc := NewService(store)
+
+	_, tok, err := svc.CreateToken(ctx(), "Only Device")
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	err = svc.DeleteToken(ctx(), tok.ID)
+	if !errors.Is(err, ErrLastToken) {
+		t.Fatalf("DeleteToken on the only remaining token: err = %v, want ErrLastToken", err)
+	}
+
+	list, err := svc.ListTokens(ctx())
+	if err != nil {
+		t.Fatalf("ListTokens: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("ListTokens after refused delete = %+v, want the token still present", list)
 	}
 }

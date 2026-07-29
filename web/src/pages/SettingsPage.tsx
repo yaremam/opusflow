@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const [createError, setCreateError] = useState<string | null>(null)
   const [justCreated, setJustCreated] = useState<CreatedApiToken | null>(null)
   const [copied, setCopied] = useState(false)
+  const [revokeError, setRevokeError] = useState<string | null>(null)
 
   useEffect(() => {
     refresh()
@@ -50,9 +51,14 @@ export default function SettingsPage() {
   }
 
   async function handleRevoke(id: number) {
-    await deleteToken(id)
-    setTokens((prev) => prev.filter((t) => t.id !== id))
-    if (justCreated?.id === id) setJustCreated(null)
+    setRevokeError(null)
+    try {
+      await deleteToken(id)
+      setTokens((prev) => prev.filter((t) => t.id !== id))
+      if (justCreated?.id === id) setJustCreated(null)
+    } catch (err) {
+      setRevokeError(errorMessage(err))
+    }
   }
 
   const qrPayload = justCreated ? JSON.stringify({ serverUrl: window.location.origin, token: justCreated.token }) : ''
@@ -102,6 +108,7 @@ export default function SettingsPage() {
         <h3 className="settings-subhead">Paired Devices ({tokens.length})</h3>
 
         {loadError && <p className="settings-error">{loadError}</p>}
+        {revokeError && <p className="settings-error">{revokeError}</p>}
 
         <div className="token-list">
           {tokens.map((item) => (
@@ -113,7 +120,13 @@ export default function SettingsPage() {
                   {item.lastUsedAt ? ` • last used ${new Date(item.lastUsedAt).toLocaleDateString()}` : ' • never used'}
                 </div>
               </div>
-              <button type="button" className="btn-bad" onClick={() => handleRevoke(item.id)}>
+              <button
+                type="button"
+                className="btn-bad"
+                onClick={() => handleRevoke(item.id)}
+                disabled={tokens.length <= 1}
+                title={tokens.length <= 1 ? "Can't revoke your only pairing token — generate another first." : undefined}
+              >
                 Revoke token
               </button>
             </div>
