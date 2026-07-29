@@ -223,6 +223,34 @@ func scanAlbumEnrich(al *Album) []any {
 	return []any{&al.CoverThumbURL, &al.CoverURL, &al.ArtStatus, &al.Label, &al.Country, pq.Array(&al.Genres), &al.Description, &al.DescriptionSourceURL}
 }
 
+// artistCoreCols/albumCoreCols are the identity-plus-count columns every
+// query returning a full Artist/Album selects before that query's own
+// enrichment columns and whatever else it appends (a window count, a
+// banner URL) — factored out so ListArtists/GetArtist (and ListAlbums/
+// GetArtist's own album listing/GetAlbum) share one column list instead of
+// three/four independently retyped copies drifting out of sync with each
+// other. scanArtistCore/scanAlbumCore are their paired Scan destinations,
+// in the same order — see scanArtistEnrich/scanAlbumEnrich above for the
+// enrichment half of the same pattern.
+const artistCoreCols = `a.id, a.name, a.created_at,
+	       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
+	       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id)`
+
+const albumCoreCols = `al.id, al.title, al.artist_id, ar.name, al.year, al.created_at,
+	       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id)`
+
+// albumFromJoin is the FROM/JOIN every query returning a full Album row
+// starts from — al aliases albums, ar its artist, matching albumCoreCols/
+// albumEnrichCols/albumPrimaryCoverJoin/albumCoverBannerJoin's own aliases.
+const albumFromJoin = `FROM albums al JOIN artists ar ON ar.id = al.artist_id`
+
+func scanArtistCore(a *Artist) []any {
+	return []any{&a.ID, &a.Name, &a.CreatedAt, &a.AlbumCount, &a.TrackCount}
+}
+func scanAlbumCore(al *Album) []any {
+	return []any{&al.ID, &al.Title, &al.ArtistID, &al.ArtistName, &al.Year, &al.CreatedAt, &al.TrackCount}
+}
+
 // recentOrName picks the literal ORDER BY fragment for opts.Sort. Sort is
 // always one of a small fixed set validated by Service before it reaches
 // here, so building the clause this way (rather than parameterizing it) is
@@ -279,9 +307,7 @@ type queryer interface {
 func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist], error) {
 	order := recentOrName(opts, "a.created_at", "a.name")
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.name, a.created_at,
-		       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
-		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
+		SELECT `+artistCoreCols+`,
 		       `+artistEnrichCols+`,
 		       COUNT(*) OVER()
 		FROM artists a`+artistPrimaryPhotoJoin+`
@@ -299,7 +325,7 @@ func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist]
 	page := Page[Artist]{Page: opts.Page, PageSize: opts.PageSize, Items: []Artist{}}
 	for rows.Next() {
 		var a Artist
-		dest := append([]any{&a.ID, &a.Name, &a.CreatedAt, &a.AlbumCount, &a.TrackCount}, scanArtistEnrich(&a)...)
+		dest := append(scanArtistCore(&a), scanArtistEnrich(&a)...)
 		dest = append(dest, &page.TotalCount)
 		if err := rows.Scan(dest...); err != nil {
 			return Page[Artist]{}, fmt.Errorf("scanning artist: %w", err)
@@ -316,12 +342,10 @@ func (s *Store) ListArtists(ctx context.Context, opts ListOptions) (Page[Artist]
 // them, newest first.
 func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	var d ArtistDetail
-	dest := append([]any{&d.ID, &d.Name, &d.CreatedAt, &d.AlbumCount, &d.TrackCount}, scanArtistEnrich(&d.Artist)...)
+	dest := append(scanArtistCore(&d.Artist), scanArtistEnrich(&d.Artist)...)
 	dest = append(dest, &d.BannerURL)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT a.id, a.name, a.created_at,
-		       (SELECT COUNT(*) FROM albums al WHERE al.artist_id = a.id),
-		       (SELECT COUNT(*) FROM tracks t WHERE t.artist_id = a.id),
+		SELECT `+artistCoreCols+`,
 		       `+artistEnrichCols+`,
 		       COALESCE(abn.full_path, '')
 		FROM artists a`+artistPrimaryPhotoJoin+artistBannerJoin+`
@@ -335,11 +359,9 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT al.id, al.title, al.artist_id, a.name, al.year, al.created_at,
-		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
+		SELECT `+albumCoreCols+`,
 		       `+albumEnrichCols+`
-		FROM albums al
-		JOIN artists a ON a.id = al.artist_id`+albumPrimaryCoverJoin+`
+		`+albumFromJoin+albumPrimaryCoverJoin+`
 		WHERE al.artist_id = $1
 		ORDER BY al.year DESC, al.title ASC
 	`, id)
@@ -351,7 +373,7 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 	d.Albums = []Album{}
 	for rows.Next() {
 		var al Album
-		dest := append([]any{&al.ID, &al.Title, &al.ArtistID, &al.ArtistName, &al.Year, &al.CreatedAt, &al.TrackCount}, scanAlbumEnrich(&al)...)
+		dest := append(scanAlbumCore(&al), scanAlbumEnrich(&al)...)
 		if err := rows.Scan(dest...); err != nil {
 			return ArtistDetail{}, fmt.Errorf("scanning album: %w", err)
 		}
@@ -376,12 +398,10 @@ func (s *Store) GetArtist(ctx context.Context, id int64) (ArtistDetail, error) {
 func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], error) {
 	order := recentOrName(opts, "al.created_at", "al.title")
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT al.id, al.title, al.artist_id, ar.name, al.year, al.created_at,
-		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
+		SELECT `+albumCoreCols+`,
 		       `+albumEnrichCols+`,
 		       COUNT(*) OVER()
-		FROM albums al
-		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+`
+		`+albumFromJoin+albumPrimaryCoverJoin+`
 		WHERE ($3 = '' OR EXISTS (SELECT 1 FROM tracks t WHERE t.album_id = al.id AND t.genre ILIKE '%' || $3 || '%'))
 		  AND ($4 = 0 OR al.year = $4)
 		  AND ($5 = '' OR al.title ILIKE '%' || $5 || '%' OR ar.name ILIKE '%' || $5 || '%')
@@ -396,7 +416,7 @@ func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], 
 	page := Page[Album]{Page: opts.Page, PageSize: opts.PageSize, Items: []Album{}}
 	for rows.Next() {
 		var al Album
-		dest := append([]any{&al.ID, &al.Title, &al.ArtistID, &al.ArtistName, &al.Year, &al.CreatedAt, &al.TrackCount}, scanAlbumEnrich(&al)...)
+		dest := append(scanAlbumCore(&al), scanAlbumEnrich(&al)...)
 		dest = append(dest, &page.TotalCount)
 		if err := rows.Scan(dest...); err != nil {
 			return Page[Album]{}, fmt.Errorf("scanning album: %w", err)
@@ -413,15 +433,13 @@ func (s *Store) ListAlbums(ctx context.Context, opts ListOptions) (Page[Album], 
 // ordered by track number.
 func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	var d AlbumDetail
-	dest := append([]any{&d.ID, &d.Title, &d.ArtistID, &d.ArtistName, &d.Year, &d.CreatedAt, &d.TrackCount}, scanAlbumEnrich(&d.Album)...)
+	dest := append(scanAlbumCore(&d.Album), scanAlbumEnrich(&d.Album)...)
 	dest = append(dest, &d.BannerURL)
 	err := s.db.QueryRowContext(ctx, `
-		SELECT al.id, al.title, al.artist_id, ar.name, al.year, al.created_at,
-		       (SELECT COUNT(*) FROM tracks t WHERE t.album_id = al.id),
+		SELECT `+albumCoreCols+`,
 		       `+albumEnrichCols+`,
 		       COALESCE(acbn.full_path, '')
-		FROM albums al
-		JOIN artists ar ON ar.id = al.artist_id`+albumPrimaryCoverJoin+albumCoverBannerJoin+`
+		`+albumFromJoin+albumPrimaryCoverJoin+albumCoverBannerJoin+`
 		WHERE al.id = $1
 	`, id).Scan(dest...)
 	if errors.Is(err, sql.ErrNoRows) {

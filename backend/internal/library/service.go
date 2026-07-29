@@ -525,22 +525,36 @@ func (s *Service) SetArtistBannerPhoto(ctx context.Context, artistID, photoID in
 	return s.store.SetArtistBannerPhoto(ctx, artistID, photoID)
 }
 
-// DeleteArtistPhoto removes a photo from an artist's gallery (AC-4),
-// optionally also deleting its files from disk — the same explicit
-// keep-vs-delete-file choice DeleteArtist/DeleteAlbum already offer for
-// tracks. A missing/misconfigured ImageStore just skips the file removal;
-// the catalog reference is still gone either way.
-func (s *Service) DeleteArtistPhoto(ctx context.Context, artistID, photoID int64, deleteFile bool) error {
-	thumbURL, fullURL, err := s.store.DeleteArtistPhoto(ctx, artistID, photoID)
+// deleteGalleryImage is DeleteArtistPhoto/DeleteAlbumCover's shared
+// implementation — storeDelete removes the catalog row and returns its
+// file paths, then this decides whether to also delete those files (a
+// missing/misconfigured ImageStore just skips that part; the catalog
+// reference is gone either way). kind is only used for the log line.
+func (s *Service) deleteGalleryImage(
+	ctx context.Context,
+	kind string,
+	storeDelete func(ctx context.Context, entityID, imageID int64) (thumbURL, fullURL string, err error),
+	entityID, imageID int64,
+	deleteFile bool,
+) error {
+	thumbURL, fullURL, err := storeDelete(ctx, entityID, imageID)
 	if err != nil {
 		return err
 	}
 	if deleteFile && s.images != nil {
 		if err := s.images.Delete(thumbURL, fullURL); err != nil {
-			log.Printf("library: artist %d: deleting photo file: %v", artistID, err)
+			log.Printf("library: %s %d: deleting image file: %v", kind, entityID, err)
 		}
 	}
 	return nil
+}
+
+// DeleteArtistPhoto removes a photo from an artist's gallery (AC-4),
+// optionally also deleting its files from disk — the same explicit
+// keep-vs-delete-file choice DeleteArtist/DeleteAlbum already offer for
+// tracks.
+func (s *Service) DeleteArtistPhoto(ctx context.Context, artistID, photoID int64, deleteFile bool) error {
+	return s.deleteGalleryImage(ctx, "artist", s.store.DeleteArtistPhoto, artistID, photoID, deleteFile)
 }
 
 // ListAlbumCovers returns every cover in an album's gallery (AC-1).
@@ -562,16 +576,7 @@ func (s *Service) SetAlbumBannerCover(ctx context.Context, albumID, coverID int6
 
 // DeleteAlbumCover is DeleteArtistPhoto's album counterpart.
 func (s *Service) DeleteAlbumCover(ctx context.Context, albumID, coverID int64, deleteFile bool) error {
-	thumbURL, fullURL, err := s.store.DeleteAlbumCover(ctx, albumID, coverID)
-	if err != nil {
-		return err
-	}
-	if deleteFile && s.images != nil {
-		if err := s.images.Delete(thumbURL, fullURL); err != nil {
-			log.Printf("library: album %d: deleting cover file: %v", albumID, err)
-		}
-	}
-	return nil
+	return s.deleteGalleryImage(ctx, "album", s.store.DeleteAlbumCover, albumID, coverID, deleteFile)
 }
 
 // ErrMetadataSearchNotConfigured is returned by SearchArtists and its
