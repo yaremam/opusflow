@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import {
   deleteArtist,
@@ -11,12 +11,10 @@ import {
   setArtistPrimaryPhoto,
   uploadArtistArt,
 } from '../api/library'
-import ArtActions from '../components/ArtActions'
 import ArtTile from '../components/ArtTile'
 import ArtworkGallery from '../components/ArtworkGallery'
+import EntityDetailHeader from '../components/EntityDetailHeader'
 import InfoBlock from '../components/InfoBlock'
-import MergeModal from '../components/MergeModal'
-import RemoveModal from '../components/RemoveModal'
 import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
 import '../styles/catalog.css'
 
@@ -24,7 +22,6 @@ export default function ArtistDetailPage() {
   const { id } = useParams<{ id: string }>()
   const artistId = Number(id)
   const navigate = useNavigate()
-  const [merging, setMerging] = useState(false)
   const config = useMemo<EntityGalleryConfig<Awaited<ReturnType<typeof getArtist>>, Awaited<ReturnType<typeof retryArtistArt>>>>(
     () => ({
       fetchDetail: getArtist,
@@ -74,35 +71,50 @@ export default function ArtistDetailPage() {
       <p className="crumb">
         <Link to="/artists">Artists</Link> / {artistDisplayName}
       </p>
-      <div className="detail-banner-wrap">
-        <ArtTile src={artist.bannerUrl} alt="" className="detail-banner-img" kind="artist" artStatus={artist.artStatus} />
-        <div className="detail-header-body">
-          <ArtTile
-            src={artist.photoUrl || artist.photoThumbUrl}
-            alt=""
-            className="detail-avatar"
-            kind="artist"
-            artStatus={artist.artStatus}
-          />
-          <div className="detail-meta">
-            <div className="kind">Artist</div>
-            <h1>{artistDisplayName}</h1>
-            <div className="facts">
-              {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
-              {artist.trackCount === 1 ? '' : 's'}
-            </div>
-            <ArtActions thumbUrl={artist.photoThumbUrl} artStatus={artist.artStatus} onRetry={handleRetryArt} />
-            <div className="detail-secondary-actions">
-              <button type="button" className="btn-ghost" onClick={() => setMerging(true)}>
-                ⇄ Merge into…
-              </button>
-              <button type="button" className="btn-ghost detail-remove" onClick={startRemove}>
-                Remove artist…
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+
+      <EntityDetailHeader
+        kind="artist"
+        displayName={artistDisplayName}
+        bannerSrc={artist.bannerUrl}
+        avatarSrc={artist.photoUrl || artist.photoThumbUrl}
+        facts={
+          <>
+            {artist.albumCount} album{artist.albumCount === 1 ? '' : 's'} · {artist.trackCount} song
+            {artist.trackCount === 1 ? '' : 's'}
+          </>
+        }
+        thumbUrl={artist.photoThumbUrl}
+        artStatus={artist.artStatus}
+        onRetryArt={handleRetryArt}
+        remove={{
+          removing,
+          submitting: removeSubmitting,
+          error: removeError,
+          start: startRemove,
+          cancel: cancelRemove,
+          confirm: confirmRemove,
+        }}
+        merge={{
+          sourceSub: `${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} · ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'}`,
+          effects: [
+            `Move ${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} and ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'} from "${artistDisplayName}" onto the artist you pick — combining any same-titled album instead of duplicating it.`,
+            `Move "${artistDisplayName}"'s photos into the kept artist's gallery.`,
+            `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
+          ],
+          search: async (q) => {
+            const page = await listArtists({ q, pageSize: 20 })
+            return page.items
+              .filter((a) => a.id !== artistId)
+              .map((a) => ({
+                id: a.id,
+                name: a.name || 'Unknown Artist',
+                sub: `${a.albumCount} album${a.albumCount === 1 ? '' : 's'} · ${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
+              }))
+          },
+          merge: (intoId) => mergeArtist(artistId, intoId),
+          onMerged: (intoId) => navigate(`/artists/${intoId}`),
+        }}
+      />
 
       <ArtworkGallery
         images={artist.photos}
@@ -112,46 +124,6 @@ export default function ArtistDetailPage() {
         onSetBanner={handleSetBannerPhoto}
         onDelete={handleDeletePhoto}
       />
-
-      {removing && (
-        <RemoveModal
-          name={artistDisplayName}
-          submitting={removeSubmitting}
-          submitError={removeError}
-          onDeleteFiles={() => confirmRemove(true)}
-          onKeepFiles={() => confirmRemove(false)}
-          onCancel={cancelRemove}
-        />
-      )}
-
-      {merging && (
-        <MergeModal
-          label="artist"
-          sourceName={artistDisplayName}
-          sourceSub={`${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} · ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'}`}
-          effects={[
-            `Move ${artist.albumCount} album${artist.albumCount === 1 ? '' : 's'} and ${artist.trackCount} song${artist.trackCount === 1 ? '' : 's'} from "${artistDisplayName}" onto the artist you pick — combining any same-titled album instead of duplicating it.`,
-            `Move "${artistDisplayName}"'s photos into the kept artist's gallery.`,
-            `Leave every audio file exactly where it is on disk — only the catalog entries change.`,
-          ]}
-          search={async (q) => {
-            const page = await listArtists({ q, pageSize: 20 })
-            return page.items
-              .filter((a) => a.id !== artistId)
-              .map((a) => ({
-                id: a.id,
-                name: a.name || 'Unknown Artist',
-                sub: `${a.albumCount} album${a.albumCount === 1 ? '' : 's'} · ${a.trackCount} song${a.trackCount === 1 ? '' : 's'}`,
-              }))
-          }}
-          merge={(intoId) => mergeArtist(artistId, intoId)}
-          onClose={() => setMerging(false)}
-          onMerged={(intoId) => {
-            setMerging(false)
-            navigate(`/artists/${intoId}`)
-          }}
-        />
-      )}
 
       <InfoBlock
         facts={[
