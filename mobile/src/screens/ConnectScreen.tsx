@@ -41,13 +41,6 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
     })();
   }, []);
 
-  useEffect(() => {
-    if (mode === 'scan' && !permission?.granted) {
-      requestPermission();
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
-
   async function attemptConnect(url: string, token: string) {
     setLoading(true);
     setStatusMessage(null);
@@ -126,8 +119,13 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
               <Text style={styles.scanPermissionText}>
                 {permission?.canAskAgain === false
                   ? 'Camera access was denied — enable it in system settings, or enter manually below.'
-                  : 'Waiting for camera permission…'}
+                  : 'OpusFlow needs camera access to scan the pairing QR code.'}
               </Text>
+              {permission?.canAskAgain !== false && (
+                <TouchableOpacity style={styles.enableCameraButton} onPress={requestPermission}>
+                  <Text style={styles.enableCameraButtonText}>Enable Camera</Text>
+                </TouchableOpacity>
+              )}
             </View>
           )}
 
@@ -254,6 +252,18 @@ const styles = StyleSheet.create({
     color: '#9ca3af',
     fontSize: 12,
     textAlign: 'center',
+  },
+  enableCameraButton: {
+    backgroundColor: ACCENT,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    marginTop: 4,
+  },
+  enableCameraButtonText: {
+    color: '#0a1512',
+    fontSize: 13,
+    fontWeight: '700',
   },
   scanOverlay: {
     position: 'absolute',
