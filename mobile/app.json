@@ -22,6 +22,14 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "OpusFlow uses the camera to scan a pairing QR code from Web Settings."
+        }
+      ]
+    ]
   }
 }

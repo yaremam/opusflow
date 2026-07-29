@@ -1,3 +1,5 @@
+import { getToken, notifyUnauthorized } from '../auth'
+
 export type ImportStatus = 'copying' | 'complete' | 'failed'
 
 export interface FileError {
@@ -234,7 +236,15 @@ export function errorMessage(err: unknown): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, init)
+  const headers = new Headers(init?.headers)
+  const token = getToken()
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+
+  const res = await fetch(path, { ...init, headers })
+  if (res.status === 401) {
+    notifyUnauthorized()
+    throw new Error('Session expired — please unlock again.')
+  }
   if (!res.ok) {
     const text = (await res.text()).trim()
     throw new Error(text || `Request failed with status ${res.status}`)
@@ -251,6 +261,34 @@ function postJSON<T>(path: string, body: unknown): Promise<T> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
+}
+
+// ApiToken is one row of the "Paired Devices" list (TDR 022 AC-5) —
+// never the token itself, which is only ever known once, at creation.
+export interface ApiToken {
+  id: number
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
+// CreatedApiToken is what POST /api/tokens returns — the one and only
+// response carrying the plaintext token, shown as text and a QR code
+// (serverUrl + token) for scanning from the mobile app.
+export interface CreatedApiToken extends ApiToken {
+  token: string
+}
+
+export function listTokens(): Promise<ApiToken[]> {
+  return request('/api/tokens')
+}
+
+export function createToken(name: string): Promise<CreatedApiToken> {
+  return postJSON('/api/tokens', { name })
+}
+
+export function deleteToken(id: number): Promise<void> {
+  return request(`/api/tokens/${id}`, { method: 'DELETE' })
 }
 
 export function listLibraries(): Promise<Library[]> {

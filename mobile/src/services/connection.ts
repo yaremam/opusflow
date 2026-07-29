@@ -42,33 +42,66 @@ export async function clearServerCredentials(): Promise<void> {
   await SecureStore.deleteItemAsync(PAIRING_TOKEN_KEY);
 }
 
+// ConnectionResult distinguishes why pairing failed (TDR 022 AC-7) — a
+// wrong token and an unreachable server need different messaging on the
+// Connect screen, not one generic failure.
+export type ConnectionResult = 'valid' | 'unauthorized' | 'unreachable';
+
 /**
- * Validate connection to server using pairing token.
+ * Validate a server URL and pairing token together in one request. GET
+ * /api/health requires auth (TDR 022) — unlike the bare /health, which
+ * always succeeds and proves nothing about the token — so succeeding
+ * against it is both a reachability check and a token check at once.
+ * Deliberately does not fall back to the bare /health on failure: that
+ * would make every wrong token look valid, since bare /health is never
+ * gated.
  */
 export async function validateServerConnection(
   serverUrl: string,
   pairingToken: string
-): Promise<boolean> {
+): Promise<ConnectionResult> {
+  const normalizedUrl = serverUrl.trim().replace(/\/+$/, '');
+
+  let response: Response;
   try {
-    const normalizedUrl = serverUrl.trim().replace(/\/+$/, '');
-    const headers = {
-      Authorization: `Bearer ${pairingToken.trim()}`,
-    };
-
-    let response = await fetch(`${normalizedUrl}/api/health`, {
+    response = await fetch(`${normalizedUrl}/api/health`, {
       method: 'GET',
-      headers,
-    }).catch(() => null);
-
-    if (!response || !response.ok) {
-      response = await fetch(`${normalizedUrl}/health`, {
-        method: 'GET',
-        headers,
-      }).catch(() => null);
-    }
-
-    return Boolean(response && response.ok);
-  } catch (error) {
-    return false;
+      headers: { Authorization: `Bearer ${pairingToken.trim()}` },
+    });
+  } catch {
+    return 'unreachable';
   }
+
+  if (response.status === 401) return 'unauthorized';
+  return response.ok ? 'valid' : 'unreachable';
+}
+
+// QrPairingPayload is what web/src/pages/SettingsPage.tsx encodes into
+// the pairing QR code (JSON.stringify({ serverUrl, token })) — kept as a
+// pure function so it's testable without a camera (TDR 022 AC-6).
+export interface QrPairingPayload {
+  serverUrl: string;
+  token: string;
+}
+
+export function parseQrPayload(data: string): QrPairingPayload | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(data);
+  } catch {
+    return null;
+  }
+  if (
+    typeof parsed === 'object' &&
+    parsed !== null &&
+    'serverUrl' in parsed &&
+    'token' in parsed &&
+    typeof (parsed as Record<string, unknown>).serverUrl === 'string' &&
+    typeof (parsed as Record<string, unknown>).token === 'string' &&
+    (parsed as Record<string, string>).serverUrl &&
+    (parsed as Record<string, string>).token
+  ) {
+    return { serverUrl: (parsed as QrPairingPayload).serverUrl, token: (parsed as QrPairingPayload).token };
+  }
+  return null;
 }

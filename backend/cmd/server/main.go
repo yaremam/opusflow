@@ -8,8 +8,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"time"
 
+	"github.com/yaremam/opusflow/backend/internal/auth"
 	"github.com/yaremam/opusflow/backend/internal/db"
 	"github.com/yaremam/opusflow/backend/internal/httpserver"
 	"github.com/yaremam/opusflow/backend/internal/library"
@@ -53,6 +55,7 @@ func main() {
 
 	store := library.NewStore(conn)
 	svc := library.NewService(store, organize.CopyJob{})
+	authStore := auth.NewStore(conn)
 
 	// DATA_DIR defaults to /data — every compose file (both root and
 	// deploy/) mounts the music volume there, so an operator should never
@@ -87,21 +90,30 @@ func main() {
 	// Migrations run in the background rather than blocking startup: /health
 	// (and the process as a whole) should come up regardless of how long
 	// Postgres takes to become reachable. Until migrations land, library
-	// endpoints will simply return errors on the queries that need them.
+	// endpoints will simply return errors on the queries that need them —
+	// the auth middleware does the same (503) if asked to check a token
+	// before api_tokens/auth_bootstrap exist yet.
 	// The enrichment job's first run (TDR 003's startup trigger, covering a
-	// library that predates this feature) is chained after migrations
-	// succeed, for the same reason a scan-triggered run would fail before
-	// then: the enrichment columns migration 0003 added don't exist yet.
+	// library that predates this feature) and auth's Bootstrap (TDR 022 —
+	// a no-op past the very first run, once any token exists) are both
+	// chained after migrations succeed, for the same reason: the tables
+	// either one needs don't exist until then.
 	go func() {
 		migrateWithRetry(conn)
 		if job != nil {
 			sum := job.Run(context.Background())
 			log.Printf("enrich: startup run: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
 		}
+		created, err := auth.Bootstrap(context.Background(), authStore, dataDir)
+		if err != nil {
+			log.Printf("auth: bootstrap: %v", err)
+		} else if created {
+			log.Printf("auth: no pairing token existed yet — generated one at %s", filepath.Join(dataDir, auth.BootstrapFileName))
+		}
 	}()
 
 	log.Printf("listening on :%s", port)
-	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, version, buildDate, svc)); err != nil {
+	if err := http.ListenAndServe(":"+port, httpserver.New(staticDir, artworkDir, version, buildDate, svc, authStore)); err != nil {
 		log.Fatal(err)
 	}
 }

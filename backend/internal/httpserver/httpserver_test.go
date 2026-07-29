@@ -84,7 +84,7 @@ func TestHealth(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, path, nil)
 			rec := httptest.NewRecorder()
 
-			New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+			New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 			if rec.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -103,7 +103,7 @@ func TestAboutReportsVersionAndBuildDate(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/about", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "v0.1.0-4-gabc1234", "2026-07-27T14:32:00Z", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "v0.1.0-4-gabc1234", "2026-07-27T14:32:00Z", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -129,7 +129,7 @@ func TestStaticFallsBackToIndexForUnknownRoute(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/some/client/route", nil)
 	rec := httptest.NewRecorder()
 
-	New(dir, "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New(dir, "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -151,7 +151,7 @@ func TestArtworkServesFilesFromArtworkDir(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/artwork/album/42/thumb.jpg", nil)
 	rec := httptest.NewRecorder()
 
-	New("", dir, "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", dir, "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
@@ -165,7 +165,7 @@ func TestArtworkRouteAbsentWhenArtworkDirUnset(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/artwork/album/42/thumb.jpg", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusOK {
 		t.Fatalf("expected the /artwork/ route to be absent when artworkDir is unset, got status %d", rec.Code)
@@ -176,7 +176,7 @@ func TestConfigReportsEmptyDataDirWhenUnconfigured(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -199,7 +199,7 @@ func TestConfigReportsConfiguredDataDir(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	var got struct {
 		DataDir string `json:"dataDir"`
@@ -221,7 +221,7 @@ func TestImportBrowseListsSubdirectories(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -243,7 +243,7 @@ func TestImportBrowseAllowsAnyPath(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+root, nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -258,7 +258,7 @@ func TestImportBrowseRejectsPathOutsideConfiguredRoot(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+outside, nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -269,7 +269,7 @@ func TestImportBrowseRequiresPathParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse", nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -282,7 +282,7 @@ func TestImportBrowseNonexistentPath(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/imports/browse?path="+filepath.Join(root, "nope"), nil)
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -296,7 +296,7 @@ func TestCreateFolderEndpointMakesNewSubdirectory(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -323,7 +323,7 @@ func TestCreateFolderEndpointRejectsPathOutsideConfiguredRoot(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -336,7 +336,7 @@ func TestCreateFolderEndpointRequiresName(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/imports/browse/folders", strings.NewReader(body))
 	rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+	New("", "", "", "", lazyService(t), nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())

@@ -1,58 +1,47 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
+import { createToken, deleteToken, errorMessage, listTokens, type ApiToken, type CreatedApiToken } from '../api/library'
 import './SettingsPage.css'
 
-interface TokenItem {
-  id: string
-  name: string
-  token: string
-  createdAt: string
-}
-
 export default function SettingsPage() {
-  const [tokens, setTokens] = useState<TokenItem[]>([
-    {
-      id: '1',
-      name: 'Android Phone (Pixel 8)',
-      token: 'opusflow_token_98f731a89b42e1',
-      createdAt: '2026-07-29',
-    },
-  ])
-
-  const [newlyGeneratedToken, setNewlyGeneratedToken] = useState<string | null>(null)
+  const [tokens, setTokens] = useState<ApiToken[]>([])
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState<string | null>(null)
+  const [justCreated, setJustCreated] = useState<CreatedApiToken | null>(null)
   const [copied, setCopied] = useState(false)
 
-  const handleGenerateToken = () => {
-    const randomHex = Array.from({ length: 16 }, () =>
-      Math.floor(Math.random() * 16).toString(16)
-    ).join('')
-    const generatedToken = `opusflow_token_${randomHex}`
-    setNewlyGeneratedToken(generatedToken)
+  useEffect(() => {
+    refresh()
+  }, [])
 
-    const newToken: TokenItem = {
-      id: Date.now().toString(),
-      name: `Mobile Device (${new Date().toLocaleDateString()})`,
-      token: generatedToken,
-      createdAt: new Date().toISOString().split('T')[0],
+  async function refresh() {
+    try {
+      setTokens(await listTokens())
+      setLoadError(null)
+    } catch (err) {
+      setLoadError(errorMessage(err))
     }
-
-    setTokens((prev) => [newToken, ...prev])
   }
 
-  const handleCopy = async (text: string) => {
+  async function handleGenerateToken() {
+    setCreating(true)
+    setCreateError(null)
     try {
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(text)
-      } else {
-        const textarea = document.createElement('textarea')
-        textarea.value = text
-        textarea.style.position = 'fixed'
-        textarea.style.opacity = '0'
-        document.body.appendChild(textarea)
-        textarea.focus()
-        textarea.select()
-        document.execCommand('copy')
-        document.body.removeChild(textarea)
-      }
+      const name = `Device (${new Date().toLocaleDateString()})`
+      const created = await createToken(name)
+      setJustCreated(created)
+      setTokens((prev) => [created, ...prev])
+    } catch (err) {
+      setCreateError(errorMessage(err))
+    } finally {
+      setCreating(false)
+    }
+  }
+
+  async function handleCopy(text: string) {
+    try {
+      await navigator.clipboard.writeText(text)
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch (err) {
@@ -60,52 +49,59 @@ export default function SettingsPage() {
     }
   }
 
-  const handleRevoke = (id: string) => {
+  async function handleRevoke(id: number) {
+    await deleteToken(id)
     setTokens((prev) => prev.filter((t) => t.id !== id))
+    if (justCreated?.id === id) setJustCreated(null)
   }
+
+  const qrPayload = justCreated ? JSON.stringify({ serverUrl: window.location.origin, token: justCreated.token }) : ''
 
   return (
     <div className="page-shell wide">
       <div className="settings-topbar">
         <div>
           <p className="eyebrow">Settings</p>
-          <h1>System & Companion Devices</h1>
+          <h1>System &amp; Companion Devices</h1>
           <p className="sub">Manage server pairing credentials and companion mobile devices.</p>
         </div>
       </div>
 
       <div className="settings-section">
-        <h2>📱 Mobile Device Pairing & API Tokens</h2>
+        <h2>📱 Mobile Device Pairing &amp; API Tokens</h2>
         <p className="sec-desc">
           Generate an API pairing token to connect your OpusFlow Android Companion App to this server.
         </p>
 
-        <button type="button" className="btn-primary" onClick={handleGenerateToken}>
-          ＋ Generate new pairing token
+        <button type="button" className="btn-primary" onClick={handleGenerateToken} disabled={creating}>
+          {creating ? 'Generating…' : '＋ Generate new pairing token'}
         </button>
+        {createError && <p className="settings-error">{createError}</p>}
 
-        {newlyGeneratedToken && (
-          <div style={{ marginTop: '1.25rem' }}>
-            <span className="pill complete">✓ New Token Created</span>
-            <div className="token-gen-box">
-              <span className="mono">{newlyGeneratedToken}</span>
-              <button
-                type="button"
-                className="btn-ghost"
-                onClick={() => handleCopy(newlyGeneratedToken)}
-              >
+        {justCreated && (
+          <div className="token-gen-box">
+            <div className="token-gen-qr">
+              <QRCodeSVG value={qrPayload} size={88} />
+            </div>
+            <div className="token-gen-detail">
+              <span className="pill complete">✓ New Token Created</span>
+              <span className="mono">{justCreated.token}</span>
+              <button type="button" className="btn-ghost" onClick={() => handleCopy(justCreated.token)}>
                 {copied ? 'Copied! ✓' : 'Copy token'}
               </button>
             </div>
-            <p className="sub" style={{ fontSize: '0.82rem', marginTop: '0.5rem' }}>
-              Input your server host URL and this token into the OpusFlow Mobile app.
-            </p>
           </div>
         )}
+        {justCreated && (
+          <p className="sub" style={{ fontSize: '0.82rem', marginTop: '0.5rem' }}>
+            Scan the QR code from the OpusFlow mobile app's Connect screen, or copy the token above — it won't be
+            shown again.
+          </p>
+        )}
 
-        <h3 style={{ fontSize: '0.9rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--mist-400)', marginTop: '2rem', marginBottom: '0.75rem' }}>
-          Paired Devices ({tokens.length})
-        </h3>
+        <h3 className="settings-subhead">Paired Devices ({tokens.length})</h3>
+
+        {loadError && <p className="settings-error">{loadError}</p>}
 
         <div className="token-list">
           {tokens.map((item) => (
@@ -113,14 +109,11 @@ export default function SettingsPage() {
               <div>
                 <div className="device-name">{item.name}</div>
                 <div className="device-meta">
-                  Created {item.createdAt} • <span className="mono-sub">{item.token.slice(0, 18)}…</span>
+                  Created {new Date(item.createdAt).toLocaleDateString()}
+                  {item.lastUsedAt ? ` • last used ${new Date(item.lastUsedAt).toLocaleDateString()}` : ' • never used'}
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-bad"
-                onClick={() => handleRevoke(item.id)}
-              >
+              <button type="button" className="btn-bad" onClick={() => handleRevoke(item.id)}>
                 Revoke token
               </button>
             </div>
