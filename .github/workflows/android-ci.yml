@@ -51,36 +51,45 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-
       - name: Setup Node.js 24
         uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: pnpm
 
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Setup EAS CLI
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EAS_TOKEN }}
+      - name: Generate Native Android Project
+        run: |
+          cd mobile
+          npx expo prebuild --platform android --clean
 
       - name: Build Android Release APK & AAB
         run: |
-          cd mobile
-          npx eas-cli build --platform android --profile preview --non-interactive --local --output ./opusflow-release.apk
-          npx eas-cli build --platform android --profile production --non-interactive --local --output ./opusflow-release.aab
+          cd mobile/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          ./gradlew bundleRelease
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk release-artifacts/opusflow-release.apk
+          cp mobile/android/app/build/outputs/bundle/release/app-release.aab release-artifacts/opusflow-release.aab
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            mobile/opusflow-release.apk
-            mobile/opusflow-release.aab
+            release-artifacts/opusflow-release.apk
+            release-artifacts/opusflow-release.aab
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
