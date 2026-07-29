@@ -10,6 +10,9 @@ importers:
 
   mobile:
     dependencies:
+      '@opusflow/player-core':
+        specifier: workspace:*
+        version: link:../packages/player-core
       expo:
         specifier: ~57.0.7
         version: 57.0.7(@babel/core@7.29.7)(@expo/dom-webview@57.0.1)(react-dom@19.2.7(react@19.2.3))(react-native@0.86.0(@babel/core@7.29.7)(@types/react@19.2.17)(react@19.2.3))(react@19.2.3)(typescript@6.0.3)
@@ -39,8 +42,20 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(terser@5.49.0)(yaml@2.9.0))
 
+  packages/player-core:
+    devDependencies:
+      typescript:
+        specifier: ~6.0.3
+        version: 6.0.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@types/node@24.13.3)(vite@8.1.5(@types/node@24.13.3)(terser@5.49.0)(yaml@2.9.0))
+
   web:
     dependencies:
+      '@opusflow/player-core':
+        specifier: workspace:*
+        version: link:../packages/player-core
       react:
         specifier: ^19.2.7
         version: 19.2.7

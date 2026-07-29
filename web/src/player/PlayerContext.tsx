@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
+import {
+  jumpTo as coreJumpTo,
+  next as coreNext,
+  playFrom as corePlayFrom,
+  prev as corePrev,
+  removeFromQueue as coreRemoveFromQueue,
+  reorderQueue as coreReorderQueue,
+  toggleRepeat as coreToggleRepeat,
+  toggleShuffle as coreToggleShuffle,
+} from '@opusflow/player-core'
 import { streamURL } from '../api/library'
 import {
-  PlayerContext,
-  TimeContext,
-  indexAfterRemoval,
-  indexAfterReorder,
   initialPlayerState,
   initialPlayerTimeState,
   isPlayable,
+  PlayerContext,
+  TimeContext,
   type PlayableTrack,
   type PlayerContextValue,
   type PlayerState,
 } from './context'
-
-// withIndex is the one state shape next/prev/jumpTo all produce — moving
-// the "current track" pointer without touching anything else. next also
-// doubles as the <audio onEnded> handler (auto-advance): reaching the end
-// of the queue is a no-op here, and playback naturally stops on its own
-// once the last track's audio element pauses itself at end-of-media.
-function withIndex(state: PlayerState, index: number): PlayerState {
-  return { ...state, currentIndex: index }
-}
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PlayerState>(initialPlayerState)
@@ -54,16 +53,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (audio) audio.volume = state.volume
   }, [state.volume])
 
+  // playFrom/next/prev/jumpTo delegate their queue-index arithmetic to
+  // @opusflow/player-core's shared reducer (backlog/019 AC-4) — but always
+  // restore isPlaying to whatever it already was afterward. isPlaying is
+  // never set from these actions directly here; it's always set from the
+  // <audio> element's own 'play'/'pause' events below, one source of truth
+  // instead of every action hand-syncing a duplicate flag. The shared core
+  // doesn't know that convention (it sets isPlaying itself on playFrom/at
+  // a stopped queue boundary), so each call restores it.
   const playFrom = useCallback((tracks: PlayableTrack[], startIndex: number) => {
-    const playable = tracks.slice(startIndex).filter(isPlayable)
-    if (playable.length === 0) return
-    setState((prev) => ({ ...prev, queue: playable, currentIndex: 0 }))
+    setState((prev) => {
+      const playable = tracks.slice(startIndex).filter(isPlayable)
+      if (playable.length === 0) return prev
+      return { ...prev, ...corePlayFrom(prev, playable, 0), isPlaying: prev.isPlaying }
+    })
   }, [])
 
   // togglePlayPause and advance are the only places that call the audio
-  // element's play()/pause() directly — isPlaying itself is always set
-  // from the element's own 'play'/'pause' events (below), one source of
-  // truth instead of every action hand-syncing a duplicate flag.
+  // element's play()/pause() directly.
   const togglePlayPause = useCallback(() => {
     const audio = audioRef.current
     if (!audio) return
@@ -82,37 +89,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const jumpTo = useCallback((index: number) => {
-    setState((prev) => (index >= 0 && index < prev.queue.length ? withIndex(prev, index) : prev))
+    setState((prev) => ({ ...prev, ...coreJumpTo(prev, index) }))
   }, [])
 
   const next = useCallback(() => {
-    setState((prev) => (prev.currentIndex + 1 < prev.queue.length ? withIndex(prev, prev.currentIndex + 1) : prev))
+    setState((prev) => ({ ...prev, ...coreNext(prev), isPlaying: prev.isPlaying }))
   }, [])
 
   const prev = useCallback(() => {
-    setState((p) => (p.currentIndex > 0 ? withIndex(p, p.currentIndex - 1) : p))
+    setState((p) => ({ ...p, ...corePrev(p), isPlaying: p.isPlaying }))
   }, [])
 
   const removeFromQueue = useCallback((index: number) => {
-    setState((prev) => {
-      if (index === prev.currentIndex) return prev // removing the now-playing track happens via skip, not this
-      const queue = prev.queue.filter((_, i) => i !== index)
-      return { ...prev, queue, currentIndex: indexAfterRemoval(prev.currentIndex, index) }
-    })
+    setState((prev) => ({ ...prev, ...coreRemoveFromQueue(prev, index) }))
   }, [])
 
   const reorderQueue = useCallback((fromIndex: number, toIndex: number) => {
-    setState((prev) => {
-      if (fromIndex === toIndex) return prev
-      const queue = [...prev.queue]
-      const [moved] = queue.splice(fromIndex, 1)
-      queue.splice(toIndex, 0, moved)
-      return { ...prev, queue, currentIndex: indexAfterReorder(prev.currentIndex, fromIndex, toIndex) }
-    })
+    setState((prev) => ({ ...prev, ...coreReorderQueue(prev, fromIndex, toIndex) }))
   }, [])
 
   const setVolume = useCallback((volume: number) => {
     setState((prev) => ({ ...prev, volume: Math.min(1, Math.max(0, volume)) }))
+  }, [])
+
+  const toggleShuffle = useCallback(() => {
+    setState((prev) => ({ ...prev, ...coreToggleShuffle(prev) }))
+  }, [])
+
+  const toggleRepeat = useCallback(() => {
+    setState((prev) => ({ ...prev, ...coreToggleRepeat(prev) }))
   }, [])
 
   const value = useMemo<PlayerContextValue>(
@@ -128,8 +133,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       reorderQueue,
       jumpTo,
       setVolume,
+      toggleShuffle,
+      toggleRepeat,
     }),
-    [state, currentTrack, playFrom, togglePlayPause, seek, next, prev, removeFromQueue, reorderQueue, jumpTo, setVolume],
+    [state, currentTrack, playFrom, togglePlayPause, seek, next, prev, removeFromQueue, reorderQueue, jumpTo, setVolume, toggleShuffle, toggleRepeat],
   )
 
   return (
