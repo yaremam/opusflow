@@ -43,8 +43,11 @@ export function StorageScreen() {
     return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
   };
 
-  const explicitPercent = (metrics.explicitDownloadBytes / metrics.maxCacheSizeBytes) * 100;
-  const cachePercent = (metrics.lruCacheBytes / metrics.maxCacheSizeBytes) * 100;
+  // No fixed quota (TDR 023) — the meter's "whole pie" is our own usage
+  // plus whatever's still free on the device, not an arbitrary number.
+  const meterTotal = metrics.totalUsedBytes + metrics.availableDiskSpaceBytes;
+  const explicitPercent = (metrics.explicitDownloadBytes / meterTotal) * 100;
+  const cachePercent = (metrics.lruCacheBytes / meterTotal) * 100;
 
   return (
     <View style={styles.container}>
@@ -56,7 +59,7 @@ export function StorageScreen() {
         <View style={styles.meterRow}>
           <Text style={styles.meterLabel}>Storage Usage</Text>
           <Text style={styles.meterValue}>
-            {formatGB(metrics.totalUsedBytes)} / {formatGB(metrics.maxCacheSizeBytes)}
+            {formatGB(metrics.totalUsedBytes)} used · {formatGB(metrics.availableDiskSpaceBytes)} free
           </Text>
         </View>
 

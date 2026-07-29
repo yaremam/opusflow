@@ -29,7 +29,8 @@
         {
           "cameraPermission": "OpusFlow uses the camera to scan a pairing QR code from Web Settings."
         }
-      ]
+      ],
+      "expo-audio"
     ]
   }
 }

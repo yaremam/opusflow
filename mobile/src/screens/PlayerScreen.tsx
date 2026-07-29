@@ -45,6 +45,10 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
   }
 
   const activeArtworkUri = track.localCoverUrl || track.coverUrl;
+  const progressPercent =
+    track.durationSeconds > 0
+      ? Math.min(100, (playerState.currentTimeSeconds / track.durationSeconds) * 100)
+      : 0;
 
   return (
     <View style={styles.container}>
@@ -91,7 +95,7 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
 
       <View style={styles.progressContainer}>
         <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: '42%' }]} />
+          <View style={[styles.progressFill, { width: `${progressPercent}%` }]} />
         </View>
         <View style={styles.timeLabels}>
           <Text style={styles.timeText}>{formatTime(playerState.currentTimeSeconds)}</Text>
