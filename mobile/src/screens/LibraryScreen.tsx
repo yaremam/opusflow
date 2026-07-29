@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, FlatList, Image } from 'react-native';
-import { fetchCatalogAlbums, fetchCatalogTracks, Album, Track } from '../services/api';
+import { fetchAlbumTracks, fetchCatalogAlbums, fetchCatalogTracks, Album, Track } from '../services/api';
 import { audioPlayer } from '../services/audioPlayer';
 import { offlineStorage } from '../services/offlineStorage';
 import { ACCENT } from '../theme';
@@ -46,6 +46,17 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
     onOpenPlayer?.();
   };
 
+  const handlePlayAlbum = async (album: Album) => {
+    try {
+      const albumTracks = await fetchAlbumTracks(album);
+      if (albumTracks.length === 0) return;
+      audioPlayer.playQueue(albumTracks, 0);
+      onOpenPlayer?.();
+    } catch (e) {
+      console.error('Failed to load album tracks:', e);
+    }
+  };
+
   const handleToggleOffline = async (track: Track) => {
     if (offlineMap[track.id]) {
       await offlineStorage.removeTrack(track.id);
@@ -86,7 +97,7 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
           ) : (
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.albumRow}>
               {albums.map((album) => (
-                <TouchableOpacity key={album.id} style={styles.albumCard}>
+                <TouchableOpacity key={album.id} style={styles.albumCard} onPress={() => handlePlayAlbum(album)}>
                   {album.coverUrl ? (
                     <Image source={{ uri: album.coverUrl }} style={styles.albumCover} />
                   ) : (

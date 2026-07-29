@@ -108,6 +108,45 @@ export async function fetchCatalogAlbums(searchQuery: string = ''): Promise<Albu
   }));
 }
 
+// AlbumDetail's real response shape (backend/internal/library/catalog.go
+// AlbumDetail) — only the track-listing fields this needs, not the full
+// Album/covers/banner shape web's AlbumDetailPage consumes.
+interface AlbumDetailTracks {
+  tracks: {
+    id: number;
+    title: string;
+    trackNumber: number;
+    durationSeconds: number;
+  }[];
+}
+
+// fetchAlbumTracks backs "tap an album to play it" (issue #69) — a real
+// per-album track listing via GET /api/library/albums/{id}, not a
+// client-side filter of whatever page of fetchCatalogTracks happens to be
+// loaded, which wouldn't reliably contain every track once a library
+// grows past one page.
+export async function fetchAlbumTracks(album: Album): Promise<Track[]> {
+  const creds = await getServerCredentials();
+  if (!creds) throw new Error('No server credentials saved.');
+
+  const res = await fetch(`${creds.serverUrl}/api/library/albums/${album.id}`, {
+    headers: { Authorization: `Bearer ${creds.pairingToken}` },
+  });
+  if (!res.ok) throw new Error(`Request to /api/library/albums/${album.id} failed: ${res.statusText}`);
+  const detail = (await res.json()) as AlbumDetailTracks;
+
+  return detail.tracks.map((t) => ({
+    id: t.id,
+    title: t.title,
+    artistName: album.artistName,
+    albumTitle: album.title,
+    albumId: album.id,
+    durationSeconds: t.durationSeconds,
+    streamUrl: `${creds.serverUrl}/api/library/songs/${t.id}/stream`,
+    coverUrl: album.coverUrl,
+  }));
+}
+
 export async function fetchCatalogTracks(searchQuery: string = ''): Promise<Track[]> {
   const creds = await getServerCredentials();
   if (!creds) throw new Error('No server credentials saved.');
