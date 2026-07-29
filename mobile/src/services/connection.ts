@@ -42,37 +42,27 @@ export async function clearServerCredentials(): Promise<void> {
   await SecureStore.deleteItemAsync(PAIRING_TOKEN_KEY);
 }
 
-// ConnectionResult distinguishes why pairing failed (TDR 022 AC-7) — a
-// wrong token and an unreachable server need different messaging on the
-// Connect screen, not one generic failure.
-export type ConnectionResult = 'valid' | 'unauthorized' | 'unreachable';
+// ConnectionResult (TDR 024): nothing is gated anymore, so pairing has
+// exactly one thing left to check — is this URL a reachable opusflow
+// server at all. The token is still saved afterward purely so requests
+// keep the Paired Devices list's "last used" column accurate — it's
+// identity, not a credential being verified here.
+export type ConnectionResult = 'valid' | 'unreachable';
 
 /**
- * Validate a server URL and pairing token together in one request. GET
- * /api/health requires auth (TDR 022) — unlike the bare /health, which
- * always succeeds and proves nothing about the token — so succeeding
- * against it is both a reachability check and a token check at once.
- * Deliberately does not fall back to the bare /health on failure: that
- * would make every wrong token look valid, since bare /health is never
- * gated.
+ * Confirm serverUrl points at a reachable opusflow server via the
+ * always-open GET /health.
  */
-export async function validateServerConnection(
-  serverUrl: string,
-  pairingToken: string
-): Promise<ConnectionResult> {
+export async function validateServerConnection(serverUrl: string): Promise<ConnectionResult> {
   const normalizedUrl = serverUrl.trim().replace(/\/+$/, '');
 
   let response: Response;
   try {
-    response = await fetch(`${normalizedUrl}/api/health`, {
-      method: 'GET',
-      headers: { Authorization: `Bearer ${pairingToken.trim()}` },
-    });
+    response = await fetch(`${normalizedUrl}/health`, { method: 'GET' });
   } catch {
     return 'unreachable';
   }
 
-  if (response.status === 401) return 'unauthorized';
   return response.ok ? 'valid' : 'unreachable';
 }
 

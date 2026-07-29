@@ -22,15 +22,12 @@ import (
 // normal value (unset in local `go run`, not an error). svc backs the
 // library endpoints.
 //
-// authStore backs token auth (TDR 022): every /api/* route requires a
-// valid Bearer token once this install has been bootstrapped — see
-// auth.Middleware. GET /health, /artwork/ (browsers/React Native's Image
-// can't attach a custom header to an <img>/plain GET, and these hash-named
-// paths are only ever discoverable through an already-authenticated API
-// response) and the static SPA shell at / all stay outside /api/ and so
-// are never gated — the web app's own JS bundle has to be reachable before
-// anyone can enter a token into it. A nil authStore disables enforcement
-// entirely, for tests that aren't exercising auth.
+// authStore backs /api/tokens (device pairing) and last-used tracking —
+// nothing is gated (TDR 024, docs/tdr/024_drop_web_auth_gate_design.md):
+// a Bearer token on an /api/ request just gets its usage recorded via
+// auth.TrackTokenUsage if it matches a real row, and every request
+// succeeds regardless. A nil authStore just skips both the /api/tokens
+// routes and the tracking, for tests that aren't exercising auth.
 func New(staticDir, artworkDir, version, buildDate string, svc *library.Service, authStore *auth.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth())
@@ -90,17 +87,17 @@ func New(staticDir, artworkDir, version, buildDate string, svc *library.Service,
 	if authStore == nil {
 		return mux
 	}
-	return requireAuthUnderAPIPrefix(authStore, mux)
+	return trackTokenUsageUnderAPIPrefix(authStore, mux)
 }
 
-// requireAuthUnderAPIPrefix applies auth.Middleware only to requests under
-// /api/ — see New's doc comment for why everything else (bare /health,
-// /artwork/, the static SPA shell) has to stay reachable regardless.
-func requireAuthUnderAPIPrefix(store *auth.Store, next http.Handler) http.Handler {
-	gated := auth.Middleware(store)(next)
+// trackTokenUsageUnderAPIPrefix applies auth.TrackTokenUsage only to
+// requests under /api/ — no request is ever blocked by it (TDR 024); it
+// only records that a token was used when one's present and valid.
+func trackTokenUsageUnderAPIPrefix(store *auth.Store, next http.Handler) http.Handler {
+	tracked := auth.TrackTokenUsage(store)(next)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") {
-			gated.ServeHTTP(w, r)
+			tracked.ServeHTTP(w, r)
 			return
 		}
 		next.ServeHTTP(w, r)

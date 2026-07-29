@@ -54,48 +54,23 @@ describe('Connection & Token Management (AC-1)', () => {
   });
 });
 
-// TDR 022 AC-7: an unreachable server and a rejected token have to
-// surface distinctly — GET /api/health now requires auth for real, so
-// succeeding against it proves both reachability and a valid token in
-// one request. These mocks model the real backend's actual contract: the
-// bare /health (no /api prefix) always succeeds and carries no auth
-// signal at all, unlike the old implementation which fell back to it on
-// any /api/health failure — making every wrong token look valid.
-describe('validateServerConnection (AC-7)', () => {
+// TDR 024: nothing is gated anymore, so pairing checks reachability only,
+// against the always-open bare /health — not /api/health, and no token is
+// sent or checked at all.
+describe('validateServerConnection (TDR 024)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('returns "valid" when /api/health accepts the token', async () => {
-    const mockFetch = vi.fn(async (url: string, init?: RequestInit) => {
-      expect(url).toBe('http://192.168.1.100:8080/api/health');
-      const authHeader = (init?.headers as Record<string, string>)?.['Authorization'];
-      if (authHeader === 'Bearer test_token_123') {
-        return { ok: true, status: 200 } as Response;
-      }
-      return { ok: false, status: 401 } as Response;
-    });
-    vi.stubGlobal('fetch', mockFetch);
-
-    const result = await validateServerConnection('http://192.168.1.100:8080', 'test_token_123');
-    expect(result).toBe('valid');
-  });
-
-  it('returns "unauthorized" (not "valid") for a wrong token — no falling back to the always-open bare /health', async () => {
+  it('returns "valid" when the server responds to /health', async () => {
     const mockFetch = vi.fn(async (url: string) => {
-      if (url === 'http://192.168.1.100:8080/api/health') {
-        return { ok: false, status: 401 } as Response;
-      }
-      // The bare /health endpoint always succeeds on a real server
-      // (TDR 022 — never gated) — if validateServerConnection still fell
-      // back to it, this test would incorrectly see "valid" for a wrong
-      // token.
+      expect(url).toBe('http://192.168.1.100:8080/health');
       return { ok: true, status: 200 } as Response;
     });
     vi.stubGlobal('fetch', mockFetch);
 
-    const result = await validateServerConnection('http://192.168.1.100:8080', 'wrong-token');
-    expect(result).toBe('unauthorized');
+    const result = await validateServerConnection('http://192.168.1.100:8080');
+    expect(result).toBe('valid');
   });
 
   it('returns "unreachable" when the server can\'t be reached at all', async () => {
@@ -106,7 +81,7 @@ describe('validateServerConnection (AC-7)', () => {
       })
     );
 
-    const result = await validateServerConnection('http://nope.invalid', 'any-token');
+    const result = await validateServerConnection('http://nope.invalid');
     expect(result).toBe('unreachable');
   });
 });

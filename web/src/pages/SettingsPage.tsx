@@ -120,13 +120,7 @@ export default function SettingsPage() {
                   {item.lastUsedAt ? ` • last used ${new Date(item.lastUsedAt).toLocaleDateString()}` : ' • never used'}
                 </div>
               </div>
-              <button
-                type="button"
-                className="btn-bad"
-                onClick={() => handleRevoke(item.id)}
-                disabled={tokens.length <= 1}
-                title={tokens.length <= 1 ? "Can't revoke your only pairing token — generate another first." : undefined}
-              >
+              <button type="button" className="btn-bad" onClick={() => handleRevoke(item.id)}>
                 Revoke token
               </button>
             </div>

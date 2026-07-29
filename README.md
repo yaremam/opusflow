@@ -76,6 +76,17 @@ See [`docs/deploy/synology.md`](docs/deploy/synology.md) for a full
 step-by-step walkthrough on Synology DSM's Container Manager, including
 mapping ports, mapping your music library, and updating to newer builds.
 
+## Security
+
+opusflow doesn't gate anything itself — the web app and API are open to
+anyone who can reach them, by design (see
+[`docs/tdr/024_drop_web_auth_gate_design.md`](docs/tdr/024_drop_web_auth_gate_design.md)).
+This is fine for a LAN-only install. **If you port-forward or
+reverse-proxy opusflow so it's reachable from outside your home network,
+you're responsible for putting your own auth in front of it** — a reverse
+proxy with basic auth, a VPN/Tailscale, or similar. Without that, anyone
+who finds the URL has full access to your library.
+
 ## Developing without Docker
 
 Faster iteration loop for editing code directly.
