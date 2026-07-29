@@ -193,7 +193,7 @@ const styles = StyleSheet.create({
   trackItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    justify.content: 'space-between',
+    justifyContent: 'space-between',
     backgroundColor: '#141824',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
