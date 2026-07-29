@@ -19,8 +19,11 @@ export interface Track {
   title: string;
   artistName: string;
   albumTitle: string;
+  albumId?: number;
   durationSeconds: number;
   streamUrl: string;
+  coverUrl?: string;
+  localCoverUrl?: string;
   isOffline?: boolean;
 }
 
@@ -36,7 +39,12 @@ export async function fetchCatalogAlbums(searchQuery: string = ''): Promise<Albu
   });
 
   if (!res.ok) throw new Error(`Failed to fetch albums: ${res.statusText}`);
-  return res.json();
+  const rawAlbums: Album[] = await res.json();
+
+  return rawAlbums.map((album) => ({
+    ...album,
+    coverUrl: `${creds.serverUrl}/api/catalog/albums/${album.id}/art`,
+  }));
 }
 
 export async function fetchCatalogTracks(searchQuery: string = ''): Promise<Track[]> {
@@ -56,5 +64,8 @@ export async function fetchCatalogTracks(searchQuery: string = ''): Promise<Trac
   return tracks.map((t) => ({
     ...t,
     streamUrl: `${creds.serverUrl}/api/stream/${t.id}`,
+    coverUrl: t.albumId
+      ? `${creds.serverUrl}/api/catalog/albums/${t.albumId}/art`
+      : `${creds.serverUrl}/api/catalog/songs/${t.id}/art`,
   }));
 }

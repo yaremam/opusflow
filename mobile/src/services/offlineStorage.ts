@@ -15,41 +15,69 @@ export interface DownloadedItem {
   sizeBytes: number;
   downloadedAt: number;
   isExplicit: boolean;
+  coverUrl?: string;
+  localCoverUrl?: string;
 }
 
 class OfflineStorageManager {
   private items: Map<number, DownloadedItem> = new Map();
   private maxCacheSizeBytes: number = 2 * 1024 * 1024 * 1024; // 2 GB
 
+  /**
+   * Download track audio file and associated album artwork for offline playback.
+   */
   public async downloadTrackForOffline(track: Track): Promise<DownloadedItem> {
-    const sizeBytes = track.durationSeconds * 128000; // Simulated ~128kbps size estimation
+    const audioSizeBytes = track.durationSeconds * 128000;
+    const artworkSizeBytes = 250 * 1024; // ~250 KB for high-res cover art
+    const totalSizeBytes = audioSizeBytes + artworkSizeBytes;
+
+    // Simulated local file storage paths (e.g. FileSystem.documentDirectory + '/artwork_101.jpg')
+    const localCoverUrl = track.coverUrl
+      ? `file:///data/user/0/com.opusflow.mobile/files/artwork_${track.id}.jpg`
+      : undefined;
+
     const item: DownloadedItem = {
       id: track.id,
       title: track.title,
       artistName: track.artistName,
       albumTitle: track.albumTitle,
-      sizeBytes,
+      sizeBytes: totalSizeBytes,
       downloadedAt: Date.now(),
       isExplicit: true,
+      coverUrl: track.coverUrl,
+      localCoverUrl,
     };
+
+    track.localCoverUrl = localCoverUrl;
     this.items.set(track.id, item);
     return item;
   }
 
+  /**
+   * Cache streamed track audio and artwork in LRU stream cache.
+   */
   public async cacheStreamedTrack(track: Track): Promise<void> {
     if (this.items.has(track.id)) return;
 
-    const sizeBytes = track.durationSeconds * 128000;
+    const audioSizeBytes = track.durationSeconds * 128000;
+    const artworkSizeBytes = 250 * 1024;
+    const localCoverUrl = track.coverUrl
+      ? `file:///data/user/0/com.opusflow.mobile/files/artwork_${track.id}.jpg`
+      : undefined;
+
     const item: DownloadedItem = {
       id: track.id,
       title: track.title,
       artistName: track.artistName,
       albumTitle: track.albumTitle,
-      sizeBytes,
+      sizeBytes: audioSizeBytes + artworkSizeBytes,
       downloadedAt: Date.now(),
       isExplicit: false,
+      coverUrl: track.coverUrl,
+      localCoverUrl,
     };
 
+    track.localCoverUrl = localCoverUrl;
     this.items.set(track.id, item);
     await this.enforceLRULimit();
   }
@@ -60,6 +88,10 @@ class OfflineStorageManager {
 
   public isTrackOffline(trackId: number): boolean {
     return this.items.has(trackId);
+  }
+
+  public getLocalCoverUrl(trackId: number): string | undefined {
+    return this.items.get(trackId)?.localCoverUrl;
   }
 
   public async removeTrack(trackId: number): Promise<void> {
@@ -98,7 +130,6 @@ class OfflineStorageManager {
     let metrics = this.getStorageMetrics();
     if (metrics.lruCacheBytes <= this.maxCacheSizeBytes) return;
 
-    // Sort LRU cache entries by downloadedAt ascending (oldest first)
     const lruItems = Array.from(this.items.values())
       .filter((i) => !i.isExplicit)
       .sort((a, b) => a.downloadedAt - b.downloadedAt);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import { audioPlayer, AudioPlayerState } from '../services/audioPlayer';
 
 interface PlayerScreenProps {
@@ -26,7 +26,11 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
     artistName: 'Solaris',
     albumTitle: 'Midnight Sun (2026)',
     durationSeconds: 255,
+    coverUrl: undefined,
+    localCoverUrl: undefined,
   };
+
+  const activeArtworkUri = track.localCoverUrl || track.coverUrl;
 
   return (
     <View style={styles.container}>
@@ -41,9 +45,17 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
       </View>
 
       <View style={styles.artworkContainer}>
-        <View style={styles.artworkPlaceholder}>
-          <Text style={{ fontSize: 72 }}>🌌</Text>
-        </View>
+        {activeArtworkUri ? (
+          <Image
+            source={{ uri: activeArtworkUri }}
+            style={styles.artworkImage}
+            resizeMode="cover"
+          />
+        ) : (
+          <View style={styles.artworkPlaceholder}>
+            <Text style={{ fontSize: 72 }}>🌌</Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.trackDetails}>
@@ -52,7 +64,9 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
           {track.artistName} — {track.albumTitle}
         </Text>
         <View style={styles.qualityBadge}>
-          <Text style={styles.qualityText}>FLAC 24bit / 96kHz</Text>
+          <Text style={styles.qualityText}>
+            {track.localCoverUrl ? '💾 Offline Cached Artwork' : '📶 FLAC 24bit / 96kHz'}
+          </Text>
         </View>
       </View>
 
@@ -129,6 +143,11 @@ const styles = StyleSheet.create({
   },
   topTitle: { fontSize: 12, fontWeight: '700', color: '#9ca3af', letterSpacing: 0.5 },
   artworkContainer: { alignItems: 'center', marginVertical: 20 },
+  artworkImage: {
+    width: 240,
+    height: 240,
+    borderRadius: 24,
+  },
   artworkPlaceholder: {
     width: 240,
     height: 240,
@@ -136,10 +155,6 @@ const styles = StyleSheet.create({
     backgroundColor: '#6366f1',
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#6366f1',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.4,
-    shadowRadius: 20,
     elevation: 8,
   },
   trackDetails: { alignItems: 'center' },
@@ -147,12 +162,12 @@ const styles = StyleSheet.create({
   trackSubtitle: { fontSize: 14, color: '#9ca3af', marginTop: 4, textAlign: 'center' },
   qualityBadge: {
     marginTop: 8,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
     borderRadius: 10,
     backgroundColor: 'rgba(99, 102, 241, 0.2)',
   },
-  qualityText: { fontSize: 10, fontWeight: '600', color: '#818cf8' },
+  qualityText: { fontSize: 11, fontWeight: '600', color: '#818cf8' },
   progressContainer: { marginVertical: 20 },
   progressBar: {
     height: 6,
@@ -174,7 +189,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   controlIcon: { fontSize: 22, opacity: 0.8 },
-  activeControl: { opacity: 1, tintColor: '#6366f1' },
+  activeControl: { opacity: 1 },
   playButton: {
     width: 60,
     height: 60,
