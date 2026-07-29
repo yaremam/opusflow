@@ -11,6 +11,7 @@ import {
   type RepeatMode,
 } from '@opusflow/player-core';
 import { Track } from './api';
+import { getServerCredentials } from './connection';
 import { offlineStorage } from './offlineStorage';
 
 export type { RepeatMode };
@@ -48,6 +49,10 @@ class AudioPlayerEngine {
   private listeners: Set<StateChangeListener> = new Set();
   private player: ExpoAudioPlayer;
   private cachedForCurrentTrack = false;
+  // Bumped on every loadCurrentTrack call so a slow-to-resolve one (e.g.
+  // credentials lookup) can tell it's been superseded by a newer call and
+  // bail out instead of clobbering whatever loaded after it.
+  private loadSequence = 0;
 
   constructor() {
     setAudioModeAsync({
@@ -96,13 +101,23 @@ class AudioPlayerEngine {
   // sourceFor picks the local file over the network stream whenever one
   // exists (TDR 023 AC-4) — no connectivity check needed; a network
   // fallback that later fails just surfaces as a normal playback error.
-  private sourceFor(track: Track): { uri: string } {
+  // Streaming requires the Authorization header explicitly — expo-audio's
+  // native player makes its own HTTP request, entirely outside api.ts's
+  // fetch() layer, so it never picks up a token any other way.
+  private async sourceFor(track: Track): Promise<{ uri: string; headers?: Record<string, string> }> {
     const localPath = offlineStorage.getLocalAudioPath(track.id);
-    return { uri: localPath ?? track.streamUrl };
+    if (localPath) return { uri: localPath };
+
+    const creds = await getServerCredentials();
+    return {
+      uri: track.streamUrl,
+      headers: creds ? { Authorization: `Bearer ${creds.pairingToken}` } : undefined,
+    };
   }
 
-  private loadCurrentTrack() {
+  private async loadCurrentTrack() {
     const track = coreCurrentTrack(this.core);
+    const sequence = ++this.loadSequence;
     this.currentTimeSeconds = 0;
     this.durationSeconds = track?.durationSeconds ?? 0;
     this.cachedForCurrentTrack = false;
@@ -113,7 +128,10 @@ class AudioPlayerEngine {
       return;
     }
 
-    this.player.replace(this.sourceFor(track));
+    const source = await this.sourceFor(track);
+    if (sequence !== this.loadSequence) return;
+
+    this.player.replace(source);
     this.player.play();
     this.player.setActiveForLockScreen(true, {
       title: track.title,
@@ -153,11 +171,11 @@ class AudioPlayerEngine {
     });
   }
 
-  public playQueue(tracks: Track[], startIndex: number = 0) {
+  public async playQueue(tracks: Track[], startIndex: number = 0): Promise<void> {
     const next = corePlayFrom(this.core, tracks, startIndex);
     if (next === this.core) return;
     this.core = next;
-    this.loadCurrentTrack();
+    await this.loadCurrentTrack();
     this.notify();
   }
 
@@ -173,7 +191,7 @@ class AudioPlayerEngine {
     }
   }
 
-  public nextTrack() {
+  public async nextTrack(): Promise<void> {
     if (this.core.queue.length === 0) return;
     const stopping = !this.core.isShuffle && this.core.currentIndex >= this.core.queue.length - 1 && this.core.repeatMode !== 'all';
     this.core = coreNext(this.core);
@@ -181,18 +199,18 @@ class AudioPlayerEngine {
       this.notify();
       return;
     }
-    this.loadCurrentTrack();
+    await this.loadCurrentTrack();
     this.notify();
   }
 
-  public previousTrack() {
+  public async previousTrack(): Promise<void> {
     if (this.core.queue.length === 0) return;
     if (this.currentTimeSeconds > 3) {
       this.player.seekTo(0);
       return;
     }
     this.core = corePrev(this.core);
-    this.loadCurrentTrack();
+    await this.loadCurrentTrack();
     this.notify();
   }
 

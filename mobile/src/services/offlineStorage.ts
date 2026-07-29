@@ -1,5 +1,6 @@
 import { Directory, File, Paths } from 'expo-file-system';
 import { Track } from './api';
+import { getServerCredentials } from './connection';
 
 export interface StorageMetrics {
   totalUsedBytes: number;
@@ -77,13 +78,19 @@ export class OfflineStorageManager {
     return new File(this.cacheDir, `${track.id}.cover`);
   }
 
+  // File.downloadFileAsync makes its own native HTTP request, entirely
+  // outside api.ts's fetch() layer, so it never picks up a token any other
+  // way — same reason audioPlayer.ts has to attach this explicitly too.
   private async downloadAudioAndCover(
     track: Track
   ): Promise<{ sizeBytes: number; localAudioPath: string; localCoverPath: string | undefined }> {
-    const audioFile = await File.downloadFileAsync(track.streamUrl, this.localAudioFile(track));
+    const creds = await getServerCredentials();
+    const options = creds ? { headers: { Authorization: `Bearer ${creds.pairingToken}` } } : undefined;
+
+    const audioFile = await File.downloadFileAsync(track.streamUrl, this.localAudioFile(track), options);
     let localCoverPath: string | undefined;
     if (track.coverUrl) {
-      const coverFile = await File.downloadFileAsync(track.coverUrl, this.localCoverFile(track));
+      const coverFile = await File.downloadFileAsync(track.coverUrl, this.localCoverFile(track), options);
       localCoverPath = coverFile.uri;
     }
     return { sizeBytes: audioFile.size, localAudioPath: audioFile.uri, localCoverPath };
