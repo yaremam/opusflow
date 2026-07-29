@@ -1,5 +1,7 @@
+import { Ionicons } from '@expo/vector-icons';
 import React, { useState, useEffect } from 'react';
 import {
+  Image,
   StyleSheet,
   Text,
   View,
@@ -13,6 +15,7 @@ import {
   validateServerConnection,
   ServerCredentials,
 } from '../services/connection';
+import { ACCENT } from '../theme';
 
 interface ConnectScreenProps {
   onConnected?: (credentials: ServerCredentials) => void;
@@ -63,9 +66,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
   return (
     <View style={styles.container}>
       <View style={styles.headerContainer}>
-        <View style={styles.logoBadge}>
-          <Text style={styles.logoText}>🎵</Text>
-        </View>
+        <Image source={require('../../assets/icon.png')} style={styles.logoBadge} />
         <Text style={styles.title}>OpusFlow Mobile</Text>
         <Text style={styles.subtitle}>Connect to your self-hosted music server</Text>
       </View>
@@ -116,10 +117,14 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
             isSuccess ? styles.statusSuccess : styles.statusError,
           ]}
         >
-          <Text style={styles.statusText}>
-            {isSuccess ? '✅ ' : '❌ '}
-            {statusMessage}
-          </Text>
+          <View style={styles.statusRow}>
+            <Ionicons
+              name={isSuccess ? 'checkmark-circle' : 'close-circle'}
+              size={16}
+              color={isSuccess ? '#10b981' : '#ef4444'}
+            />
+            <Text style={styles.statusText}>{statusMessage}</Text>
+          </View>
         </View>
       )}
     </View>
@@ -141,13 +146,7 @@ const styles = StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 20,
-    backgroundColor: '#6366f1',
-    alignItems: 'center',
-    justifyContent: 'center',
     marginBottom: 12,
-  },
-  logoText: {
-    fontSize: 32,
   },
   title: {
     fontSize: 24,
@@ -180,14 +179,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
   },
   button: {
-    backgroundColor: '#6366f1',
+    backgroundColor: ACCENT,
     borderRadius: 14,
     padding: 16,
     alignItems: 'center',
     marginTop: 8,
   },
   buttonText: {
-    color: '#ffffff',
+    color: '#0a1512',
     fontSize: 16,
     fontWeight: '600',
   },
@@ -205,8 +204,14 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(239, 68, 68, 0.1)',
     borderColor: 'rgba(239, 68, 68, 0.3)',
   },
+  statusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   statusText: {
     color: '#f3f4f6',
     fontSize: 14,
+    flexShrink: 1,
   },
 });

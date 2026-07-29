@@ -1,16 +1,10 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
-import {
-  StyleSheet,
-  Text,
-  View,
-  TextInput,
-  TouchableOpacity,
-  ScrollView,
-  FlatList,
-} from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, ScrollView, FlatList, Image } from 'react-native';
 import { fetchCatalogAlbums, fetchCatalogTracks, Album, Track } from '../services/api';
 import { audioPlayer } from '../services/audioPlayer';
 import { offlineStorage } from '../services/offlineStorage';
+import { ACCENT } from '../theme';
 
 interface LibraryScreenProps {
   onOpenPlayer?: () => void;
@@ -21,6 +15,7 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
   const [albums, setAlbums] = useState<Album[]>([]);
   const [tracks, setTracks] = useState<Track[]>([]);
   const [offlineMap, setOfflineMap] = useState<Record<number, boolean>>({});
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     loadData();
@@ -32,6 +27,7 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
       const trackData = await fetchCatalogTracks(searchQuery);
       setAlbums(albumData);
       setTracks(trackData);
+      setLoadError(null);
 
       const map: Record<number, boolean> = {};
       for (const t of trackData) {
@@ -39,30 +35,9 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
       }
       setOfflineMap(map);
     } catch (e) {
-      const mockAlbums: Album[] = [
-        { id: 1, title: 'Midnight Sun', artistName: 'Solaris', year: 2026 },
-        { id: 2, title: 'Neon Pulse', artistName: 'SynthWave', year: 2026 },
-      ];
-      const mockTracks: Track[] = [
-        {
-          id: 101,
-          title: 'Cosmic Voyager',
-          artistName: 'Solaris',
-          albumTitle: 'Midnight Sun',
-          durationSeconds: 255,
-          streamUrl: 'http://localhost/api/stream/101',
-        },
-        {
-          id: 102,
-          title: 'Digital Horizon',
-          artistName: 'SynthWave',
-          albumTitle: 'Neon Pulse',
-          durationSeconds: 210,
-          streamUrl: 'http://localhost/api/stream/102',
-        },
-      ];
-      setAlbums(mockAlbums);
-      setTracks(mockTracks);
+      setAlbums([]);
+      setTracks([]);
+      setLoadError(e instanceof Error ? e.message : 'Could not load your library.');
     }
   };
 
@@ -84,65 +59,95 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Library</Text>
-        <TextInput
-          style={styles.searchInput}
-          placeholder="🔍 Search tracks or albums..."
-          placeholderTextColor="#6b7280"
-          value={searchQuery}
-          onChangeText={setSearchQuery}
-        />
+        <View style={styles.searchRow}>
+          <Ionicons name="search-outline" size={16} color="#6b7280" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search tracks or albums..."
+            placeholderTextColor="#6b7280"
+            value={searchQuery}
+            onChangeText={setSearchQuery}
+          />
+        </View>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scrollContent}>
-        <Text style={styles.sectionTitle}>FEATURED ALBUMS</Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.albumRow}>
-          {albums.map((album) => (
-            <TouchableOpacity key={album.id} style={styles.albumCard}>
-              <View style={styles.albumCoverPlaceholder}>
-                <Text style={{ fontSize: 32 }}>🌌</Text>
-              </View>
-              <Text style={styles.albumTitle} numberOfLines={1}>
-                {album.title}
-              </Text>
-              <Text style={styles.albumArtist}>{album.artistName}</Text>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
-
-        <Text style={styles.sectionTitle}>RECENT TRACKS</Text>
-        <FlatList
-          data={tracks}
-          keyExtractor={(item) => item.id.toString()}
-          scrollEnabled={false}
-          renderItem={({ item, index }) => (
-            <TouchableOpacity
-              style={styles.trackItem}
-              onPress={() => handlePlayTrack(item, index)}
-            >
-              <View style={styles.trackInfo}>
-                <View style={styles.trackIcon}>
-                  <Text style={{ fontSize: 16 }}>🎵</Text>
-                </View>
-                <View style={styles.trackText}>
-                  <Text style={styles.trackTitle}>{item.title}</Text>
-                  <Text style={styles.trackSubtitle}>
-                    {item.artistName} — {item.albumTitle}
+      {loadError ? (
+        <View style={styles.errorState}>
+          <Ionicons name="cloud-offline-outline" size={28} color="#6b7280" />
+          <Text style={styles.errorTitle}>Couldn't reach your library</Text>
+          <Text style={styles.errorText}>{loadError}</Text>
+          <Text style={styles.errorHint}>Check your server connection on the Connect tab.</Text>
+        </View>
+      ) : (
+        <ScrollView contentContainerStyle={styles.scrollContent}>
+          <Text style={styles.sectionTitle}>FEATURED ALBUMS</Text>
+          {albums.length === 0 ? (
+            <Text style={styles.emptyText}>No albums yet.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.albumRow}>
+              {albums.map((album) => (
+                <TouchableOpacity key={album.id} style={styles.albumCard}>
+                  {album.coverUrl ? (
+                    <Image source={{ uri: album.coverUrl }} style={styles.albumCover} />
+                  ) : (
+                    <View style={styles.albumCoverPlaceholder}>
+                      <Ionicons name="disc-outline" size={30} color="#ffffff" />
+                    </View>
+                  )}
+                  <Text style={styles.albumTitle} numberOfLines={1}>
+                    {album.title}
                   </Text>
-                </View>
-              </View>
-
-              <TouchableOpacity
-                style={styles.offlineBtn}
-                onPress={() => handleToggleOffline(item)}
-              >
-                <Text style={styles.offlineText}>
-                  {offlineMap[item.id] ? '✅ Offline' : '⬇️'}
-                </Text>
-              </TouchableOpacity>
-            </TouchableOpacity>
+                  <Text style={styles.albumArtist}>{album.artistName}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
           )}
-        />
-      </ScrollView>
+
+          <Text style={styles.sectionTitle}>RECENT TRACKS</Text>
+          {tracks.length === 0 ? (
+            <Text style={styles.emptyText}>No tracks yet.</Text>
+          ) : (
+            <FlatList
+              data={tracks}
+              keyExtractor={(item) => item.id.toString()}
+              scrollEnabled={false}
+              renderItem={({ item, index }) => (
+                <TouchableOpacity
+                  style={styles.trackItem}
+                  onPress={() => handlePlayTrack(item, index)}
+                >
+                  <View style={styles.trackInfo}>
+                    {item.coverUrl ? (
+                      <Image source={{ uri: item.coverUrl }} style={styles.trackArt} />
+                    ) : (
+                      <View style={styles.trackIcon}>
+                        <Ionicons name="musical-notes-outline" size={16} color="#9ca3af" />
+                      </View>
+                    )}
+                    <View style={styles.trackText}>
+                      <Text style={styles.trackTitle}>{item.title}</Text>
+                      <Text style={styles.trackSubtitle}>
+                        {item.artistName} — {item.albumTitle}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.offlineBtn}
+                    onPress={() => handleToggleOffline(item)}
+                  >
+                    {offlineMap[item.id] ? (
+                      <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                    ) : (
+                      <Ionicons name="download-outline" size={18} color="#9ca3af" />
+                    )}
+                  </TouchableOpacity>
+                </TouchableOpacity>
+              )}
+            />
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -151,12 +156,19 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0f131d', paddingTop: 40 },
   header: { paddingHorizontal: 16, marginBottom: 12 },
   headerTitle: { fontSize: 24, fontWeight: '700', color: '#f3f4f6', marginBottom: 12 },
-  searchInput: {
+  searchRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: '#141824',
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.08)',
     borderRadius: 12,
-    padding: 12,
+    paddingHorizontal: 12,
+  },
+  searchIcon: { marginRight: 8 },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
     color: '#f3f4f6',
     fontSize: 14,
   },
@@ -169,6 +181,17 @@ const styles = StyleSheet.create({
     marginTop: 16,
     marginBottom: 12,
   },
+  emptyText: { color: '#6b7280', fontSize: 13, marginBottom: 4 },
+  errorState: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 32,
+    gap: 6,
+  },
+  errorTitle: { color: '#f3f4f6', fontSize: 16, fontWeight: '600', marginTop: 8 },
+  errorText: { color: '#9ca3af', fontSize: 13, textAlign: 'center' },
+  errorHint: { color: '#6b7280', fontSize: 12, textAlign: 'center', marginTop: 4 },
   albumRow: { flexDirection: 'row', marginBottom: 16 },
   albumCard: {
     width: 140,
@@ -179,11 +202,17 @@ const styles = StyleSheet.create({
     padding: 10,
     marginRight: 12,
   },
+  albumCover: {
+    width: '100%',
+    aspectRatio: 1,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
   albumCoverPlaceholder: {
     width: '100%',
     aspectRatio: 1,
     borderRadius: 12,
-    backgroundColor: '#6366f1',
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 8,
@@ -211,9 +240,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginRight: 12,
   },
+  trackArt: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
+    marginRight: 12,
+  },
   trackText: { flex: 1 },
   trackTitle: { fontSize: 14, fontWeight: '600', color: '#f3f4f6' },
   trackSubtitle: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
   offlineBtn: { padding: 6 },
-  offlineText: { fontSize: 12, color: '#10b981', fontWeight: '600' },
 });
