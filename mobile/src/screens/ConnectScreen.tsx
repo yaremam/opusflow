@@ -28,6 +28,11 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
   const [scanLocked, setScanLocked] = useState(false);
+  // scanFailure surfaces a failed scan right over the camera view, where
+  // the user is actually looking (issue #61: the status card below the
+  // fold made a successfully-scanned-but-unreachable code feel like it
+  // was never picked up at all).
+  const [scanFailure, setScanFailure] = useState<string | null>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -51,13 +56,21 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
       await saveServerCredentials(url, token);
       setIsSuccess(true);
       setStatusMessage('Connected & paired successfully!');
+      setScanFailure(null);
       onConnected?.({ serverUrl: url, pairingToken: token });
-    } else if (result === 'unauthorized') {
-      setIsSuccess(false);
-      setStatusMessage("That pairing token wasn't accepted. Generate a new one from Web Settings.");
     } else {
+      const message =
+        result === 'unauthorized'
+          ? "That pairing token wasn't accepted. Generate a new one from Web Settings."
+          : "Couldn't reach that server. Check the address and your network.";
       setIsSuccess(false);
-      setStatusMessage("Couldn't reach that server. Check the address and your network.");
+      setStatusMessage(message);
+      if (mode === 'scan') {
+        // Stay locked until the user explicitly retries — otherwise a QR
+        // code still in frame gets silently re-attempted on every camera
+        // tick, which is exactly what made this look like nothing happened.
+        setScanFailure(message);
+      }
     }
 
     setLoading(false);
@@ -74,7 +87,12 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
     setScanLocked(true);
     setServerUrl(payload.serverUrl);
     setPairingToken(payload.token);
-    attemptConnect(payload.serverUrl, payload.token).finally(() => setScanLocked(false));
+    attemptConnect(payload.serverUrl, payload.token);
+  }
+
+  function handleTryScanAgain() {
+    setScanFailure(null);
+    setScanLocked(false);
   }
 
   function handleManualConnect() {
@@ -112,6 +130,15 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
                   <ActivityIndicator color="#ffffff" />
                 </View>
               )}
+              {scanFailure && (
+                <View style={styles.scanOverlay}>
+                  <Ionicons name="close-circle" size={28} color="#f87171" />
+                  <Text style={styles.scanErrorText}>{scanFailure}</Text>
+                  <TouchableOpacity style={styles.tryAgainButton} onPress={handleTryScanAgain}>
+                    <Text style={styles.tryAgainButtonText}>Try again</Text>
+                  </TouchableOpacity>
+                </View>
+              )}
             </View>
           ) : (
             <View style={[styles.scanFrame, styles.scanFramePlaceholder]}>
@@ -141,7 +168,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
         </>
       ) : (
         <>
-          <TouchableOpacity style={styles.backRow} onPress={() => setMode('scan')}>
+          <TouchableOpacity style={styles.backRow} onPress={() => { handleTryScanAgain(); setMode('scan'); }}>
             <Ionicons name="chevron-back" size={16} color="#9ca3af" />
             <Text style={styles.backText}>Scan QR instead</Text>
           </TouchableOpacity>
@@ -274,6 +301,26 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(15, 19, 29, 0.55)',
     alignItems: 'center',
     justifyContent: 'center',
+    padding: 20,
+    gap: 10,
+  },
+  scanErrorText: {
+    color: '#f3f4f6',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+  },
+  tryAgainButton: {
+    backgroundColor: ACCENT,
+    borderRadius: 10,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    marginTop: 4,
+  },
+  tryAgainButtonText: {
+    color: '#0a1512',
+    fontSize: 13,
+    fontWeight: '700',
   },
   divider: {
     flexDirection: 'row',
