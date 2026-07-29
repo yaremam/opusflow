@@ -13,6 +13,10 @@ on:
       - 'pnpm-workspace.yaml'
       - 'package.json'
       - 'pnpm-lock.yaml'
+  workflow_dispatch:
+
+env:
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
 
 jobs:
   test:
@@ -44,8 +48,10 @@ jobs:
   build-release:
     name: Build Android Binaries & Publish Release
     needs: test
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -60,27 +66,46 @@ jobs:
           node-version: 24
           cache: pnpm
 
+      - name: Setup Java JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Setup EAS CLI
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EAS_TOKEN }}
+      - name: Generate Native Android Project
+        run: |
+          cd mobile
+          npx expo prebuild --platform android --clean
 
       - name: Build Android Release APK & AAB
         run: |
-          cd mobile
-          npx eas-cli build --platform android --profile preview --non-interactive --local --output ./opusflow-release.apk
-          npx eas-cli build --platform android --profile production --non-interactive --local --output ./opusflow-release.aab
+          cd mobile/android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          ./gradlew bundleRelease
+
+      - name: Prepare Release Artifacts
+        run: |
+          mkdir -p release-artifacts
+          cp mobile/android/app/build/outputs/apk/release/app-release.apk release-artifacts/opusflow-release.apk
+          cp mobile/android/app/build/outputs/bundle/release/app-release.aab release-artifacts/opusflow-release.aab
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: |
-            mobile/opusflow-release.apk
-            mobile/opusflow-release.aab
+            release-artifacts/opusflow-release.apk
+            release-artifacts/opusflow-release.aab
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifacts for Workflow Run
+        uses: actions/upload-artifact@v4
+        with:
+          name: opusflow-android-builds
+          path: release-artifacts/
