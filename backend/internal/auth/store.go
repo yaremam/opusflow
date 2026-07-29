@@ -31,41 +31,6 @@ func NewStore(conn *sql.DB) *Store {
 	return &Store{db: conn}
 }
 
-// Count is how the bootstrap step and the auth middleware both tell
-// whether any token exists yet — an empty table means enforcement hasn't
-// started (see Bootstrap).
-func (s *Store) Count(ctx context.Context) (int, error) {
-	var n int
-	err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM api_tokens`).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("counting tokens: %w", err)
-	}
-	return n, nil
-}
-
-// HasBootstrapped reports whether Bootstrap has ever created the first
-// token for this install — distinct from Count() > 0, which only says
-// whether a token currently exists (see auth_bootstrap's migration
-// comment for why the distinction matters to Middleware).
-func (s *Store) HasBootstrapped(ctx context.Context) (bool, error) {
-	var exists bool
-	err := s.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_bootstrap)`).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("checking bootstrap marker: %w", err)
-	}
-	return exists, nil
-}
-
-// MarkBootstrapped records that Bootstrap has run — called exactly once,
-// by Bootstrap itself.
-func (s *Store) MarkBootstrapped(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, `INSERT INTO auth_bootstrap DEFAULT VALUES`)
-	if err != nil {
-		return fmt.Errorf("recording bootstrap marker: %w", err)
-	}
-	return nil
-}
-
 // Create stores a new named token by its hash (see HashToken) — the
 // caller is responsible for returning the plaintext to the user exactly
 // once, since nothing here ever stores or reproduces it again.

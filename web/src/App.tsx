@@ -1,6 +1,4 @@
-import { useEffect, useState } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
-import { getToken, setUnauthorizedHandler } from './auth'
 import AppLayout from './components/AppLayout'
 import HomePage from './pages/HomePage'
 import ArtistsPage from './pages/ArtistsPage'
@@ -12,23 +10,8 @@ import ImportPage from './pages/ImportPage'
 import LibrariesPage from './pages/LibrariesPage'
 import AboutPage from './pages/AboutPage'
 import SettingsPage from './pages/SettingsPage'
-import UnlockPage from './pages/UnlockPage'
 
 function App() {
-  const [unlocked, setUnlocked] = useState(() => getToken() !== null)
-
-  // Registered once so api/library.ts's request() can report a 401 from
-  // anywhere (a revoked token, not just a failed unlock attempt) without
-  // every call site needing to know about the unlock screen.
-  useEffect(() => {
-    setUnauthorizedHandler(() => setUnlocked(false))
-    return () => setUnauthorizedHandler(null)
-  }, [])
-
-  if (!unlocked) {
-    return <UnlockPage onUnlock={() => setUnlocked(true)} />
-  }
-
   return (
     <BrowserRouter>
       <Routes>

@@ -50,7 +50,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
     setLoading(true);
     setStatusMessage(null);
 
-    const result = await validateServerConnection(url, token);
+    const result = await validateServerConnection(url);
 
     if (result === 'valid') {
       await saveServerCredentials(url, token);
@@ -59,10 +59,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
       setScanFailure(null);
       onConnected?.({ serverUrl: url, pairingToken: token });
     } else {
-      const message =
-        result === 'unauthorized'
-          ? "That pairing token wasn't accepted. Generate a new one from Web Settings."
-          : "Couldn't reach that server. Check the address and your network.";
+      const message = "Couldn't reach that server. Check the address and your network.";
       setIsSuccess(false);
       setStatusMessage(message);
       if (mode === 'scan') {

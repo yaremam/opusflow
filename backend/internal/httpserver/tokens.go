@@ -90,11 +90,8 @@ func handleDeleteToken(svc *auth.Service) http.HandlerFunc {
 		}
 		if err := svc.DeleteToken(r.Context(), id); err != nil {
 			status := http.StatusInternalServerError
-			switch {
-			case errors.Is(err, auth.ErrTokenNotFound):
+			if errors.Is(err, auth.ErrTokenNotFound) {
 				status = http.StatusNotFound
-			case errors.Is(err, auth.ErrLastToken):
-				status = http.StatusConflict
 			}
 			http.Error(w, err.Error(), status)
 			return

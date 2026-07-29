@@ -51,17 +51,6 @@ func testStore(t *testing.T) *Store {
 
 func ctx() context.Context { return context.Background() }
 
-func TestCountStartsAtZero(t *testing.T) {
-	s := testStore(t)
-	n, err := s.Count(ctx())
-	if err != nil {
-		t.Fatalf("Count: %v", err)
-	}
-	if n != 0 {
-		t.Fatalf("Count = %d, want 0 on a fresh store", n)
-	}
-}
-
 func TestCreateAndList(t *testing.T) {
 	s := testStore(t)
 
@@ -77,14 +66,6 @@ func TestCreateAndList(t *testing.T) {
 	}
 	if tok.LastUsedAt != nil {
 		t.Fatalf("LastUsedAt = %v, want nil for a never-used token", tok.LastUsedAt)
-	}
-
-	n, err := s.Count(ctx())
-	if err != nil {
-		t.Fatalf("Count: %v", err)
-	}
-	if n != 1 {
-		t.Fatalf("Count = %d, want 1", n)
 	}
 
 	list, err := s.List(ctx())

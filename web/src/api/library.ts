@@ -1,5 +1,3 @@
-import { getToken, notifyUnauthorized } from '../auth'
-
 export type ImportStatus = 'copying' | 'complete' | 'failed'
 
 export interface FileError {
@@ -236,15 +234,7 @@ export function errorMessage(err: unknown): string {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const headers = new Headers(init?.headers)
-  const token = getToken()
-  if (token) headers.set('Authorization', `Bearer ${token}`)
-
-  const res = await fetch(path, { ...init, headers })
-  if (res.status === 401) {
-    notifyUnauthorized()
-    throw new Error('Session expired — please unlock again.')
-  }
+  const res = await fetch(path, init)
   if (!res.ok) {
     const text = (await res.text()).trim()
     throw new Error(text || `Request failed with status ${res.status}`)

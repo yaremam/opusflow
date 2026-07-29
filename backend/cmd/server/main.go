@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/yaremam/opusflow/backend/internal/auth"
@@ -90,25 +89,16 @@ func main() {
 	// Migrations run in the background rather than blocking startup: /health
 	// (and the process as a whole) should come up regardless of how long
 	// Postgres takes to become reachable. Until migrations land, library
-	// endpoints will simply return errors on the queries that need them —
-	// the auth middleware does the same (503) if asked to check a token
-	// before api_tokens/auth_bootstrap exist yet.
+	// endpoints will simply return errors on the queries that need them.
 	// The enrichment job's first run (TDR 003's startup trigger, covering a
-	// library that predates this feature) and auth's Bootstrap (TDR 022 —
-	// a no-op past the very first run, once any token exists) are both
-	// chained after migrations succeed, for the same reason: the tables
-	// either one needs don't exist until then.
+	// library that predates this feature) is chained after migrations
+	// succeed, for the same reason: the tables it needs don't exist until
+	// then.
 	go func() {
 		migrateWithRetry(conn)
 		if job != nil {
 			sum := job.Run(context.Background())
 			log.Printf("enrich: startup run: %d found, %d not found, %d failed", sum.Found, sum.NotFound, sum.Failed)
-		}
-		created, err := auth.Bootstrap(context.Background(), authStore, dataDir)
-		if err != nil {
-			log.Printf("auth: bootstrap: %v", err)
-		} else if created {
-			log.Printf("auth: no pairing token existed yet — generated one at %s", filepath.Join(dataDir, auth.BootstrapFileName))
 		}
 	}()
 
