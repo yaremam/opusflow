@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OpusFlow - Companion App & Web Settings UI Mockup</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink-950: #10141a;
+      --ink-900: #1a1f27;
+      --ink-800: #232a34;
+      --ink-700: #2d3540;
+      --border: #2c3440;
+      --mist-400: #8b96a5;
+      --paper-50: #e9edf1;
+      --accent: #49b3a6;
+      --accent-strong: #6fd1c4;
+      --good: #5db56a;
+      --good-bg: rgba(93, 181, 106, 0.14);
+      --bad: #e0685f;
+      --bad-bg: rgba(224, 104, 95, 0.14);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Roboto, sans-serif; user-select: none; }
+    body { background: #05070a; color: var(--paper-50); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
+
+    .header-banner { text-align: center; margin-bottom: 16px; }
+    .header-banner h1 { font-size: 24px; font-weight: 700; color: var(--accent-strong); }
+    
+    .view-switcher { display: flex; gap: 12px; margin-bottom: 24px; }
+    .switch-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--border); background: var(--ink-900); color: var(--mist-400); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .switch-btn.active { background: var(--accent); color: #0c1613; border-color: var(--accent); }
+
+    /* Device Containers */
+    .phone-container { width: 380px; height: 780px; background: #0f131d; border-radius: 44px; box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 0 10px #1e2433; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .web-container { width: 960px; height: 640px; background: var(--ink-950); border-radius: 12px; border: 1px solid var(--border); display: none; flex-direction: column; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+
+    /* Native Web UI Layout (OpusFlow Tokens) */
+    .web-navbar { height: 56px; background: var(--ink-900); border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+    .wordmark { font-size: 16px; font-weight: 700; color: var(--paper-50); display: flex; align-items: center; gap: 8px; text-decoration: none; }
+    .wordmark span.mark { width: 22px; height: 22px; background: var(--accent); border-radius: 5px; display: inline-flex; align-items: center; justify-content: center; }
+    .web-links { display: flex; gap: 18px; font-size: 14px; color: var(--mist-400); }
+    .web-links span.active { color: var(--paper-50); font-weight: 700; border-bottom: 2px solid var(--accent); padding-bottom: 16px; margin-bottom: -16px; }
+
+    .web-content { padding: 40px; flex: 1; overflow-y: auto; max-width: 860px; margin: 0 auto; width: 100%; }
+    .eyebrow { font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-strong); margin-bottom: 6px; }
+    .sub { color: var(--mist-400); font-size: 14px; margin-top: 4px; margin-bottom: 24px; }
+
+    .web-card { background: var(--ink-900); border: 1px solid var(--border); border-radius: 12px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.2); }
+    .web-card h2 { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
+
+    .btn-primary { background: var(--accent); color: #0c1613; border: none; padding: 10px 18px; border-radius: 8px; font-size: 14px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+    .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--paper-50); padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
+    .btn-bad { background: var(--bad-bg); border: 1px solid color-mix(in srgb, var(--bad) 45%, transparent); color: var(--bad); padding: 6px 12px; border-radius: 7px; font-size: 12px; font-weight: 700; cursor: pointer; }
+
+    .pill-complete { font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 100px; background: var(--good-bg); color: var(--good); display: inline-flex; align-items: center; gap: 4px; }
+
+    .token-box { background: var(--ink-950); border: 1px dashed var(--accent); border-radius: 10px; padding: 14px 18px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .token-code { font-family: ui-monospace, SFMono-Regular, monospace; color: var(--accent-strong); font-size: 14px; }
+
+    .token-row { display: flex; align-items: center; justify-content: space-between; background: var(--ink-950); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; margin-top: 10px; }
+
+    /* Phone UI Styles */
+    .status-bar { height: 36px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--mist-400); }
+    .screen-content { flex: 1; padding: 16px; overflow-y: auto; }
+  </style>
+</head>
+<body>
+
+  <div class="header-banner">
+    <h1>OpusFlow Feature UI Mockups (019_android_companion_app)</h1>
+  </div>
+
+  <div class="view-switcher">
+    <button class="switch-btn active" id="btn-phone" onclick="showView('phone')">📱 Android Companion App</button>
+    <button class="switch-btn" id="btn-web" onclick="showView('web')">💻 Web Settings (/settings)</button>
+  </div>
+
+  <!-- PHONE MOCKUP -->
+  <div class="phone-container" id="phone-view">
+    <div class="status-bar"><span>16:50</span><span>📶 5G  🔋 94%</span></div>
+    <div class="screen-content">
+      <h2>Server Setup</h2>
+      <p style="color: var(--mist-400); font-size: 13px; margin: 12px 0 20px;">Connect to your self-hosted music server using the token generated on the web settings page.</p>
+      <button class="btn-primary" style="width: 100%; justify-content: center;">Connect & Sync Library</button>
+    </div>
+  </div>
+
+  <!-- WEB MOCKUP (OPUSFLOW NATIVE DESIGN SYSTEM) -->
+  <div class="web-container" id="web-view">
+    <div class="web-navbar">
+      <div class="wordmark"><span class="mark">🎵</span> opusflow</div>
+      <div class="web-links">
+        <span>Home</span><span>Artists</span><span>Albums</span><span>Songs</span><span>Import</span><span>Libraries</span><span class="active">Settings</span><span>About</span>
+      </div>
+    </div>
+    <div class="web-content">
+      <p class="eyebrow">Settings</p>
+      <h1 style="font-size: 28px; font-weight: 700;">System & Companion Devices</h1>
+      <p class="sub">Manage server pairing credentials and companion mobile devices.</p>
+
+      <div class="web-card">
+        <h2>📱 Mobile Device Pairing & API Tokens</h2>
+        <p style="font-size: 14px; color: var(--mist-400); margin-top: 4px; margin-bottom: 16px;">Generate an API pairing token to connect your OpusFlow Android Companion App to this server instance.</p>
+
+        <button class="btn-primary">＋ Generate new pairing token</button>
+
+        <div style="margin-top: 20px;">
+          <span class="pill-complete">✓ New Token Created</span>
+          <div class="token-box">
+            <span class="token-code">opusflow_token_98f731a89b42e1</span>
+            <button class="btn-ghost">Copy token</button>
+          </div>
+          <p style="font-size: 12px; color: var(--mist-400); margin-top: 8px;">Input your server host URL and this token into the OpusFlow Mobile app.</p>
+        </div>
+
+        <h3 style="font-size: 12px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--mist-400); margin-top: 24px; margin-bottom: 8px;">
+          PAIRED DEVICES (1)
+        </h3>
+
+        <div class="token-row">
+          <div>
+            <strong style="font-size: 14px; color: var(--paper-50);">Android Phone (Pixel 8)</strong>
+            <div style="font-size: 12px; color: var(--mist-400); margin-top: 2px;">
+              Created 2026-07-29 • <code style="font-family: monospace;">opusflow_token_98f…</code>
+            </div>
+          </div>
+          <button class="btn-bad">Revoke token</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function showView(view) {
+      document.getElementById('phone-view').style.display = view === 'phone' ? 'flex' : 'none';
+      document.getElementById('web-view').style.display = view === 'web' ? 'flex' : 'none';
+      document.getElementById('btn-phone').classList.toggle('active', view === 'phone');
+      document.getElementById('btn-web').classList.toggle('active', view === 'web');
+    }
+  </script>
+</body>
+</html>

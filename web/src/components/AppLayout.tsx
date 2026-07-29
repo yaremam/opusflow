@@ -12,6 +12,7 @@ const NAV_LINKS = [
   { to: '/songs', label: 'Songs' },
   { to: '/import', label: 'Import' },
   { to: '/libraries', label: 'Libraries' },
+  { to: '/settings', label: 'Settings' },
   { to: '/about', label: 'About' },
 ]
 

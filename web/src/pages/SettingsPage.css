@@ -1,0 +1,81 @@
+.settings-topbar {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.settings-section {
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 2rem;
+  box-shadow: var(--shadow);
+}
+
+.settings-section h2 {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.4rem;
+}
+
+.settings-section p.sec-desc {
+  color: var(--mist-400);
+  font-size: 0.9rem;
+  margin: 0 0 1.25rem;
+}
+
+.token-gen-box {
+  background: var(--ink-950);
+  border: 1px dashed var(--accent);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.token-gen-box .mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.9rem;
+  color: var(--accent-strong);
+  word-break: break-all;
+}
+
+.token-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.token-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.9rem 1.2rem;
+}
+
+.token-row .device-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--paper-50);
+}
+
+.token-row .device-meta {
+  font-size: 0.8rem;
+  color: var(--mist-400);
+  margin-top: 0.2rem;
+}
+
+.token-row .mono-sub {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: var(--mist-400);
+}
