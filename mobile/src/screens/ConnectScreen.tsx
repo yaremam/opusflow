@@ -35,6 +35,13 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
   const [scanFailure, setScanFailure] = useState<string | null>(null);
 
   const [permission, requestPermission] = useCameraPermissions();
+  // Forces one remount of CameraView shortly after the camera session
+  // first becomes eligible to run — on some Android devices the preview
+  // renders blank on its very first mount (issue #71), and switching to
+  // "Enter manually" and back (an ordinary remount) reliably fixes it.
+  // This does the same remount automatically instead of relying on the
+  // user to discover that workaround.
+  const [cameraKey, setCameraKey] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -45,6 +52,12 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
       }
     })();
   }, []);
+
+  useEffect(() => {
+    if (!permission?.granted) return;
+    const timer = setTimeout(() => setCameraKey((k) => k + 1), 300);
+    return () => clearTimeout(timer);
+  }, [permission?.granted]);
 
   async function attemptConnect(url: string, token: string) {
     setLoading(true);
@@ -117,6 +130,7 @@ export function ConnectScreen({ onConnected }: ConnectScreenProps) {
           {permission?.granted ? (
             <View style={styles.scanFrame}>
               <CameraView
+                key={cameraKey}
                 style={StyleSheet.absoluteFill}
                 facing="back"
                 barcodeScannerSettings={{ barcodeTypes: ['qr'] }}
