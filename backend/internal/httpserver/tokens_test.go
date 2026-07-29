@@ -131,6 +131,17 @@ func TestCreateListAndRevokeTokenEndToEnd(t *testing.T) {
 		t.Fatalf("Name = %q, want %q", created.Name, "Kitchen iPad")
 	}
 
+	// A second token so revoking the first below isn't revoking the last
+	// one remaining — that's TestDeleteTokenReturnsConflictWhenItsTheLastOne's
+	// job.
+	secondReq := httptest.NewRequest(http.MethodPost, "/api/tokens", strings.NewReader(`{"name":"Tablet"}`))
+	secondReq.Header.Set("Authorization", "Bearer "+created.Token)
+	secondRec := httptest.NewRecorder()
+	handler.ServeHTTP(secondRec, secondReq)
+	if secondRec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/tokens (second token) status = %d, want 201, body = %s", secondRec.Code, secondRec.Body.String())
+	}
+
 	// The token this endpoint just minted now gates every other /api/* call.
 	authedReq := httptest.NewRequest(http.MethodGet, "/api/library/artists", nil)
 	authedReq.Header.Set("Authorization", "Bearer "+created.Token)
@@ -152,8 +163,8 @@ func TestCreateListAndRevokeTokenEndToEnd(t *testing.T) {
 	if err := json.Unmarshal(listRec.Body.Bytes(), &list); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if len(list) != 1 || list[0].ID != created.ID {
-		t.Fatalf("list = %+v, want one row matching id %d", list, created.ID)
+	if len(list) != 2 {
+		t.Fatalf("list = %+v, want two rows", list)
 	}
 	if strings.Contains(listRec.Body.String(), created.Token) {
 		t.Fatalf("GET /api/tokens response leaked the plaintext token")
@@ -175,5 +186,42 @@ func TestCreateListAndRevokeTokenEndToEnd(t *testing.T) {
 	handler.ServeHTTP(revokedRec, revokedReq)
 	if revokedRec.Code != http.StatusUnauthorized {
 		t.Fatalf("GET /api/library/artists with the just-revoked token: status = %d, want 401", revokedRec.Code)
+	}
+}
+
+// TestDeleteTokenReturnsConflictWhenItsTheLastOne guards against issue #59:
+// a household admin could delete every pairing token, including the one
+// they were using, and lock themselves (and everyone else) out of the
+// entire app with no way back in short of a database edit.
+func TestDeleteTokenReturnsConflictWhenItsTheLastOne(t *testing.T) {
+	svc, authStore := testServiceAndAuth(t)
+	handler := New("", "", "", "", svc, authStore)
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/tokens", strings.NewReader(`{"name":"Only Device"}`))
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("POST /api/tokens status = %d, want 201, body = %s", createRec.Code, createRec.Body.String())
+	}
+	var created createTokenResponse
+	if err := json.Unmarshal(createRec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/tokens/"+strconv.FormatInt(created.ID, 10), nil)
+	deleteReq.Header.Set("Authorization", "Bearer "+created.Token)
+	deleteRec := httptest.NewRecorder()
+	handler.ServeHTTP(deleteRec, deleteReq)
+	if deleteRec.Code != http.StatusConflict {
+		t.Fatalf("DELETE /api/tokens/{id} on the last remaining token: status = %d, want 409, body = %s", deleteRec.Code, deleteRec.Body.String())
+	}
+
+	// The token must still work — the refused delete didn't half-apply.
+	stillWorksReq := httptest.NewRequest(http.MethodGet, "/api/library/artists", nil)
+	stillWorksReq.Header.Set("Authorization", "Bearer "+created.Token)
+	stillWorksRec := httptest.NewRecorder()
+	handler.ServeHTTP(stillWorksRec, stillWorksReq)
+	if stillWorksRec.Code != http.StatusOK {
+		t.Fatalf("GET /api/library/artists after a refused delete: status = %d, want 200, body = %s", stillWorksRec.Code, stillWorksRec.Body.String())
 	}
 }
