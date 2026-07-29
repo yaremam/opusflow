@@ -49,57 +49,63 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="settings-page">
-      <div className="settings-header">
-        <h1>Settings</h1>
-        <p>Manage server configuration, companion devices, and API credentials.</p>
+    <div className="page-shell wide">
+      <div className="settings-topbar">
+        <div>
+          <p className="eyebrow">Settings</p>
+          <h1>System & Companion Devices</h1>
+          <p className="sub">Manage server pairing credentials and companion mobile devices.</p>
+        </div>
       </div>
 
-      <div className="settings-card">
+      <div className="settings-section">
         <h2>📱 Mobile Device Pairing & API Tokens</h2>
-        <p>
-          Generate a pairing token to connect your OpusFlow Android Companion App to this server instance.
+        <p className="sec-desc">
+          Generate an API pairing token to connect your OpusFlow Android Companion App to this server.
         </p>
 
-        <button className="btn-primary" onClick={handleGenerateToken}>
-          + Generate New Mobile Pairing Token
+        <button type="button" className="btn-primary" onClick={handleGenerateToken}>
+          ＋ Generate new pairing token
         </button>
 
         {newlyGeneratedToken && (
-          <div style={{ marginTop: 20 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: '#10b981' }}>
-              ✅ NEW TOKEN GENERATED
-            </span>
-            <div className="token-display-box">
-              <span className="token-code">{newlyGeneratedToken}</span>
+          <div style={{ marginTop: '1.25rem' }}>
+            <span className="pill complete">✓ New Token Created</span>
+            <div className="token-gen-box">
+              <span className="mono">{newlyGeneratedToken}</span>
               <button
-                className="btn-secondary"
+                type="button"
+                className="btn-ghost"
                 onClick={() => handleCopy(newlyGeneratedToken)}
               >
-                {copied ? 'Copied! ✓' : 'Copy Token'}
+                {copied ? 'Copied! ✓' : 'Copy token'}
               </button>
             </div>
-            <p style={{ fontSize: 12, color: '#9ca3af', margin: 0 }}>
-              Enter your server URL (e.g. <code>{window.location.origin}</code>) and this token on your mobile device.
+            <p className="sub" style={{ fontSize: '0.82rem', marginTop: '0.5rem' }}>
+              Input your server host URL and this token into the OpusFlow Mobile app.
             </p>
           </div>
         )}
 
-        <h3 style={{ fontSize: 14, fontWeight: 600, marginTop: 28, marginBottom: 12 }}>
-          ACTIVE PAIRED DEVICES ({tokens.length})
+        <h3 style={{ fontSize: '0.9rem', letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--mist-400)', marginTop: '2rem', marginBottom: '0.75rem' }}>
+          Paired Devices ({tokens.length})
         </h3>
 
         <div className="token-list">
           {tokens.map((item) => (
-            <div key={item.id} className="token-item">
+            <div key={item.id} className="token-row">
               <div>
-                <strong style={{ fontSize: 14 }}>{item.name}</strong>
-                <div style={{ fontSize: 12, color: '#9ca3af', marginTop: 2 }}>
-                  Created on {item.createdAt} • <code>{item.token.slice(0, 18)}...</code>
+                <div className="device-name">{item.name}</div>
+                <div className="device-meta">
+                  Created {item.createdAt} • <span className="mono-sub">{item.token.slice(0, 18)}…</span>
                 </div>
               </div>
-              <button className="btn-danger" onClick={() => handleRevoke(item.id)}>
-                Revoke Token
+              <button
+                type="button"
+                className="btn-bad"
+                onClick={() => handleRevoke(item.id)}
+              >
+                Revoke token
               </button>
             </div>
           ))}

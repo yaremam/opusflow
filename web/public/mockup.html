@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>OpusFlow Android Companion App - Interactive UI Mockup</title>
+  <title>OpusFlow - Companion App & Web Settings UI Mockup</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
@@ -21,776 +21,85 @@
       --surface-glass: rgba(20, 24, 36, 0.75);
     }
 
-    * {
-      box-sizing: border-box;
-      margin: 0;
-      padding: 0;
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      user-select: none;
-    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Inter', sans-serif; user-select: none; }
+    body { background: #05070a; color: var(--text-main); min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
 
-    body {
-      background: #05070a;
-      color: var(--text-main);
-      min-height: 100vh;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      padding: 20px;
-    }
+    .header-banner { text-align: center; margin-bottom: 16px; }
+    .header-banner h1 { font-size: 24px; font-weight: 700; background: var(--accent-gradient); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    
+    .view-switcher { display: flex; gap: 12px; margin-bottom: 24px; }
+    .switch-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid var(--card-border); background: var(--card-bg); color: var(--text-sub); font-size: 13px; font-weight: 600; cursor: pointer; }
+    .switch-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
 
-    .header-banner {
-      text-align: center;
-      margin-bottom: 24px;
-    }
+    /* Device Container */
+    .phone-container { width: 380px; height: 780px; background: #0f131d; border-radius: 44px; box-shadow: 0 25px 60px rgba(0,0,0,0.8), 0 0 0 10px #1e2433; display: flex; flex-direction: column; overflow: hidden; position: relative; }
+    .web-container { width: 900px; height: 600px; background: #0f131d; border-radius: 16px; border: 1px solid var(--card-border); display: none; flex-direction: column; overflow: hidden; }
 
-    .header-banner h1 {
-      font-size: 24px;
-      font-weight: 700;
-      background: var(--accent-gradient);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 6px;
-    }
-
-    .header-banner p {
-      color: var(--text-sub);
-      font-size: 14px;
-    }
-
-    /* Device Mockup Shell */
-    .phone-container {
-      width: 380px;
-      height: 780px;
-      background: #0f131d;
-      border-radius: 44px;
-      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.8), 0 0 0 10px #1e2433, 0 0 0 12px rgba(255, 255, 255, 0.1);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      position: relative;
-    }
-
-    /* Status Bar */
-    .status-bar {
-      height: 36px;
-      padding: 0 20px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      font-size: 12px;
-      color: var(--text-sub);
-      font-weight: 500;
-      z-index: 50;
-      background: rgba(15, 19, 29, 0.9);
-      backdrop-filter: blur(10px);
-    }
-
-    .notch {
-      width: 100px;
-      height: 18px;
-      background: #05070a;
-      border-bottom-left-radius: 12px;
-      border-bottom-right-radius: 12px;
-      position: absolute;
-      top: 0;
-      left: 50%;
-      transform: translateX(-50%);
-    }
-
-    /* Main Screen Content Area */
-    .screen-content {
-      flex: 1;
-      position: relative;
-      overflow-y: auto;
-      display: flex;
-      flex-direction: column;
-      scroll-behavior: smooth;
-    }
-
-    .tab-page {
-      display: none;
-      flex-direction: column;
-      padding: 16px;
-      flex: 1;
-      animation: fadeIn 0.25s ease-in-out;
-    }
-
-    .tab-page.active {
-      display: flex;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(6px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    /* App Header */
-    .app-bar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 16px;
-    }
-
-    .app-bar h2 {
-      font-size: 20px;
-      font-weight: 700;
-    }
-
-    .icon-btn {
-      width: 36px;
-      height: 36px;
-      border-radius: 12px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      color: var(--text-main);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s;
-    }
-
-    .icon-btn:hover {
-      background: var(--accent);
-    }
-
-    /* Form Elements */
-    .input-group {
-      margin-bottom: 16px;
-    }
-
-    .input-group label {
-      display: block;
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-sub);
-      margin-bottom: 6px;
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .input-group input {
-      width: 100%;
-      padding: 12px 14px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      color: var(--text-main);
-      font-size: 14px;
-      outline: none;
-      transition: border-color 0.2s;
-    }
-
-    .input-group input:focus {
-      border-color: var(--accent);
-    }
-
-    .btn-primary {
-      width: 100%;
-      padding: 14px;
-      background: var(--accent-gradient);
-      border: none;
-      border-radius: 14px;
-      color: #fff;
-      font-weight: 600;
-      font-size: 15px;
-      cursor: pointer;
-      box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4);
-      transition: transform 0.15s, box-shadow 0.15s;
-    }
-
-    .btn-primary:active {
-      transform: scale(0.98);
-    }
-
-    /* Badge & Cards */
-    .status-card {
-      background: rgba(16, 185, 129, 0.1);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      padding: 12px;
-      border-radius: 12px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      font-size: 13px;
-      color: var(--success);
-      margin-top: 16px;
-    }
-
-    .album-grid {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .album-card {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 10px;
-      cursor: pointer;
-      transition: transform 0.2s, border-color 0.2s;
-    }
-
-    .album-card:hover {
-      transform: translateY(-2px);
-      border-color: var(--accent);
-    }
-
-    .album-cover {
-      width: 100%;
-      aspect-ratio: 1;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #3b82f6, #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 32px;
-      margin-bottom: 8px;
-    }
-
-    .album-title {
-      font-size: 13px;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    .album-artist {
-      font-size: 11px;
-      color: var(--text-sub);
-    }
-
-    /* Track List */
-    .track-item {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 10px 12px;
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 12px;
-      margin-bottom: 8px;
-      cursor: pointer;
-      transition: background 0.2s;
-    }
-
-    .track-item:hover {
-      background: rgba(99, 102, 241, 0.15);
-    }
-
-    .track-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .track-icon {
-      width: 32px;
-      height: 32px;
-      border-radius: 8px;
-      background: rgba(255, 255, 255, 0.05);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 14px;
-    }
-
-    .track-text h4 {
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    .track-text p {
-      font-size: 11px;
-      color: var(--text-sub);
-    }
-
-    .download-badge {
-      font-size: 10px;
-      padding: 4px 8px;
-      border-radius: 20px;
-      background: rgba(16, 185, 129, 0.15);
-      color: var(--success);
-      border: 1px solid rgba(16, 185, 129, 0.3);
-      font-weight: 600;
-    }
-
-    /* Player View */
-    .now-playing-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: space-between;
-      height: 100%;
-      padding: 10px 0;
-    }
-
-    .big-art {
-      width: 220px;
-      height: 220px;
-      border-radius: 24px;
-      background: linear-gradient(135deg, #ec4899, #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 72px;
-      box-shadow: 0 15px 30px rgba(139, 92, 246, 0.4);
-      margin: 16px 0;
-    }
-
-    .player-details {
-      text-align: center;
-      margin-bottom: 16px;
-    }
-
-    .player-details h3 {
-      font-size: 18px;
-      font-weight: 700;
-    }
-
-    .player-details p {
-      font-size: 13px;
-      color: var(--text-sub);
-    }
-
-    .progress-bar-container {
-      width: 100%;
-      margin-bottom: 20px;
-    }
-
-    .progress-bar {
-      width: 100%;
-      height: 6px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 3px;
-      position: relative;
-      cursor: pointer;
-    }
-
-    .progress-fill {
-      width: 42%;
-      height: 100%;
-      background: var(--accent-gradient);
-      border-radius: 3px;
-    }
-
-    .time-labels {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      color: var(--text-sub);
-      margin-top: 6px;
-    }
-
-    .player-controls {
-      display: flex;
-      align-items: center;
-      gap: 20px;
-    }
-
-    .control-btn {
-      background: none;
-      border: none;
-      color: var(--text-main);
-      font-size: 20px;
-      cursor: pointer;
-      transition: transform 0.15s;
-    }
-
-    .control-btn:active {
-      transform: scale(0.9);
-    }
-
-    .play-btn {
-      width: 58px;
-      height: 58px;
-      border-radius: 50%;
-      background: var(--accent-gradient);
-      color: #fff;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 24px;
-      box-shadow: 0 6px 18px rgba(99, 102, 241, 0.5);
-    }
-
-    /* Storage Progress Meter */
-    .storage-meter {
-      background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-
-    .meter-bar {
-      height: 10px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 5px;
-      overflow: hidden;
-      display: flex;
-      margin: 10px 0;
-    }
-
-    .meter-explicit {
-      width: 40%;
-      background: #6366f1;
-    }
-
-    .meter-cache {
-      width: 25%;
-      background: #10b981;
-    }
-
-    /* Bottom Navigation Bar */
-    .nav-bar {
-      height: 64px;
-      background: rgba(15, 19, 29, 0.95);
-      backdrop-filter: blur(12px);
-      border-top: 1px solid var(--card-border);
-      display: flex;
-      justify-content: space-around;
-      align-items: center;
-      padding: 0 10px;
-    }
-
-    .nav-item {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 4px;
-      color: var(--text-sub);
-      font-size: 11px;
-      font-weight: 500;
-      cursor: pointer;
-      transition: color 0.2s;
-    }
-
-    .nav-item.active {
-      color: var(--accent);
-    }
-
-    .nav-item svg {
-      width: 20px;
-      height: 20px;
-      stroke-width: 2;
-    }
-
-    /* Mini Player Bar */
-    .mini-player {
-      position: absolute;
-      bottom: 64px;
-      left: 0;
-      right: 0;
-      height: 52px;
-      background: var(--surface-glass);
-      backdrop-filter: blur(16px);
-      border-top: 1px solid var(--card-border);
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 0 16px;
-      cursor: pointer;
-      z-index: 40;
-    }
-
-    .mini-info {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .mini-art {
-      width: 34px;
-      height: 34px;
-      border-radius: 8px;
-      background: linear-gradient(135deg, #ec4899, #8b5cf6);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 16px;
-    }
-
-    .mini-text h5 {
-      font-size: 12px;
-      font-weight: 600;
-    }
-
-    .mini-text p {
-      font-size: 10px;
-      color: var(--text-sub);
-    }
+    /* Web UI Mockup Styles */
+    .web-navbar { height: 56px; background: #141824; border-bottom: 1px solid var(--card-border); display: flex; align-items: center; justify-content: space-between; padding: 0 24px; }
+    .web-links { display: flex; gap: 16px; font-size: 14px; color: var(--text-sub); }
+    .web-links span.active { color: var(--accent); font-weight: 600; }
+    .web-content { padding: 32px; flex: 1; overflow-y: auto; }
+    .web-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 16px; padding: 24px; }
+    
+    /* Phone UI Styles */
+    .status-bar { height: 36px; padding: 0 20px; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-sub); }
+    .screen-content { flex: 1; padding: 16px; overflow-y: auto; }
+    .btn-primary { width: 100%; padding: 14px; background: var(--accent-gradient); border: none; border-radius: 14px; color: #fff; font-weight: 600; cursor: pointer; }
   </style>
 </head>
 <body>
 
   <div class="header-banner">
-    <h1>OpusFlow Android Companion App</h1>
-    <p>Interactive HTML UI Mockup Demonstration</p>
+    <h1>OpusFlow Feature UI Mockups (019_android_companion_app)</h1>
   </div>
 
-  <div class="phone-container">
-    <div class="notch"></div>
-    
-    <!-- Status Bar -->
-    <div class="status-bar">
-      <span>16:50</span>
-      <span>📶 5G  🔋 94%</span>
-    </div>
+  <div class="view-switcher">
+    <button class="switch-btn active" id="btn-phone" onclick="showView('phone')">📱 Android Companion App</button>
+    <button class="switch-btn" id="btn-web" onclick="showView('web')">💻 Web Settings (/settings)</button>
+  </div>
 
-    <!-- Screen Area -->
+  <!-- PHONE MOCKUP -->
+  <div class="phone-container" id="phone-view">
+    <div class="status-bar"><span>16:50</span><span>📶 5G  🔋 94%</span></div>
     <div class="screen-content">
-
-      <!-- TAB 1: Connect / Pairing -->
-      <div id="tab-connect" class="tab-page">
-        <div class="app-bar">
-          <h2>Server Setup</h2>
-          <div class="icon-btn">⚙️</div>
-        </div>
-
-        <div style="text-align: center; margin: 20px 0;">
-          <div style="width: 64px; height: 64px; background: var(--accent-gradient); border-radius: 20px; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; font-size: 32px; box-shadow: 0 10px 25px rgba(99,102,241,0.4);">🎵</div>
-          <h3 style="font-weight: 700;">OpusFlow Mobile</h3>
-          <p style="font-size: 13px; color: var(--text-sub); margin-top: 4px;">Connect to your self-hosted server</p>
-        </div>
-
-        <div class="input-group">
-          <label>Server Address</label>
-          <input type="text" value="http://192.168.1.100:8080" />
-        </div>
-
-        <div class="input-group">
-          <label>API Pairing Token</label>
-          <input type="password" value="opusflow_token_98f731a89b" />
-        </div>
-
-        <button class="btn-primary" onclick="switchTab('library')">Connect & Sync Library</button>
-
-        <div class="status-card">
-          <span>✅</span>
-          <div>
-            <strong>Connected to OpusFlow Server</strong><br/>
-            <span style="font-size: 11px; opacity: 0.8;">Token secured in Android KeyStore</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB 2: Library -->
-      <div id="tab-library" class="tab-page active">
-        <div class="app-bar">
-          <h2>Library</h2>
-          <div style="display: flex; gap: 8px;">
-            <div class="icon-btn">🔍</div>
-            <div class="icon-btn">⚙️</div>
-          </div>
-        </div>
-
-        <div style="margin-bottom: 16px;">
-          <h3 style="font-size: 14px; font-weight: 600; color: var(--text-sub); margin-bottom: 10px;">FEATURED ALBUMS</h3>
-          <div class="album-grid">
-            <div class="album-card" onclick="switchTab('player')">
-              <div class="album-cover">🌌</div>
-              <div class="album-title">Midnight Sun</div>
-              <div class="album-artist">Solaris (2026)</div>
-            </div>
-            <div class="album-card" onclick="switchTab('player')">
-              <div class="album-cover" style="background: linear-gradient(135deg, #10b981, #3b82f6);">⚡</div>
-              <div class="album-title">Neon Pulse</div>
-              <div class="album-artist">SynthWave</div>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <h3 style="font-size: 14px; font-weight: 600; color: var(--text-sub); margin-bottom: 10px;">RECENT TRACKS</h3>
-          <div class="track-item" onclick="switchTab('player')">
-            <div class="track-info">
-              <div class="track-icon">🎵</div>
-              <div class="track-text">
-                <h4>Cosmic Voyager</h4>
-                <p>Solaris — Midnight Sun</p>
-              </div>
-            </div>
-            <span class="download-badge">Offline</span>
-          </div>
-          <div class="track-item" onclick="switchTab('player')">
-            <div class="track-info">
-              <div class="track-icon">🎵</div>
-              <div class="track-text">
-                <h4>Digital Horizon</h4>
-                <p>SynthWave — Neon Pulse</p>
-              </div>
-            </div>
-            <span style="font-size: 12px;">⬇️</span>
-          </div>
-          <div class="track-item" onclick="switchTab('player')">
-            <div class="track-info">
-              <div class="track-icon">🎵</div>
-              <div class="track-text">
-                <h4>Velvet Resonance</h4>
-                <p>Echoes — Ambient Dreams</p>
-              </div>
-            </div>
-            <span class="download-badge">Offline</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB 3: Now Playing -->
-      <div id="tab-player" class="tab-page">
-        <div class="now-playing-container">
-          <div class="app-bar" style="width: 100%;">
-            <div class="icon-btn" onclick="switchTab('library')">∨</div>
-            <span style="font-size: 13px; font-weight: 600; color: var(--text-sub);">NOW PLAYING</span>
-            <div class="icon-btn">📄</div>
-          </div>
-
-          <div class="big-art">🌌</div>
-
-          <div class="player-details">
-            <h3>Cosmic Voyager</h3>
-            <p>Solaris — Midnight Sun (2026)</p>
-            <span style="display: inline-block; margin-top: 6px; font-size: 10px; padding: 2px 8px; border-radius: 10px; background: rgba(99,102,241,0.2); color: #818cf8; font-weight: 600;">FLAC 24bit / 96kHz</span>
-          </div>
-
-          <div class="progress-bar-container">
-            <div class="progress-bar">
-              <div class="progress-fill"></div>
-            </div>
-            <div class="time-labels">
-              <span>01:42</span>
-              <span>04:15</span>
-            </div>
-          </div>
-
-          <div class="player-controls">
-            <button class="control-btn">🔀</button>
-            <button class="control-btn">⏮️</button>
-            <button class="play-btn" id="main-play-btn" onclick="togglePlay()">⏸️</button>
-            <button class="control-btn">⏭️</button>
-            <button class="control-btn">🔁</button>
-          </div>
-        </div>
-      </div>
-
-      <!-- TAB 4: Storage & Offline -->
-      <div id="tab-storage" class="tab-page">
-        <div class="app-bar">
-          <h2>Offline Storage</h2>
-          <div class="icon-btn">⚙️</div>
-        </div>
-
-        <div class="storage-meter">
-          <div style="display: flex; justify-content: space-between; font-size: 13px; font-weight: 600;">
-            <span>Storage Usage</span>
-            <span>3.4 GB / 8.0 GB</span>
-          </div>
-          <div class="meter-bar">
-            <div class="meter-explicit"></div>
-            <div class="meter-cache"></div>
-          </div>
-          <div style="display: flex; gap: 16px; font-size: 11px; color: var(--text-sub);">
-            <span><span style="color: #6366f1;">■</span> Explicit (2.1 GB)</span>
-            <span><span style="color: #10b981;">■</span> LRU Cache (1.3 GB)</span>
-          </div>
-        </div>
-
-        <h3 style="font-size: 14px; font-weight: 600; color: var(--text-sub); margin-bottom: 10px;">DOWNLOADED ALBUMS</h3>
-
-        <div class="track-item">
-          <div class="track-info">
-            <div class="track-icon">💿</div>
-            <div class="track-text">
-              <h4>Midnight Sun</h4>
-              <p>Solaris • 12 tracks (840 MB)</p>
-            </div>
-          </div>
-          <span style="font-size: 12px; color: #ef4444; cursor: pointer;">🗑️</span>
-        </div>
-
-        <div class="track-item">
-          <div class="track-info">
-            <div class="track-icon">💿</div>
-            <div class="track-text">
-              <h4>Neon Pulse</h4>
-              <p>SynthWave • 8 tracks (520 MB)</p>
-            </div>
-          </div>
-          <span style="font-size: 12px; color: #ef4444; cursor: pointer;">🗑️</span>
-        </div>
-
-        <button class="btn-primary" style="margin-top: 20px; background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid rgba(239,68,68,0.4); box-shadow: none;">Clear Stream Cache (1.3 GB)</button>
-      </div>
-
+      <h2>Server Setup</h2>
+      <p style="color: var(--text-sub); font-size: 13px; margin: 12px 0 20px;">Connect to your self-hosted music server using the token generated on the web settings page.</p>
+      <button class="btn-primary">Connect & Sync Library</button>
     </div>
+  </div>
 
-    <!-- Mini Player Bar -->
-    <div class="mini-player" id="mini-player-bar" onclick="switchTab('player')">
-      <div class="mini-info">
-        <div class="mini-art">🌌</div>
-        <div class="mini-text">
-          <h5>Cosmic Voyager</h5>
-          <p>Solaris • Playing</p>
-        </div>
-      </div>
-      <div style="display: flex; gap: 12px; font-size: 18px;" onclick="event.stopPropagation();">
-        <span onclick="togglePlay()">⏸️</span>
-        <span>⏭️</span>
+  <!-- WEB MOCKUP -->
+  <div class="web-container" id="web-view">
+    <div class="web-navbar">
+      <div style="font-weight: 700; color: #fff; display: flex; align-items: center; gap: 8px;">🎵 opusflow</div>
+      <div class="web-links">
+        <span>Home</span><span>Artists</span><span>Albums</span><span>Songs</span><span>Import</span><span>Libraries</span><span class="active">Settings</span><span>About</span>
       </div>
     </div>
+    <div class="web-content">
+      <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 6px;">Settings</h1>
+      <p style="color: var(--text-sub); font-size: 14px; margin-bottom: 24px;">Manage server configuration, companion devices, and API credentials.</p>
 
-    <!-- Bottom Navigation -->
-    <div class="nav-bar">
-      <div class="nav-item" id="nav-connect" onclick="switchTab('connect')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        <span>Connect</span>
-      </div>
-      <div class="nav-item active" id="nav-library" onclick="switchTab('library')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
-        <span>Library</span>
-      </div>
-      <div class="nav-item" id="nav-player" onclick="switchTab('player')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        <span>Player</span>
-      </div>
-      <div class="nav-item" id="nav-storage" onclick="switchTab('storage')">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        <span>Offline</span>
+      <div class="web-card">
+        <h2 style="font-size: 18px; font-weight: 600; margin-bottom: 8px;">📱 Mobile Device Pairing & API Tokens</h2>
+        <p style="font-size: 13px; color: var(--text-sub); margin-bottom: 16px;">Generate a pairing token to connect your OpusFlow Android Companion App to this server instance.</p>
+        <button style="background: var(--accent); color: #fff; border: none; padding: 10px 18px; border-radius: 10px; font-weight: 600; cursor: pointer;">+ Generate New Mobile Pairing Token</button>
+
+        <div style="margin-top: 20px; background: #090c15; border: 1px dashed var(--accent); border-radius: 12px; padding: 16px; display: flex; justify-content: space-between; align-items: center;">
+          <code style="color: #818cf8;">opusflow_token_98f731a89b42e1</code>
+          <button style="background: rgba(255,255,255,0.1); color: #fff; border: none; padding: 6px 12px; border-radius: 6px;">Copy Token</button>
+        </div>
       </div>
     </div>
-
   </div>
 
   <script>
-    let isPlaying = true;
-
-    function switchTab(tabId) {
-      document.querySelectorAll('.tab-page').forEach(el => el.classList.remove('active'));
-      document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-
-      const activeTab = document.getElementById('tab-' + tabId);
-      const activeNav = document.getElementById('nav-' + tabId);
-      if (activeTab) activeTab.classList.add('active');
-      if (activeNav) activeNav.classList.add('active');
-
-      const miniPlayer = document.getElementById('mini-player-bar');
-      if (tabId === 'player') {
-        miniPlayer.style.display = 'none';
-      } else {
-        miniPlayer.style.display = 'flex';
-      }
-    }
-
-    function togglePlay() {
-      isPlaying = !isPlaying;
-      const mainBtn = document.getElementById('main-play-btn');
-      mainBtn.textContent = isPlaying ? '⏸️' : '▶️';
+    function showView(view) {
+      document.getElementById('phone-view').style.display = view === 'phone' ? 'flex' : 'none';
+      document.getElementById('web-view').style.display = view === 'web' ? 'flex' : 'none';
+      document.getElementById('btn-phone').classList.toggle('active', view === 'phone');
+      document.getElementById('btn-web').classList.toggle('active', view === 'web');
     }
   </script>
 </body>
