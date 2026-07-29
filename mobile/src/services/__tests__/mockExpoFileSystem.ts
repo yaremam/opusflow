@@ -14,12 +14,14 @@ export const mockFs = {
   store: new Map<string, Entry>(),
   availableDiskSpace: 500 * 1024 * 1024 * 1024, // 500 GB by default; tests override as needed
   downloadedByteLength: 1024, // how many bytes a "downloaded" file mock-contains
+  lastDownloadHeaders: undefined as Record<string, string> | undefined,
 };
 
 export function resetMockFileSystem() {
   mockFs.store.clear();
   mockFs.availableDiskSpace = 500 * 1024 * 1024 * 1024;
   mockFs.downloadedByteLength = 1024;
+  mockFs.lastDownloadHeaders = undefined;
 }
 
 function normalize(uri: string): string {
@@ -78,7 +80,12 @@ class MockFile {
     // everything in one pass.
     mockFs.availableDiskSpace += entry.bytes.length;
   }
-  static downloadFileAsync = async (url: string, destination: MockDirectory | MockFile) => {
+  static downloadFileAsync = async (
+    url: string,
+    destination: MockDirectory | MockFile,
+    options?: { headers?: Record<string, string> }
+  ) => {
+    mockFs.lastDownloadHeaders = options?.headers;
     const destUri =
       destination instanceof MockDirectory
         ? `${destination.uri}/${url.split('/').pop() || 'download'}`

@@ -7,6 +7,13 @@ vi.mock('expo-file-system', async () => {
   return expoFileSystemMockFactory();
 });
 
+vi.mock('../connection', () => ({
+  getServerCredentials: vi.fn().mockResolvedValue({
+    serverUrl: 'http://localhost',
+    pairingToken: 'opusflow_pt_test123',
+  }),
+}));
+
 const { OfflineStorageManager } = await import('../offlineStorage');
 
 const mockTrack: Track = {
@@ -37,6 +44,18 @@ describe('Offline Storage & Smart LRU Cache (AC-2, AC-3, AC-5, AC-6, AC-7)', () 
     expect(item.isExplicit).toBe(true);
     expect(storage.isTrackOffline(201)).toBe(true);
     expect(storage.getLocalAudioPath(201)).toBeTruthy();
+  });
+
+  // Regression test for issue #68: File.downloadFileAsync makes its own
+  // native HTTP request, entirely outside api.ts's fetch() layer, so a
+  // download against a gated backend silently failed with no visible
+  // error until the Authorization header was attached explicitly here too.
+  it('sends the pairing token as a Bearer header on the download request (issue #68)', async () => {
+    const storage = await freshStorage();
+
+    await storage.downloadTrackForOffline(mockTrack);
+
+    expect(mockFs.lastDownloadHeaders).toEqual({ Authorization: 'Bearer opusflow_pt_test123' });
   });
 
   it('persists across a restart — a fresh instance reads the same manifest', async () => {
