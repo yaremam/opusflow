@@ -51,14 +51,23 @@ export async function validateServerConnection(
 ): Promise<boolean> {
   try {
     const normalizedUrl = serverUrl.trim().replace(/\/+$/, '');
-    const response = await fetch(`${normalizedUrl}/api/health`, {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${pairingToken.trim()}`,
-      },
-    });
+    const headers = {
+      Authorization: `Bearer ${pairingToken.trim()}`,
+    };
 
-    return response.ok;
+    let response = await fetch(`${normalizedUrl}/api/health`, {
+      method: 'GET',
+      headers,
+    }).catch(() => null);
+
+    if (!response || !response.ok) {
+      response = await fetch(`${normalizedUrl}/health`, {
+        method: 'GET',
+        headers,
+      }).catch(() => null);
+    }
+
+    return Boolean(response && response.ok);
   } catch (error) {
     return false;
   }

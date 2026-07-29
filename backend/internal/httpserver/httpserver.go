@@ -22,6 +22,7 @@ import (
 func New(staticDir, artworkDir, version, buildDate string, svc *library.Service) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth())
+	mux.HandleFunc("GET /api/health", handleHealth())
 	mux.HandleFunc("GET /api/about", handleAbout(version, buildDate))
 	mux.HandleFunc("GET /api/config", handleConfig(svc))
 	mux.HandleFunc("GET /api/libraries", handleListLibraries(svc))

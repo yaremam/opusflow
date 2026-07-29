@@ -79,19 +79,23 @@ func testStoreAndService(t *testing.T) (*library.Store, *library.Service) {
 }
 
 func TestHealth(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
+	for _, path := range []string{"/health", "/api/health"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			rec := httptest.NewRecorder()
 
-	New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
+			New("", "", "", "", lazyService(t)).ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
-	}
-	if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
-		t.Fatalf("Content-Type = %q, want application/json", ct)
-	}
-	if body := rec.Body.String(); body != "{\"status\":\"ok\"}\n" {
-		t.Fatalf("body = %q", body)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			if ct := rec.Header().Get("Content-Type"); ct != "application/json" {
+				t.Fatalf("Content-Type = %q, want application/json", ct)
+			}
+			if body := rec.Body.String(); body != "{\"status\":\"ok\"}\n" {
+				t.Fatalf("body = %q", body)
+			}
+		})
 	}
 }
 

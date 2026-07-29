@@ -112,7 +112,7 @@
           <span class="pill-complete">✓ New Token Created</span>
           <div class="token-box">
             <span class="token-code">opusflow_token_98f731a89b42e1</span>
-            <button class="btn-ghost">Copy token</button>
+            <button class="btn-ghost" onclick="copyToken(this)">Copy token</button>
           </div>
           <p style="font-size: 12px; color: var(--mist-400); margin-top: 8px;">Input your server host URL and this token into the OpusFlow Mobile app.</p>
         </div>
@@ -140,6 +140,26 @@
       document.getElementById('web-view').style.display = view === 'web' ? 'flex' : 'none';
       document.getElementById('btn-phone').classList.toggle('active', view === 'phone');
       document.getElementById('btn-web').classList.toggle('active', view === 'web');
+    }
+
+    function copyToken(btn) {
+      const text = 'opusflow_token_98f731a89b42e1';
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      const origText = btn.textContent;
+      btn.textContent = 'Copied! ✓';
+      setTimeout(() => { btn.textContent = origText; }, 2000);
     }
   </script>
 </body>
