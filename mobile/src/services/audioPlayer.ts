@@ -1,6 +1,17 @@
+import {
+  currentTrack as coreCurrentTrack,
+  initialQueueState,
+  next as coreNext,
+  playFrom as corePlayFrom,
+  prev as corePrev,
+  toggleRepeat as coreToggleRepeat,
+  toggleShuffle as coreToggleShuffle,
+  type QueueState,
+  type RepeatMode,
+} from '@opusflow/player-core';
 import { Track } from './api';
 
-export type RepeatMode = 'off' | 'one' | 'all';
+export type { RepeatMode };
 
 export interface AudioPlayerState {
   currentTrack: Track | null;
@@ -16,23 +27,36 @@ export interface AudioPlayerState {
 
 type StateChangeListener = (state: AudioPlayerState) => void;
 
+// AudioPlayerEngine is this platform's adapter onto @opusflow/player-core's
+// shared queue state machine (backlog/019 AC-4) — it owns exactly the two
+// things that are genuinely platform-specific: current playback time (kept
+// out of the shared core the same way web/src/player's TimeContext keeps it
+// out of PlayerContext, so a once-a-second tick doesn't ripple through
+// queue state) and volume. Everything about *which* track is playing next
+// — advance, repeat, shuffle — is the shared reducer; this class is just
+// wiring plus the "restart the current track rather than skip back, once
+// more than a few seconds in" previous-track UX, which needs currentTime
+// and so can't live in the shared core either.
 class AudioPlayerEngine {
-  private state: AudioPlayerState = {
-    currentTrack: null,
-    queue: [],
-    queueIndex: -1,
-    isPlaying: false,
-    currentTimeSeconds: 0,
-    durationSeconds: 0,
-    volume: 1.0,
-    repeatMode: 'off',
-    isShuffle: false,
-  };
+  private core: QueueState<Track> = initialQueueState<Track>();
+  private currentTimeSeconds = 0;
+  private volume = 1.0;
 
   private listeners: Set<StateChangeListener> = new Set();
 
   public getState(): AudioPlayerState {
-    return { ...this.state };
+    const track = coreCurrentTrack(this.core);
+    return {
+      currentTrack: track,
+      queue: this.core.queue,
+      queueIndex: this.core.currentIndex,
+      isPlaying: this.core.isPlaying,
+      currentTimeSeconds: this.currentTimeSeconds,
+      durationSeconds: track?.durationSeconds ?? 0,
+      volume: this.volume,
+      repeatMode: this.core.repeatMode,
+      isShuffle: this.core.isShuffle,
+    };
   }
 
   public subscribe(listener: StateChangeListener): () => void {
@@ -47,77 +71,54 @@ class AudioPlayerEngine {
   }
 
   public playQueue(tracks: Track[], startIndex: number = 0) {
-    if (tracks.length === 0) return;
-    this.state.queue = [...tracks];
-    this.state.queueIndex = Math.max(0, Math.min(startIndex, tracks.length - 1));
-    this.state.currentTrack = this.state.queue[this.state.queueIndex];
-    this.state.isPlaying = true;
-    this.state.currentTimeSeconds = 0;
-    this.state.durationSeconds = this.state.currentTrack.durationSeconds;
+    const next = corePlayFrom(this.core, tracks, startIndex);
+    if (next === this.core) return;
+    this.core = next;
+    this.currentTimeSeconds = 0;
     this.notify();
   }
 
   public togglePlayPause() {
-    if (!this.state.currentTrack && this.state.queue.length > 0) {
-      this.playQueue(this.state.queue, 0);
+    if (!coreCurrentTrack(this.core) && this.core.queue.length > 0) {
+      this.playQueue(this.core.queue, 0);
       return;
     }
-    this.state.isPlaying = !this.state.isPlaying;
+    this.core = { ...this.core, isPlaying: !this.core.isPlaying };
     this.notify();
   }
 
   public nextTrack() {
-    if (this.state.queue.length === 0) return;
-
-    if (this.state.isShuffle) {
-      this.state.queueIndex = Math.floor(Math.random() * this.state.queue.length);
-    } else if (this.state.queueIndex < this.state.queue.length - 1) {
-      this.state.queueIndex++;
-    } else if (this.state.repeatMode === 'all') {
-      this.state.queueIndex = 0;
-    } else {
-      this.state.isPlaying = false;
-      this.notify();
-      return;
+    if (this.core.queue.length === 0) return;
+    const stopping = !this.core.isShuffle && this.core.currentIndex >= this.core.queue.length - 1 && this.core.repeatMode !== 'all';
+    this.core = coreNext(this.core);
+    if (!stopping) {
+      this.currentTimeSeconds = 0;
     }
-
-    this.state.currentTrack = this.state.queue[this.state.queueIndex];
-    this.state.currentTimeSeconds = 0;
-    this.state.durationSeconds = this.state.currentTrack.durationSeconds;
-    this.state.isPlaying = true;
     this.notify();
   }
 
   public previousTrack() {
-    if (this.state.queue.length === 0) return;
-
-    if (this.state.currentTimeSeconds > 3) {
-      this.state.currentTimeSeconds = 0;
-    } else if (this.state.queueIndex > 0) {
-      this.state.queueIndex--;
-      this.state.currentTrack = this.state.queue[this.state.queueIndex];
-      this.state.currentTimeSeconds = 0;
-      this.state.durationSeconds = this.state.currentTrack.durationSeconds;
-    } else {
-      this.state.currentTimeSeconds = 0;
+    if (this.core.queue.length === 0) return;
+    if (this.currentTimeSeconds <= 3) {
+      this.core = corePrev(this.core);
     }
+    this.currentTimeSeconds = 0;
     this.notify();
   }
 
   public seekTo(seconds: number) {
-    this.state.currentTimeSeconds = Math.max(0, Math.min(seconds, this.state.durationSeconds));
+    const duration = coreCurrentTrack(this.core)?.durationSeconds ?? 0;
+    this.currentTimeSeconds = Math.max(0, Math.min(seconds, duration));
     this.notify();
   }
 
   public toggleShuffle() {
-    this.state.isShuffle = !this.state.isShuffle;
+    this.core = coreToggleShuffle(this.core);
     this.notify();
   }
 
   public toggleRepeat() {
-    const modes: RepeatMode[] = ['off', 'all', 'one'];
-    const currentIndex = modes.indexOf(this.state.repeatMode);
-    this.state.repeatMode = modes[(currentIndex + 1) % modes.length];
+    this.core = coreToggleRepeat(this.core);
     this.notify();
   }
 }

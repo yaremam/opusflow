@@ -1,4 +1,7 @@
 import { createContext } from 'react'
+import { initialQueueState, type QueueState, type RepeatMode } from '@opusflow/player-core'
+
+export type { RepeatMode }
 
 // PlayableTrack is the shape the player needs to display and stream a
 // track — deliberately its own type rather than reusing Song/AlbumTrack
@@ -29,10 +32,13 @@ export function isPlayable(track: PlayableTrack): boolean {
   return PLAYABLE_FORMATS.has(track.format)
 }
 
-export interface PlayerState {
-  queue: PlayableTrack[]
-  currentIndex: number // -1 = nothing loaded
-  isPlaying: boolean
+// PlayerState is web's adapter shape onto @opusflow/player-core's shared
+// queue state machine (backlog/019 AC-4: queue management, current-track
+// state, and repeat/shuffle modes, shared across web/ and mobile/ — see
+// mobile/src/services/audioPlayer.ts for the other adapter). volume is
+// appended locally since it's a playback-engine concern, not a queue one,
+// the same reason current-time lives in TimeContext below rather than here.
+export interface PlayerState extends QueueState<PlayableTrack> {
   volume: number
 }
 
@@ -59,12 +65,12 @@ export interface PlayerContextValue extends PlayerState {
   reorderQueue: (fromIndex: number, toIndex: number) => void
   jumpTo: (index: number) => void
   setVolume: (volume: number) => void
+  toggleShuffle: () => void
+  toggleRepeat: () => void
 }
 
 export const initialPlayerState: PlayerState = {
-  queue: [],
-  currentIndex: -1,
-  isPlaying: false,
+  ...initialQueueState<PlayableTrack>(),
   volume: 0.7,
 }
 
@@ -75,19 +81,3 @@ export const initialPlayerTimeState: PlayerTimeState = {
 
 export const PlayerContext = createContext<PlayerContextValue | null>(null)
 export const TimeContext = createContext<PlayerTimeState>(initialPlayerTimeState)
-
-// indexAfterRemoval/indexAfterReorder are the queue-index arithmetic
-// removeFromQueue/reorderQueue need — pulled out as pure functions rather
-// than inline conditionals in a setState updater, since "how does the
-// currently-playing index shift when the queue in front of it changes"
-// is subtle enough to want to read (and eventually test) on its own.
-export function indexAfterRemoval(currentIndex: number, removedIndex: number): number {
-  return removedIndex < currentIndex ? currentIndex - 1 : currentIndex
-}
-
-export function indexAfterReorder(currentIndex: number, fromIndex: number, toIndex: number): number {
-  if (fromIndex === currentIndex) return toIndex
-  if (fromIndex < currentIndex && toIndex >= currentIndex) return currentIndex - 1
-  if (fromIndex > currentIndex && toIndex <= currentIndex) return currentIndex + 1
-  return currentIndex
-}
