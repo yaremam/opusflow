@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/vector-icons": "^15.0.2",
     "@opusflow/player-core": "workspace:*",
     "expo": "~57.0.7",
     "expo-secure-store": "^57.0.1",

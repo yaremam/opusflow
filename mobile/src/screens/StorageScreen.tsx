@@ -1,3 +1,4 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
 import {
@@ -5,6 +6,7 @@ import {
   StorageMetrics,
   DownloadedItem,
 } from '../services/offlineStorage';
+import { ACCENT } from '../theme';
 
 export function StorageScreen() {
   const [metrics, setMetrics] = useState<StorageMetrics>(
@@ -65,7 +67,7 @@ export function StorageScreen() {
 
         <View style={styles.legendRow}>
           <Text style={styles.legendItem}>
-            <Text style={{ color: '#6366f1' }}>■</Text> Explicit (
+            <Text style={{ color: ACCENT }}>■</Text> Explicit (
             {formatMB(metrics.explicitDownloadBytes)})
           </Text>
           <Text style={styles.legendItem}>
@@ -89,7 +91,7 @@ export function StorageScreen() {
             <View style={styles.itemRow}>
               <View style={styles.itemInfo}>
                 <View style={styles.itemIcon}>
-                  <Text style={{ fontSize: 16 }}>💿</Text>
+                  <Ionicons name="disc-outline" size={16} color="#9ca3af" />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.itemTitle}>{item.title}</Text>
@@ -100,7 +102,7 @@ export function StorageScreen() {
               </View>
 
               <TouchableOpacity onPress={() => handleRemoveTrack(item.id)}>
-                <Text style={{ fontSize: 18 }}>🗑️</Text>
+                <Ionicons name="trash-outline" size={18} color="#9ca3af" />
               </TouchableOpacity>
             </View>
           )}
@@ -139,7 +141,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     marginBottom: 12,
   },
-  meterExplicit: { backgroundColor: '#6366f1', height: '100%' },
+  meterExplicit: { backgroundColor: ACCENT, height: '100%' },
   meterCache: { backgroundColor: '#10b981', height: '100%' },
   legendRow: { flexDirection: 'row', gap: 16 },
   legendItem: { fontSize: 12, color: '#9ca3af' },

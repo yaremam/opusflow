@@ -1,6 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import { audioPlayer, AudioPlayerState } from '../services/audioPlayer';
+import { ACCENT, ACCENT_TINT_20 } from '../theme';
 
 interface PlayerScreenProps {
   onMinimize?: () => void;
@@ -21,14 +23,26 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  const track = playerState.currentTrack || {
-    title: 'Cosmic Voyager',
-    artistName: 'Solaris',
-    albumTitle: 'Midnight Sun (2026)',
-    durationSeconds: 255,
-    coverUrl: undefined,
-    localCoverUrl: undefined,
-  };
+  const track = playerState.currentTrack;
+
+  if (!track) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.iconBtn} onPress={onMinimize}>
+            <Ionicons name="chevron-down" size={18} color="#f3f4f6" />
+          </TouchableOpacity>
+          <Text style={styles.topTitle}>NOW PLAYING</Text>
+          <View style={styles.iconBtn} />
+        </View>
+        <View style={styles.emptyState}>
+          <Ionicons name="disc-outline" size={56} color="#3a4150" />
+          <Text style={styles.emptyTitle}>Nothing playing</Text>
+          <Text style={styles.emptyText}>Pick a track from your library to start listening.</Text>
+        </View>
+      </View>
+    );
+  }
 
   const activeArtworkUri = track.localCoverUrl || track.coverUrl;
 
@@ -36,11 +50,11 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
     <View style={styles.container}>
       <View style={styles.topBar}>
         <TouchableOpacity style={styles.iconBtn} onPress={onMinimize}>
-          <Text style={{ fontSize: 18, color: '#f3f4f6' }}>∨</Text>
+          <Ionicons name="chevron-down" size={18} color="#f3f4f6" />
         </TouchableOpacity>
         <Text style={styles.topTitle}>NOW PLAYING</Text>
         <TouchableOpacity style={styles.iconBtn}>
-          <Text style={{ fontSize: 18, color: '#f3f4f6' }}>📄</Text>
+          <Ionicons name="list-outline" size={18} color="#f3f4f6" />
         </TouchableOpacity>
       </View>
 
@@ -53,7 +67,7 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
           />
         ) : (
           <View style={styles.artworkPlaceholder}>
-            <Text style={{ fontSize: 72 }}>🌌</Text>
+            <Ionicons name="disc-outline" size={64} color="#ffffff" />
           </View>
         )}
       </View>
@@ -64,8 +78,13 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
           {track.artistName} — {track.albumTitle}
         </Text>
         <View style={styles.qualityBadge}>
+          <Ionicons
+            name={track.localCoverUrl ? 'download-outline' : 'wifi-outline'}
+            size={12}
+            color={ACCENT}
+          />
           <Text style={styles.qualityText}>
-            {track.localCoverUrl ? '💾 Offline Cached Artwork' : '📶 FLAC 24bit / 96kHz'}
+            {track.localCoverUrl ? 'Offline' : 'Streaming'}
           </Text>
         </View>
       </View>
@@ -82,35 +101,24 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
 
       <View style={styles.controlsRow}>
         <TouchableOpacity onPress={() => audioPlayer.toggleShuffle()}>
-          <Text style={[styles.controlIcon, playerState.isShuffle && styles.activeControl]}>
-            🔀
-          </Text>
+          <Ionicons name="shuffle" size={22} color={playerState.isShuffle ? ACCENT : '#9ca3af'} />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => audioPlayer.previousTrack()}>
-          <Text style={styles.controlIcon}>⏮️</Text>
+          <Ionicons name="play-skip-back" size={22} color="#f3f4f6" />
         </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.playButton}
           onPress={() => audioPlayer.togglePlayPause()}
         >
-          <Text style={{ fontSize: 24, color: '#ffffff' }}>
-            {playerState.isPlaying ? '⏸️' : '▶️'}
-          </Text>
+          <Ionicons name={playerState.isPlaying ? 'pause' : 'play'} size={24} color="#0a1512" />
         </TouchableOpacity>
 
         <TouchableOpacity onPress={() => audioPlayer.nextTrack()}>
-          <Text style={styles.controlIcon}>⏭️</Text>
+          <Ionicons name="play-skip-forward" size={22} color="#f3f4f6" />
         </TouchableOpacity>
         <TouchableOpacity onPress={() => audioPlayer.toggleRepeat()}>
-          <Text
-            style={[
-              styles.controlIcon,
-              playerState.repeatMode !== 'off' && styles.activeControl,
-            ]}
-          >
-            🔁
-          </Text>
+          <Ionicons name="repeat" size={22} color={playerState.repeatMode !== 'off' ? ACCENT : '#9ca3af'} />
         </TouchableOpacity>
       </View>
     </View>
@@ -142,6 +150,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   topTitle: { fontSize: 12, fontWeight: '700', color: '#9ca3af', letterSpacing: 0.5 },
+  emptyState: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 6 },
+  emptyTitle: { color: '#f3f4f6', fontSize: 17, fontWeight: '600', marginTop: 12 },
+  emptyText: { color: '#9ca3af', fontSize: 13, textAlign: 'center', maxWidth: 240 },
   artworkContainer: { alignItems: 'center', marginVertical: 20 },
   artworkImage: {
     width: 240,
@@ -152,7 +163,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 240,
     borderRadius: 24,
-    backgroundColor: '#6366f1',
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 8,
@@ -162,12 +173,15 @@ const styles = StyleSheet.create({
   trackSubtitle: { fontSize: 14, color: '#9ca3af', marginTop: 4, textAlign: 'center' },
   qualityBadge: {
     marginTop: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 10,
-    backgroundColor: 'rgba(99, 102, 241, 0.2)',
+    backgroundColor: ACCENT_TINT_20,
   },
-  qualityText: { fontSize: 11, fontWeight: '600', color: '#818cf8' },
+  qualityText: { fontSize: 11, fontWeight: '600', color: ACCENT },
   progressContainer: { marginVertical: 20 },
   progressBar: {
     height: 6,
@@ -175,7 +189,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
     overflow: 'hidden',
   },
-  progressFill: { height: '100%', backgroundColor: '#6366f1', borderRadius: 3 },
+  progressFill: { height: '100%', backgroundColor: ACCENT, borderRadius: 3 },
   timeLabels: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -188,13 +202,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-around',
     marginBottom: 20,
   },
-  controlIcon: { fontSize: 22, opacity: 0.8 },
-  activeControl: { opacity: 1 },
   playButton: {
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#6366f1',
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     elevation: 6,

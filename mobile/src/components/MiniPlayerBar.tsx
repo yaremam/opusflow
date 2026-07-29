@@ -1,6 +1,8 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { StyleSheet, Text, View, TouchableOpacity, Image } from 'react-native';
 import { audioPlayer, AudioPlayerState } from '../services/audioPlayer';
+import { ACCENT } from '../theme';
 
 interface MiniPlayerBarProps {
   onOpenPlayer: () => void;
@@ -14,13 +16,18 @@ export function MiniPlayerBar({ onOpenPlayer }: MiniPlayerBarProps) {
   }, []);
 
   if (!state.currentTrack) return null;
+  const artUri = state.currentTrack.localCoverUrl || state.currentTrack.coverUrl;
 
   return (
     <TouchableOpacity style={styles.container} onPress={onOpenPlayer}>
       <View style={styles.infoRow}>
-        <View style={styles.artPlaceholder}>
-          <Text style={{ fontSize: 16 }}>🌌</Text>
-        </View>
+        {artUri ? (
+          <Image source={{ uri: artUri }} style={styles.art} />
+        ) : (
+          <View style={styles.artPlaceholder}>
+            <Ionicons name="disc-outline" size={18} color="#ffffff" />
+          </View>
+        )}
         <View style={styles.textCol}>
           <Text style={styles.title} numberOfLines={1}>
             {state.currentTrack.title}
@@ -38,7 +45,7 @@ export function MiniPlayerBar({ onOpenPlayer }: MiniPlayerBarProps) {
             audioPlayer.togglePlayPause();
           }}
         >
-          <Text style={{ fontSize: 20 }}>{state.isPlaying ? '⏸️' : '▶️'}</Text>
+          <Ionicons name={state.isPlaying ? 'pause' : 'play'} size={20} color="#f3f4f6" />
         </TouchableOpacity>
         <TouchableOpacity
           onPress={(e) => {
@@ -46,7 +53,7 @@ export function MiniPlayerBar({ onOpenPlayer }: MiniPlayerBarProps) {
             audioPlayer.nextTrack();
           }}
         >
-          <Text style={{ fontSize: 20, marginLeft: 12 }}>⏭️</Text>
+          <Ionicons name="play-skip-forward" size={20} color="#f3f4f6" style={{ marginLeft: 12 }} />
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -65,11 +72,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   infoRow: { flexDirection: 'row', alignItems: 'center', flex: 1 },
+  art: {
+    width: 34,
+    height: 34,
+    borderRadius: 8,
+    marginRight: 10,
+  },
   artPlaceholder: {
     width: 34,
     height: 34,
     borderRadius: 8,
-    backgroundColor: '#6366f1',
+    backgroundColor: ACCENT,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 10,

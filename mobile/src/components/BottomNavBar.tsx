@@ -1,4 +1,6 @@
+import { Ionicons } from '@expo/vector-icons';
 import { StyleSheet, Text, View, TouchableOpacity } from 'react-native';
+import { ACCENT } from '../theme';
 
 export type TabType = 'connect' | 'library' | 'player' | 'storage';
 
@@ -8,11 +10,11 @@ interface BottomNavBarProps {
 }
 
 export function BottomNavBar({ currentTab, onSelectTab }: BottomNavBarProps) {
-  const tabs: { id: TabType; label: string; icon: string }[] = [
-    { id: 'connect', label: 'Connect', icon: '📶' },
-    { id: 'library', label: 'Library', icon: '🎵' },
-    { id: 'player', label: 'Player', icon: '🎧' },
-    { id: 'storage', label: 'Offline', icon: '💾' },
+  const tabs: { id: TabType; label: string; icon: keyof typeof Ionicons.glyphMap }[] = [
+    { id: 'connect', label: 'Connect', icon: 'wifi-outline' },
+    { id: 'library', label: 'Library', icon: 'albums-outline' },
+    { id: 'player', label: 'Player', icon: 'disc-outline' },
+    { id: 'storage', label: 'Offline', icon: 'download-outline' },
   ];
 
   return (
@@ -25,9 +27,7 @@ export function BottomNavBar({ currentTab, onSelectTab }: BottomNavBarProps) {
             style={styles.tabItem}
             onPress={() => onSelectTab(tab.id)}
           >
-            <Text style={[styles.tabIcon, isActive && styles.activeText]}>
-              {tab.icon}
-            </Text>
+            <Ionicons name={tab.icon} size={20} color={isActive ? ACCENT : '#6b7280'} style={styles.tabIcon} />
             <Text style={[styles.tabLabel, isActive && styles.activeText]}>
               {tab.label}
             </Text>
@@ -49,7 +49,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tabItem: { alignItems: 'center', justifyContent: 'center' },
-  tabIcon: { fontSize: 18, color: '#6b7280', marginBottom: 2 },
+  tabIcon: { marginBottom: 2 },
   tabLabel: { fontSize: 11, color: '#6b7280', fontWeight: '500' },
-  activeText: { color: '#6366f1' },
+  activeText: { color: ACCENT },
 });
