@@ -27,7 +27,7 @@ jobs:
       build: ${{ steps.check.outputs.build }}
       sha: ${{ steps.check.outputs.sha }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - id: check
         name: Compare HEAD against the published nightly's revision label
         run: |
@@ -70,7 +70,7 @@ jobs:
     env:
       DATABASE_URL: postgres://opusflow:opusflow@localhost:5432/opusflow?sslmode=disable
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: backend/go.mod
@@ -103,7 +103,7 @@ jobs:
       # fetch-depth: 0 (full history + tags) — `git describe --tags` below
       # needs tag history reachable from HEAD, which the default shallow
       # checkout wouldn't have.
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       # Needed to cross-build the arm64 half of the image on an amd64
