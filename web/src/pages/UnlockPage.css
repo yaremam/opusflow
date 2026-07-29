@@ -1,0 +1,95 @@
+.unlock-shell {
+  min-height: 100svh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.unlock-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--ink-900);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+  padding: 2rem;
+}
+
+.unlock-badge {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  background: var(--accent-wash);
+  color: var(--accent-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1rem;
+}
+
+.unlock-card h1 {
+  font-size: 1.25rem;
+  margin: 0 0 0.4rem;
+}
+
+.unlock-sub {
+  font-size: 0.85rem;
+  color: var(--mist-400);
+  margin: 0 0 1.4rem;
+  line-height: 1.5;
+}
+
+.unlock-card .field-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--mist-400);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 0.4rem;
+}
+
+.unlock-card .field-input {
+  width: 100%;
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  color: var(--paper-50);
+  font: inherit;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.unlock-card .btn-primary {
+  width: 100%;
+  justify-content: center;
+}
+
+.unlock-error {
+  color: var(--bad);
+  font-size: 0.82rem;
+  margin: -0.4rem 0 1rem;
+}
+
+.unlock-hint {
+  font-size: 0.74rem;
+  color: var(--mist-400);
+  background: var(--ink-950);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin-top: 1.1rem;
+  line-height: 1.6;
+}
+
+.unlock-hint b {
+  color: var(--paper-50);
+}
+
+.unlock-hint-cmd {
+  color: var(--accent-strong);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}

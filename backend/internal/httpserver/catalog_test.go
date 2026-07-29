@@ -64,7 +64,7 @@ func TestLibraryArtistsListsAndPaginates(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -94,7 +94,7 @@ func TestLibraryArtistDetailReturnsAlbums(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists/"+strconv.FormatInt(artists.Items[0].ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -113,7 +113,7 @@ func TestLibraryArtistDetailNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/artists/999999", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -128,7 +128,7 @@ func TestLibraryAlbumsFiltersByYear(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums?year=1977", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -155,7 +155,7 @@ func TestLibraryAlbumDetailReturnsTracks(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums/"+strconv.FormatInt(albums.Items[0].ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -174,7 +174,7 @@ func TestLibraryAlbumDetailNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/albums/999999", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -189,7 +189,7 @@ func TestLibrarySongsSearchesByQuery(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs?q=sinner", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
@@ -211,7 +211,7 @@ func TestDeleteArtistEndpointRequiresDeleteFilesParam(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(artists.Items[0].ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -227,7 +227,7 @@ func TestDeleteArtistEndpointRemovesArtist(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"?deleteFiles=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -248,7 +248,7 @@ func TestMergeArtistEndpointMergesAndReturnsWinner(t *testing.T) {
 	body := `{"intoId":` + strconv.FormatInt(winner.ID, 10) + `}`
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(loser.ID, 10)+"/merge", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -273,7 +273,7 @@ func TestMergeArtistEndpointRequiresIntoID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/merge", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -289,7 +289,7 @@ func TestMergeArtistEndpointSelfMergeIsBadRequest(t *testing.T) {
 	body := `{"intoId":` + strconv.FormatInt(id, 10) + `}`
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/merge", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -301,7 +301,7 @@ func TestMergeArtistEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/999999/merge", strings.NewReader(`{"intoId":888888}`))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -319,7 +319,7 @@ func TestMergeAlbumEndpointMergesAndReturnsWinner(t *testing.T) {
 	body := `{"intoId":` + strconv.FormatInt(winner.ID, 10) + `}`
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(loser.ID, 10)+"/merge", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -349,7 +349,7 @@ func TestMergeAlbumEndpointDifferentArtistsIsBadRequest(t *testing.T) {
 	body := `{"intoId":` + strconv.FormatInt(albums.Items[1].ID, 10) + `}`
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(albums.Items[0].ID, 10)+"/merge", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -399,7 +399,7 @@ func TestRetryArtistArtEndpointResetsStatusToPending(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art/retry", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
@@ -423,7 +423,7 @@ func TestRetryArtistArtEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/999999/art/retry", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -443,7 +443,7 @@ func TestRetryAlbumArtEndpointResetsStatusToPending(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/art/retry", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusAccepted {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusAccepted, rec.Body.String())
@@ -465,7 +465,7 @@ func TestRetryAlbumArtEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/999999/art/retry", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -517,7 +517,7 @@ func TestUploadArtistArtEndpointSavesImage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -542,7 +542,7 @@ func TestUploadArtistArtEndpointWithoutArtworkConfiguredReturns503(t *testing.T)
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/art", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusServiceUnavailable, rec.Body.String())
@@ -559,7 +559,7 @@ func TestUploadArtistArtEndpointRejectsMissingImageField(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/1/art", body)
 	req.Header.Set("Content-Type", mw.FormDataContentType())
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -578,7 +578,7 @@ func TestUploadAlbumArtEndpointSavesImage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/art", body)
 	req.Header.Set("Content-Type", contentType)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -597,7 +597,7 @@ func TestDeleteArtistEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/999999?deleteFiles=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -613,7 +613,7 @@ func TestDeleteAlbumEndpointRemovesAlbum(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"?deleteFiles=true", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -641,7 +641,7 @@ func TestSetArtistPrimaryPhotoEndpointSwitchesPrimary(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(second.ID, 10)+"/primary", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -667,7 +667,7 @@ func TestSetArtistPrimaryPhotoEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999/primary", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -692,7 +692,7 @@ func TestSetArtistBannerPhotoEndpointSwitchesBanner(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(second.ID, 10)+"/banner", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -718,7 +718,7 @@ func TestSetArtistBannerPhotoEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999/banner", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -730,7 +730,7 @@ func TestDeleteArtistPhotoEndpointRequiresDeleteFileParam(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/1/photos/1", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -757,7 +757,7 @@ func TestDeleteArtistPhotoEndpointRemovesFileWhenRequested(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/"+strconv.FormatInt(photos[0].ID, 10)+"?deleteFile=true", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -783,7 +783,7 @@ func TestDeleteArtistPhotoEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/artists/"+strconv.FormatInt(id, 10)+"/photos/999999?deleteFile=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -808,7 +808,7 @@ func TestSetAlbumPrimaryCoverEndpointSwitchesPrimary(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(second.ID, 10)+"/primary", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -843,7 +843,7 @@ func TestSetAlbumBannerCoverEndpointSwitchesBanner(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(second.ID, 10)+"/banner", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -869,7 +869,7 @@ func TestSetAlbumBannerCoverEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/999999/banner", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -896,7 +896,7 @@ func TestDeleteAlbumCoverEndpointRemovesFileWhenRequested(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/"+strconv.FormatInt(covers[0].ID, 10)+"?deleteFile=true", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -922,7 +922,7 @@ func TestDeleteAlbumCoverEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/library/albums/"+strconv.FormatInt(id, 10)+"/covers/999999?deleteFile=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -943,7 +943,7 @@ func TestStreamSongEndpointServesFullFile(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/"+strconv.FormatInt(id, 10)+"/stream", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -974,7 +974,7 @@ func TestStreamSongEndpointSupportsRangeRequests(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/"+strconv.FormatInt(id, 10)+"/stream", nil)
 	req.Header.Set("Range", "bytes=100-199")
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusPartialContent {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusPartialContent, rec.Body.String())
@@ -996,7 +996,7 @@ func TestStreamSongEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/999999/stream", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
@@ -1008,7 +1008,7 @@ func TestStreamSongEndpointRejectsInvalidID(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/library/songs/not-a-number/stream", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())

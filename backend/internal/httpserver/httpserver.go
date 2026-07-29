@@ -6,7 +6,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/yaremam/opusflow/backend/internal/auth"
 	"github.com/yaremam/opusflow/backend/internal/library"
 )
 
@@ -19,12 +21,28 @@ import (
 // deployed instance can be identified from within the app; empty is a
 // normal value (unset in local `go run`, not an error). svc backs the
 // library endpoints.
-func New(staticDir, artworkDir, version, buildDate string, svc *library.Service) http.Handler {
+//
+// authStore backs token auth (TDR 022): every /api/* route requires a
+// valid Bearer token once this install has been bootstrapped — see
+// auth.Middleware. GET /health, /artwork/ (browsers/React Native's Image
+// can't attach a custom header to an <img>/plain GET, and these hash-named
+// paths are only ever discoverable through an already-authenticated API
+// response) and the static SPA shell at / all stay outside /api/ and so
+// are never gated — the web app's own JS bundle has to be reachable before
+// anyone can enter a token into it. A nil authStore disables enforcement
+// entirely, for tests that aren't exercising auth.
+func New(staticDir, artworkDir, version, buildDate string, svc *library.Service, authStore *auth.Store) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health", handleHealth())
 	mux.HandleFunc("GET /api/health", handleHealth())
 	mux.HandleFunc("GET /api/about", handleAbout(version, buildDate))
 	mux.HandleFunc("GET /api/config", handleConfig(svc))
+	if authStore != nil {
+		tokens := auth.NewService(authStore)
+		mux.HandleFunc("POST /api/tokens", handleCreateToken(tokens))
+		mux.HandleFunc("GET /api/tokens", handleListTokens(tokens))
+		mux.HandleFunc("DELETE /api/tokens/{id}", handleDeleteToken(tokens))
+	}
 	mux.HandleFunc("GET /api/libraries", handleListLibraries(svc))
 	mux.HandleFunc("POST /api/libraries", handleCreateLibrary(svc))
 	mux.HandleFunc("DELETE /api/libraries/{id}", handleDeleteLibrary(svc))
@@ -69,7 +87,24 @@ func New(staticDir, artworkDir, version, buildDate string, svc *library.Service)
 		mux.Handle("GET /", spaHandler(staticDir))
 	}
 
-	return mux
+	if authStore == nil {
+		return mux
+	}
+	return requireAuthUnderAPIPrefix(authStore, mux)
+}
+
+// requireAuthUnderAPIPrefix applies auth.Middleware only to requests under
+// /api/ — see New's doc comment for why everything else (bare /health,
+// /artwork/, the static SPA shell) has to stay reachable regardless.
+func requireAuthUnderAPIPrefix(store *auth.Store, next http.Handler) http.Handler {
+	gated := auth.Middleware(store)(next)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/api/") {
+			gated.ServeHTTP(w, r)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 type healthResponse struct {

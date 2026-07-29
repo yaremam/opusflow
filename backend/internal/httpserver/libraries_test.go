@@ -18,7 +18,7 @@ func TestCreateLibraryEndpoint(t *testing.T) {
 	body := `{"name":"Main Collection","rootPath":"` + jsonEscape(root) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusCreated, rec.Body.String())
@@ -38,7 +38,7 @@ func TestCreateLibraryEndpointRejectsNonexistentPath(t *testing.T) {
 	body := `{"name":"Main Collection","rootPath":"/does/not/exist"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code == http.StatusCreated {
 		t.Fatalf("status = %d, want an error status for a nonexistent path", rec.Code)
@@ -60,7 +60,7 @@ func TestCreateLibraryEndpointRejectsPathOutsideConfiguredRoot(t *testing.T) {
 	body := `{"name":"Main Collection","rootPath":"` + jsonEscape(outside) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -73,7 +73,7 @@ func TestCreateLibraryEndpointRequiresName(t *testing.T) {
 	body := `{"rootPath":"` + jsonEscape(t.TempDir()) + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/libraries", strings.NewReader(body))
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -91,7 +91,7 @@ func TestListLibrariesEndpoint(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/libraries", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusOK, rec.Body.String())
@@ -114,7 +114,7 @@ func TestDeleteLibraryEndpointRequiresDeleteFilesParam(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/libraries/"+strconv.FormatInt(lib.ID, 10), nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusBadRequest, rec.Body.String())
@@ -130,7 +130,7 @@ func TestDeleteLibraryEndpointRemovesLibrary(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/libraries/"+strconv.FormatInt(lib.ID, 10)+"?deleteFiles=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNoContent, rec.Body.String())
@@ -150,7 +150,7 @@ func TestDeleteLibraryEndpointNotFound(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/libraries/999999?deleteFiles=false", nil)
 	rec := httptest.NewRecorder()
-	New("", "", "", "", svc).ServeHTTP(rec, req)
+	New("", "", "", "", svc, nil).ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d, body = %s", rec.Code, http.StatusNotFound, rec.Body.String())
