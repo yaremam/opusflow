@@ -4,8 +4,10 @@ WORKDIR /app
 RUN corepack enable
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
 COPY web/package.json web/package.json
+COPY packages/player-core/package.json packages/player-core/package.json
 RUN pnpm install --filter web --frozen-lockfile
 COPY web ./web
+COPY packages ./packages
 RUN pnpm --filter web build
 
 # --- build backend ---
