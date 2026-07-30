@@ -46,6 +46,8 @@ const mockTracks: Track[] = [
     albumTitle: 'Midnight Sun',
     durationSeconds: 255,
     streamUrl: 'http://localhost/api/stream/1',
+    format: 'flac',
+    bitrateKbps: 940,
   },
   {
     id: 2,
@@ -54,6 +56,18 @@ const mockTracks: Track[] = [
     albumTitle: 'Neon Pulse',
     durationSeconds: 210,
     streamUrl: 'http://localhost/api/stream/2',
+    format: 'mp3',
+    bitrateKbps: 320,
+  },
+  {
+    id: 3,
+    title: 'Afterglow',
+    artistName: 'Night Parade',
+    albumTitle: 'Departures',
+    durationSeconds: 190,
+    streamUrl: 'http://localhost/api/stream/3',
+    format: 'mp3',
+    bitrateKbps: 320,
   },
 ];
 
@@ -125,6 +139,48 @@ describe('Real Audio Player Engine (TDR 023 AC-1, AC-4, AC-5)', () => {
       uri: 'http://localhost/api/stream/2',
       headers: { Authorization: 'Bearer opusflow_pt_test123' },
     });
+  });
+
+  it('jumps to a track in the queue and loads its source (backlog/027 AC-2)', async () => {
+    await audioPlayer.playQueue(mockTracks, 0);
+    await audioPlayer.jumpTo(2);
+
+    const state = audioPlayer.getState();
+    expect(state.queueIndex).toBe(2);
+    expect(state.currentTrack?.title).toBe('Afterglow');
+    expect(player.source).toEqual({
+      uri: 'http://localhost/api/stream/3',
+      headers: { Authorization: 'Bearer opusflow_pt_test123' },
+    });
+  });
+
+  it('is a no-op jumping to the already-current track — does not restart it', async () => {
+    await audioPlayer.playQueue(mockTracks, 0);
+    const sourceBefore = player.source;
+
+    await audioPlayer.jumpTo(0);
+
+    expect(player.source).toEqual(sourceBefore);
+  });
+
+  it('removes a track from the queue without touching the currently playing one (backlog/027 AC-3)', async () => {
+    await audioPlayer.playQueue(mockTracks, 0);
+
+    audioPlayer.removeFromQueue(1);
+
+    const state = audioPlayer.getState();
+    expect(state.queue.map((t) => t.id)).toEqual([1, 3]);
+    expect(state.currentTrack?.id).toBe(1);
+  });
+
+  it('reorders the queue without touching the currently playing track (backlog/027 AC-4)', async () => {
+    await audioPlayer.playQueue(mockTracks, 0);
+
+    audioPlayer.reorderQueue(1, 2);
+
+    const state = audioPlayer.getState();
+    expect(state.queue.map((t) => t.id)).toEqual([1, 3, 2]);
+    expect(state.currentTrack?.id).toBe(1);
   });
 
   it('adds a track to the queue without disturbing what is already playing (backlog/025 AC-1)', async () => {

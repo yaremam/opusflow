@@ -33,6 +33,7 @@ type CopiedTrack struct {
 	Year            int
 	Genre           string
 	DurationSeconds int
+	FileSizeBytes   int64
 	ArtworkPictures []EmbeddedPicture
 }
 
@@ -131,6 +132,13 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		}
 	}
 
+	var fileSizeBytes int64
+	if info, err := os.Stat(tr.DestPath); err == nil {
+		fileSizeBytes = info.Size()
+	} else {
+		log.Printf("library: import %d: %s: stat for file size: %v", importID, tr.DestPath, err)
+	}
+
 	return store.InsertTrack(ctx, CopiedTrack{
 		ImportID:        importID,
 		Path:            tr.DestPath,
@@ -141,6 +149,7 @@ func copyTrack(ctx context.Context, store Store, importID int64, al Album, tr Tr
 		Year:            al.Year,
 		Genre:           genre,
 		DurationSeconds: duration,
+		FileSizeBytes:   fileSizeBytes,
 		ArtworkPictures: pictures,
 	})
 }

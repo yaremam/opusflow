@@ -37,10 +37,15 @@ func (s *Store) InsertTrack(ctx context.Context, t organize.CopiedTrack) error {
 		return err
 	}
 
+	var fileSizeBytes any
+	if t.FileSizeBytes > 0 {
+		fileSizeBytes = t.FileSizeBytes
+	}
+
 	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO tracks (import_id, path, title, artist, album, track_number, year, genre, duration_seconds, artist_id, album_id)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-	`, t.ImportID, t.Path, t.Title, t.Artist, t.Album, t.TrackNumber, t.Year, t.Genre, t.DurationSeconds, artistID, albumID); err != nil {
+		INSERT INTO tracks (import_id, path, title, artist, album, track_number, year, genre, duration_seconds, file_size_bytes, artist_id, album_id)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+	`, t.ImportID, t.Path, t.Title, t.Artist, t.Album, t.TrackNumber, t.Year, t.Genre, t.DurationSeconds, fileSizeBytes, artistID, albumID); err != nil {
 		return fmt.Errorf("inserting track: %w", err)
 	}
 

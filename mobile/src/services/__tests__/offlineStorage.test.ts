@@ -23,6 +23,8 @@ const mockTrack: Track = {
   albumTitle: 'Midnight Sun',
   durationSeconds: 255,
   streamUrl: 'http://localhost/api/stream/201',
+  format: 'flac',
+  bitrateKbps: 940,
 };
 
 describe('Offline Storage & Smart LRU Cache (AC-2, AC-3, AC-5, AC-6, AC-7)', () => {

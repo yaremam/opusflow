@@ -3,9 +3,12 @@ import {
   addToQueue as coreAddToQueue,
   currentTrack as coreCurrentTrack,
   initialQueueState,
+  jumpTo as coreJumpTo,
   next as coreNext,
   playFrom as corePlayFrom,
   prev as corePrev,
+  removeFromQueue as coreRemoveFromQueue,
+  reorderQueue as coreReorderQueue,
   toggleRepeat as coreToggleRepeat,
   toggleShuffle as coreToggleShuffle,
   type QueueState,
@@ -225,6 +228,29 @@ class AudioPlayerEngine {
     }
     this.core = corePrev(this.core);
     await this.loadCurrentTrack();
+    this.notify();
+  }
+
+  // jumpTo/removeFromQueue/reorderQueue back the Queue view (backlog/027)
+  // — mirroring web's PlayerContext, which has wrapped all three since
+  // backlog/019. Only jumpTo needs the native player actually reloaded;
+  // removing or reordering other entries never changes what's playing.
+  public async jumpTo(index: number): Promise<void> {
+    if (index === this.core.currentIndex) return;
+    const next = coreJumpTo(this.core, index);
+    if (next === this.core) return;
+    this.core = next;
+    await this.loadCurrentTrack();
+    this.notify();
+  }
+
+  public removeFromQueue(index: number): void {
+    this.core = coreRemoveFromQueue(this.core, index);
+    this.notify();
+  }
+
+  public reorderQueue(fromIndex: number, toIndex: number): void {
+    this.core = coreReorderQueue(this.core, fromIndex, toIndex);
     this.notify();
   }
 
