@@ -16,6 +16,10 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
   const [tracks, setTracks] = useState<Track[]>([]);
   const [offlineMap, setOfflineMap] = useState<Record<number, boolean>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
+  // Tracks whose "add to queue" icon should briefly show a checkmark
+  // (backlog/025 AC-5) — the action has no other visible effect on this
+  // screen, so without this it would look like tapping did nothing.
+  const [justQueued, setJustQueued] = useState<Record<number, boolean>>({});
 
   useEffect(() => {
     loadData();
@@ -55,6 +59,12 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
     } catch (e) {
       console.error('Failed to load album tracks:', e);
     }
+  };
+
+  const handleAddToQueue = (track: Track) => {
+    audioPlayer.addToQueue(track);
+    setJustQueued((prev) => ({ ...prev, [track.id]: true }));
+    setTimeout(() => setJustQueued((prev) => ({ ...prev, [track.id]: false })), 1500);
   };
 
   const handleToggleOffline = async (track: Track) => {
@@ -143,16 +153,28 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
                     </View>
                   </View>
 
-                  <TouchableOpacity
-                    style={styles.offlineBtn}
-                    onPress={() => handleToggleOffline(item)}
-                  >
-                    {offlineMap[item.id] ? (
-                      <Ionicons name="checkmark-circle" size={18} color="#10b981" />
-                    ) : (
-                      <Ionicons name="download-outline" size={18} color="#9ca3af" />
-                    )}
-                  </TouchableOpacity>
+                  <View style={styles.trackActions}>
+                    <TouchableOpacity
+                      style={styles.trackActionBtn}
+                      onPress={() => handleAddToQueue(item)}
+                    >
+                      {justQueued[item.id] ? (
+                        <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                      ) : (
+                        <Ionicons name="add-circle-outline" size={18} color="#9ca3af" />
+                      )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.trackActionBtn}
+                      onPress={() => handleToggleOffline(item)}
+                    >
+                      {offlineMap[item.id] ? (
+                        <Ionicons name="checkmark-circle" size={18} color="#10b981" />
+                      ) : (
+                        <Ionicons name="download-outline" size={18} color="#9ca3af" />
+                      )}
+                    </TouchableOpacity>
+                  </View>
                 </TouchableOpacity>
               )}
             />
@@ -260,5 +282,6 @@ const styles = StyleSheet.create({
   trackText: { flex: 1 },
   trackTitle: { fontSize: 14, fontWeight: '600', color: '#f3f4f6' },
   trackSubtitle: { fontSize: 12, color: '#9ca3af', marginTop: 2 },
-  offlineBtn: { padding: 6 },
+  trackActions: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  trackActionBtn: { padding: 6 },
 });

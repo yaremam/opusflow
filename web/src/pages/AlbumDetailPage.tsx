@@ -17,6 +17,7 @@ import ArtworkGallery from '../components/ArtworkGallery'
 import EntityDetailHeader from '../components/EntityDetailHeader'
 import InfoBlock from '../components/InfoBlock'
 import PlayButton from '../components/PlayButton'
+import AddToQueueButton from '../components/AddToQueueButton'
 import { useEntityGallery, type EntityGalleryConfig } from '../hooks/useEntityGallery'
 import type { PlayableTrack } from '../player/context'
 import { usePlayer } from '../player/usePlayer'
@@ -167,6 +168,7 @@ export default function AlbumDetailPage() {
         <thead>
           <tr>
             <th></th>
+            <th></th>
             <th className="num">#</th>
             <th>Title</th>
             <th className="num">Duration</th>
@@ -177,6 +179,9 @@ export default function AlbumDetailPage() {
             <tr key={track.id}>
               <td className="play">
                 <PlayButton track={toPlayableTrack(track)} onPlay={() => handlePlay(index)} />
+              </td>
+              <td className="queue">
+                <AddToQueueButton track={toPlayableTrack(track)} />
               </td>
               <td className="trk">{track.trackNumber || ''}</td>
               <td className="t">{track.title}</td>

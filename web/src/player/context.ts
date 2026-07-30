@@ -57,6 +57,7 @@ export interface PlayerTimeState {
 export interface PlayerContextValue extends PlayerState {
   currentTrack: PlayableTrack | null
   playFrom: (tracks: PlayableTrack[], startIndex: number) => void
+  addToQueue: (track: PlayableTrack) => void
   togglePlayPause: () => void
   seek: (time: number) => void
   next: () => void
