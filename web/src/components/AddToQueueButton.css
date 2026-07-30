@@ -1,0 +1,24 @@
+.queue-row-btn {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--ink-900);
+  color: var(--paper-50);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.queue-row-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+.queue-row-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.queue-row-btn svg {
+  width: 0.8rem;
+  height: 0.8rem;
+}

@@ -40,6 +40,20 @@ export function playFrom<T>(state: QueueState<T>, tracks: T[], startIndex: numbe
   return { ...state, queue, currentIndex: 0, isPlaying: true }
 }
 
+// addToQueue appends without disturbing current playback (backlog/025) —
+// the counterpart to playFrom's "replace everything and play now." An
+// empty queue is the one exception: there's nothing to leave undisturbed,
+// so the added track becomes current and starts playing, same as tapping
+// it normally would from that state. Duplicates are allowed, same as
+// removeFromQueue/reorderQueue do no uniqueness bookkeeping either.
+export function addToQueue<T>(state: QueueState<T>, track: T): QueueState<T> {
+  const queue = [...state.queue, track]
+  if (state.currentIndex === -1) {
+    return { ...state, queue, currentIndex: queue.length - 1, isPlaying: true }
+  }
+  return { ...state, queue }
+}
+
 function withIndex<T>(state: QueueState<T>, index: number): QueueState<T> {
   return { ...state, currentIndex: index }
 }

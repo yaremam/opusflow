@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import {
+  addToQueue as coreAddToQueue,
   jumpTo as coreJumpTo,
   next as coreNext,
   playFrom as corePlayFrom,
@@ -69,6 +70,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }, [])
 
+  // addToQueue (backlog/025) appends without disturbing current playback
+  // — same isPlaying-restoration convention as every other action here:
+  // the <audio> element's own play/pause events are the one source of
+  // truth, not what the shared core's reducer sets. When the queue was
+  // empty, coreAddToQueue makes the added track current, which flows
+  // through the currentTrackId effect above to actually load and play it.
+  const addToQueue = useCallback((track: PlayableTrack) => {
+    if (!isPlayable(track)) return
+    setState((prev) => ({ ...prev, ...coreAddToQueue(prev, track), isPlaying: prev.isPlaying }))
+  }, [])
+
   // togglePlayPause and advance are the only places that call the audio
   // element's play()/pause() directly.
   const togglePlayPause = useCallback(() => {
@@ -125,6 +137,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       ...state,
       currentTrack,
       playFrom,
+      addToQueue,
       togglePlayPause,
       seek,
       next,
@@ -136,7 +149,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleShuffle,
       toggleRepeat,
     }),
-    [state, currentTrack, playFrom, togglePlayPause, seek, next, prev, removeFromQueue, reorderQueue, jumpTo, setVolume, toggleShuffle, toggleRepeat],
+    [state, currentTrack, playFrom, addToQueue, togglePlayPause, seek, next, prev, removeFromQueue, reorderQueue, jumpTo, setVolume, toggleShuffle, toggleRepeat],
   )
 
   return (

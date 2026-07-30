@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  addToQueue,
   currentTrack,
   indexAfterReorder,
   indexAfterRemoval,
@@ -38,6 +39,29 @@ describe('playFrom', () => {
   it('is a no-op when startIndex leaves nothing to play', () => {
     const initial = initialQueueState<T>()
     expect(playFrom(initial, [track(1)], 5)).toBe(initial)
+  })
+})
+
+describe('addToQueue', () => {
+  it('appends to the end without touching the currently playing track (AC-1)', () => {
+    const state = queueOf([1, 2, 3], 1)
+    const next = addToQueue(state, track(4))
+    expect(next.queue.map((t) => t.id)).toEqual([1, 2, 3, 4])
+    expect(next.currentIndex).toBe(1)
+    expect(next.isPlaying).toBe(true)
+  })
+
+  it('starts playing immediately when the queue was empty (AC-2)', () => {
+    const next = addToQueue(initialQueueState<T>(), track(1))
+    expect(next.queue.map((t) => t.id)).toEqual([1])
+    expect(next.currentIndex).toBe(0)
+    expect(next.isPlaying).toBe(true)
+  })
+
+  it('allows a duplicate — no dedup against tracks already queued (AC-3)', () => {
+    const state = queueOf([1, 2], 0)
+    const next = addToQueue(state, track(2))
+    expect(next.queue.map((t) => t.id)).toEqual([1, 2, 2])
   })
 })
 

@@ -127,6 +127,38 @@ describe('Real Audio Player Engine (TDR 023 AC-1, AC-4, AC-5)', () => {
     });
   });
 
+  it('adds a track to the queue without disturbing what is already playing (backlog/025 AC-1)', async () => {
+    await audioPlayer.playQueue([mockTracks[0]], 0);
+    expect(player.source).toEqual({
+      uri: 'http://localhost/api/stream/1',
+      headers: { Authorization: 'Bearer opusflow_pt_test123' },
+    });
+
+    await audioPlayer.addToQueue(mockTracks[1]);
+
+    const state = audioPlayer.getState();
+    expect(state.queue.map((t) => t.id)).toEqual([1, 2]);
+    expect(state.currentTrack?.id).toBe(1);
+    // Still the first track's source — adding to the queue must not
+    // touch the native player at all when something's already playing.
+    expect(player.source).toEqual({
+      uri: 'http://localhost/api/stream/1',
+      headers: { Authorization: 'Bearer opusflow_pt_test123' },
+    });
+  });
+
+  it('starts playing immediately when adding to an empty queue (backlog/025 AC-2)', async () => {
+    await audioPlayer.addToQueue(mockTracks[0]);
+
+    const state = audioPlayer.getState();
+    expect(state.currentTrack?.title).toBe('Cosmic Voyager');
+    expect(state.isPlaying).toBe(true);
+    expect(player.source).toEqual({
+      uri: 'http://localhost/api/stream/1',
+      headers: { Authorization: 'Bearer opusflow_pt_test123' },
+    });
+  });
+
   it('toggles repeat mode cycle (off -> all -> one)', () => {
     expect(audioPlayer.getState().repeatMode).toBe('off');
 

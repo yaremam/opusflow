@@ -1,5 +1,6 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer as ExpoAudioPlayer, type AudioStatus } from 'expo-audio';
 import {
+  addToQueue as coreAddToQueue,
   currentTrack as coreCurrentTrack,
   initialQueueState,
   next as coreNext,
@@ -176,6 +177,19 @@ class AudioPlayerEngine {
     if (next === this.core) return;
     this.core = next;
     await this.loadCurrentTrack();
+    this.notify();
+  }
+
+  // addToQueue appends without disturbing current playback (backlog/025)
+  // — an empty queue is the one case that needs the native player
+  // actually loaded, since coreAddToQueue makes the added track current
+  // in that case (see its own doc comment).
+  public async addToQueue(track: Track): Promise<void> {
+    const wasEmpty = this.core.currentIndex === -1;
+    this.core = coreAddToQueue(this.core, track);
+    if (wasEmpty) {
+      await this.loadCurrentTrack();
+    }
     this.notify();
   }
 
