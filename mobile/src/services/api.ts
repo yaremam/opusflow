@@ -248,6 +248,156 @@ export async function fetchAlbumTracks(album: Album): Promise<Track[]> {
   }));
 }
 
+// Playlist/PlaylistTrack/PlaylistDetail mirror web's own (web/src/api/library.ts)
+// — household-shared, ordered by a stable playlistTrackId rather than the
+// track's own id, since the same track can appear more than once (TDR
+// 028). PlaylistTrack extends Track so a playlist's tracks can be handed
+// straight to audioPlayer.playQueue/addToQueue and AddToPlaylistSheet
+// exactly like any other screen's Track list.
+export interface Playlist {
+  id: number;
+  name: string;
+  trackCount: number;
+  coverUrls: string[];
+}
+
+export interface PlaylistTrack extends Track {
+  playlistTrackId: number;
+}
+
+export interface PlaylistDetail extends Playlist {
+  tracks: PlaylistTrack[];
+}
+
+interface BackendPlaylist {
+  id: number;
+  name: string;
+  trackCount: number;
+  coverUrls: string[];
+}
+
+interface BackendPlaylistTrack {
+  playlistTrackId: number;
+  trackId: number;
+  title: string;
+  artistName: string;
+  albumTitle: string;
+  albumCoverThumbUrl: string;
+  durationSeconds: number;
+  format: string;
+  bitrateKbps: number;
+}
+
+interface BackendPlaylistDetail extends BackendPlaylist {
+  tracks: BackendPlaylistTrack[];
+}
+
+function toPlaylist(serverUrl: string, playlist: BackendPlaylist): Playlist {
+  return {
+    id: playlist.id,
+    name: playlist.name,
+    trackCount: playlist.trackCount,
+    coverUrls: playlist.coverUrls.map((url) => absoluteArtworkUrl(serverUrl, url) ?? ''),
+  };
+}
+
+function toPlaylistTrack(serverUrl: string, t: BackendPlaylistTrack): PlaylistTrack {
+  return {
+    id: t.trackId,
+    playlistTrackId: t.playlistTrackId,
+    title: t.title,
+    artistName: t.artistName,
+    albumTitle: t.albumTitle,
+    durationSeconds: t.durationSeconds,
+    streamUrl: `${serverUrl}/api/library/songs/${t.trackId}/stream`,
+    coverUrl: absoluteArtworkUrl(serverUrl, t.albumCoverThumbUrl),
+    format: t.format,
+    bitrateKbps: t.bitrateKbps,
+  };
+}
+
+function toPlaylistDetail(serverUrl: string, detail: BackendPlaylistDetail): PlaylistDetail {
+  return {
+    ...toPlaylist(serverUrl, detail),
+    tracks: detail.tracks.map((t) => toPlaylistTrack(serverUrl, t)),
+  };
+}
+
+// authedFetch centralizes what every playlist mutation below needs:
+// resolve saved credentials, send the Bearer token (plus a JSON body/
+// content-type when one's given), and throw with the same "Request to
+// X failed" shape fetchArtistDetail/fetchAlbumTracks above already use
+// for their own GETs — one fetch helper for the whole file rather than
+// each mutation re-deriving creds and re-throwing its own error text.
+async function authedFetch(path: string, init: { method?: string; body?: unknown } = {}) {
+  const creds = await getServerCredentials();
+  if (!creds) throw new Error('No server credentials saved.');
+
+  const res = await fetch(`${creds.serverUrl}${path}`, {
+    method: init.method,
+    headers: {
+      Authorization: `Bearer ${creds.pairingToken}`,
+      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+  if (!res.ok) throw new Error(`Request to ${path} failed: ${res.statusText}`);
+  return { creds, res };
+}
+
+export async function fetchPlaylistsPage(params: ListParams = {}): Promise<Page<Playlist>> {
+  const { creds, page } = await fetchPageFromLibrary<BackendPlaylist>('/api/playlists', params);
+  return { ...page, items: page.items.map((p) => toPlaylist(creds.serverUrl, p)) };
+}
+
+export async function createPlaylist(name: string): Promise<Playlist> {
+  const { creds, res } = await authedFetch('/api/playlists', { method: 'POST', body: { name } });
+  return toPlaylist(creds.serverUrl, (await res.json()) as BackendPlaylist);
+}
+
+export async function fetchPlaylistDetail(id: number): Promise<PlaylistDetail> {
+  const { creds, res } = await authedFetch(`/api/playlists/${id}`);
+  return toPlaylistDetail(creds.serverUrl, (await res.json()) as BackendPlaylistDetail);
+}
+
+export async function renamePlaylist(id: number, name: string): Promise<PlaylistDetail> {
+  const { creds, res } = await authedFetch(`/api/playlists/${id}`, { method: 'PATCH', body: { name } });
+  return toPlaylistDetail(creds.serverUrl, (await res.json()) as BackendPlaylistDetail);
+}
+
+export async function deletePlaylist(id: number): Promise<void> {
+  await authedFetch(`/api/playlists/${id}`, { method: 'DELETE' });
+}
+
+export async function addTrackToPlaylist(playlistId: number, trackId: number): Promise<void> {
+  await authedFetch(`/api/playlists/${playlistId}/tracks`, { method: 'POST', body: { trackId } });
+}
+
+// removePlaylistTrack returns the fresh detail, same as renamePlaylist/
+// reorderPlaylistTracks — a removed track can shift coverUrls if it was
+// among the first four, so the caller needs the recomputed detail back
+// either way.
+export async function removePlaylistTrack(playlistId: number, playlistTrackId: number): Promise<PlaylistDetail> {
+  const { creds, res } = await authedFetch(`/api/playlists/${playlistId}/tracks/${playlistTrackId}`, { method: 'DELETE' });
+  return toPlaylistDetail(creds.serverUrl, (await res.json()) as BackendPlaylistDetail);
+}
+
+export async function reorderPlaylistTracks(playlistId: number, playlistTrackId: number, toIndex: number): Promise<PlaylistDetail> {
+  const { creds, res } = await authedFetch(`/api/playlists/${playlistId}/tracks/reorder`, {
+    method: 'PATCH',
+    body: { playlistTrackId, toIndex },
+  });
+  return toPlaylistDetail(creds.serverUrl, (await res.json()) as BackendPlaylistDetail);
+}
+
+// fetchPlaylistsContainingTrack backs AddToPlaylistSheet's pre-checked
+// state (AC-5).
+export async function fetchPlaylistsContainingTrack(trackId: number): Promise<Playlist[]> {
+  const { creds, res } = await authedFetch(`/api/library/songs/${trackId}/playlists`);
+  const playlists = (await res.json()) as BackendPlaylist[];
+  return playlists.map((p) => toPlaylist(creds.serverUrl, p));
+}
+
 export async function fetchSongsPage(params: ListParams = {}): Promise<Page<Track>> {
   const { creds, page } = await fetchPageFromLibrary<BackendSong>('/api/library/songs', params);
   return {

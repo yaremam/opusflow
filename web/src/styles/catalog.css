@@ -184,7 +184,8 @@
 .avatar.placeholder,
 .detail-avatar.placeholder,
 .detail-banner-img.placeholder,
-.thumb.placeholder {
+.thumb.placeholder,
+.playlist-cover.placeholder {
   background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
   display: flex;
   align-items: center;
@@ -215,7 +216,8 @@
   height: 0.6rem;
   border-width: 1.5px;
 }
-.art.placeholder svg {
+.art.placeholder svg,
+.playlist-cover.placeholder svg {
   width: 42%;
   height: 42%;
   color: var(--mist-400);
@@ -245,7 +247,7 @@
 
 .song-row {
   display: grid;
-  grid-template-columns: auto auto auto 1fr auto;
+  grid-template-columns: auto auto auto auto 1fr auto;
   align-items: center;
   gap: 0.85rem;
   padding: 0.5rem 0.15rem;
@@ -500,7 +502,8 @@ table.track-table td.trk {
   width: 2.5rem;
 }
 table.track-table td.play,
-table.track-table td.queue {
+table.track-table td.queue,
+table.track-table td.menu {
   width: 2.5rem;
 }
 

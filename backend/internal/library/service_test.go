@@ -405,6 +405,33 @@ func (f *fakeImportStore) ListSongs(context.Context, ListOptions) (Page[Song], e
 func (f *fakeImportStore) GetSongPath(context.Context, int64) (string, error) {
 	return "", ErrSongNotFound
 }
+func (f *fakeImportStore) CreatePlaylist(context.Context, string) (Playlist, error) {
+	return Playlist{}, nil
+}
+func (f *fakeImportStore) ListPlaylists(context.Context, ListOptions) (Page[Playlist], error) {
+	return Page[Playlist]{Items: []Playlist{}}, nil
+}
+func (f *fakeImportStore) GetPlaylist(context.Context, int64) (PlaylistDetail, error) {
+	return PlaylistDetail{}, ErrPlaylistNotFound
+}
+func (f *fakeImportStore) RenamePlaylist(context.Context, int64, string) error {
+	return nil
+}
+func (f *fakeImportStore) DeletePlaylist(context.Context, int64) error {
+	return nil
+}
+func (f *fakeImportStore) AddTrackToPlaylist(context.Context, int64, int64) (PlaylistTrack, error) {
+	return PlaylistTrack{}, nil
+}
+func (f *fakeImportStore) RemovePlaylistTrack(context.Context, int64, int64) error {
+	return nil
+}
+func (f *fakeImportStore) ReorderPlaylistTracks(context.Context, int64, int64, int) error {
+	return nil
+}
+func (f *fakeImportStore) ListPlaylistsContainingTrack(context.Context, int64) ([]Playlist, error) {
+	return []Playlist{}, nil
+}
 
 type copyCall struct {
 	importID int64

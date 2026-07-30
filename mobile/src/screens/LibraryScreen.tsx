@@ -1,27 +1,34 @@
 import { useState } from 'react';
 import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { Album, Artist } from '../services/api';
+import { Album, Artist, Playlist } from '../services/api';
 import { ArtistsListScreen } from './ArtistsListScreen';
 import { AlbumsListScreen } from './AlbumsListScreen';
 import { SongsListScreen } from './SongsListScreen';
+import { PlaylistsListScreen } from './PlaylistsListScreen';
 import { ArtistDetailScreen } from './ArtistDetailScreen';
 import { AlbumDetailScreen } from './AlbumDetailScreen';
+import { PlaylistDetailScreen } from './PlaylistDetailScreen';
 import { ACCENT } from '../theme';
 
 interface LibraryScreenProps {
   onOpenPlayer?: () => void;
 }
 
-type LibraryTab = 'artists' | 'albums' | 'songs';
-type LibraryStack = { view: 'hub' } | { view: 'artist'; artist: Artist } | { view: 'album'; album: Album };
+type LibraryTab = 'artists' | 'albums' | 'songs' | 'playlists';
+type LibraryStack =
+  | { view: 'hub' }
+  | { view: 'artist'; artist: Artist }
+  | { view: 'album'; album: Album }
+  | { view: 'playlist'; playlist: Playlist };
 
 // LibraryScreen is the Library tab's hub (backlog/026 AC-1) — a segmented
-// control over three real infinite-scroll lists (Artists/Albums/Songs),
+// control over real infinite-scroll lists (Artists/Albums/Songs,
 // replacing the old single screen's "featured albums" strip + unfiltered
-// track dump (issue #77). Detail navigation is a small hand-rolled stack
-// (AC-6) rather than a navigation library — this component unmounting
-// whenever the bottom tab bar switches away naturally resets it back to
-// the hub, since its state is just a plain useState.
+// track dump from issue #77; Playlists joined as a 4th segment in
+// backlog/028). Detail navigation is a small hand-rolled stack (AC-6)
+// rather than a navigation library — this component unmounting whenever
+// the bottom tab bar switches away naturally resets it back to the hub,
+// since its state is just a plain useState.
 export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
   const [activeTab, setActiveTab] = useState<LibraryTab>('artists');
   const [stack, setStack] = useState<LibraryStack>({ view: 'hub' });
@@ -46,6 +53,17 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
     );
   }
 
+  if (stack.view === 'playlist') {
+    return (
+      <PlaylistDetailScreen
+        playlist={stack.playlist}
+        onBack={() => setStack({ view: 'hub' })}
+        onDeleted={() => setStack({ view: 'hub' })}
+        onOpenPlayer={onOpenPlayer}
+      />
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
@@ -53,14 +71,14 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
       </View>
 
       <View style={styles.segmented}>
-        {(['artists', 'albums', 'songs'] as const).map((tab) => (
+        {(['artists', 'albums', 'songs', 'playlists'] as const).map((tab) => (
           <TouchableOpacity
             key={tab}
             style={[styles.segment, activeTab === tab && styles.segmentActive]}
             onPress={() => setActiveTab(tab)}
           >
             <Text style={[styles.segmentText, activeTab === tab && styles.segmentTextActive]}>
-              {tab === 'artists' ? 'Artists' : tab === 'albums' ? 'Albums' : 'Songs'}
+              {tab === 'artists' ? 'Artists' : tab === 'albums' ? 'Albums' : tab === 'songs' ? 'Songs' : 'Playlists'}
             </Text>
           </TouchableOpacity>
         ))}
@@ -73,6 +91,9 @@ export function LibraryScreen({ onOpenPlayer }: LibraryScreenProps) {
         <AlbumsListScreen onOpenAlbum={(album) => setStack({ view: 'album', album })} />
       )}
       {activeTab === 'songs' && <SongsListScreen onOpenPlayer={onOpenPlayer} />}
+      {activeTab === 'playlists' && (
+        <PlaylistsListScreen onOpenPlaylist={(playlist) => setStack({ view: 'playlist', playlist })} />
+      )}
     </View>
   );
 }

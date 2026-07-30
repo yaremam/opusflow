@@ -4,6 +4,7 @@ import { ActivityIndicator, FlatList, Image, StyleSheet, Text, TouchableOpacity,
 import { Album, fetchAlbumTracks, Track } from '../services/api';
 import { audioPlayer } from '../services/audioPlayer';
 import { offlineStorage } from '../services/offlineStorage';
+import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 import { ACCENT } from '../theme';
 
 interface AlbumDetailScreenProps {
@@ -24,6 +25,7 @@ export function AlbumDetailScreen({ album, onBack, onOpenPlayer }: AlbumDetailSc
   const [justQueued, setJustQueued] = useState<Record<number, boolean>>({});
   const [downloadingAlbum, setDownloadingAlbum] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState({ done: 0, total: 0 });
+  const [addSheet, setAddSheet] = useState<{ trackId: number; trackTitle: string } | null>(null);
 
   const refreshOfflineMap = (list: Track[]) => {
     const map: Record<number, boolean> = {};
@@ -163,7 +165,11 @@ export function AlbumDetailScreen({ album, onBack, onOpenPlayer }: AlbumDetailSc
           }
           ListEmptyComponent={loading ? <Text style={styles.emptyText}>Loading…</Text> : <Text style={styles.emptyText}>No tracks.</Text>}
           renderItem={({ item, index }) => (
-            <TouchableOpacity style={styles.trackRow} onPress={() => handlePlayTrack(index)}>
+            <TouchableOpacity
+              style={styles.trackRow}
+              onPress={() => handlePlayTrack(index)}
+              onLongPress={() => setAddSheet({ trackId: item.id, trackTitle: item.title })}
+            >
               <Text style={styles.trackNum}>{index + 1}</Text>
               <View style={styles.trackText}>
                 <Text style={styles.trackTitle} numberOfLines={1}>{item.title}</Text>
@@ -191,6 +197,13 @@ export function AlbumDetailScreen({ album, onBack, onOpenPlayer }: AlbumDetailSc
           )}
         />
       )}
+
+      <AddToPlaylistSheet
+        visible={addSheet !== null}
+        trackId={addSheet?.trackId ?? null}
+        trackTitle={addSheet?.trackTitle ?? ''}
+        onClose={() => setAddSheet(null)}
+      />
     </View>
   );
 }

@@ -1,0 +1,19 @@
+.playlist-cover {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  overflow: hidden;
+}
+.playlist-cover .cell {
+  background: linear-gradient(155deg, var(--ink-700), var(--ink-800));
+  overflow: hidden;
+}
+.playlist-cover .cell img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+/* .playlist-cover.placeholder's gradient/centering and its svg's sizing
+   are shared with every other ArtTile-family placeholder — see
+   styles/catalog.css's ".art.placeholder, ..." rule. */
