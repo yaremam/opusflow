@@ -188,6 +188,33 @@ for self-hosting without a Go/Node toolchain on the target machine — see
     directly — no hand-rolled range parsing); `Content-Type` set explicitly
     per extension first, since Go's default `mime` package doesn't reliably
     know several of these
+  - `GET /api/library/songs/{id}/playlists` — every playlist containing
+    this track (TDR 028), backing the "Add to playlist" picker's
+    pre-checked state
+  - `GET /api/playlists` / `POST /api/playlists` `{"name"}` — list
+    (sorted `recent`/`name`) / create a household-shared playlist (TDR
+    028) — there's no per-user identity anywhere in this app, so, like
+    every other collection, a playlist belongs to the household, not a
+    person
+  - `GET /api/playlists/{id}` — a playlist plus its full ordered track
+    listing
+  - `PATCH /api/playlists/{id}` `{"name"}` — rename, returning the fresh
+    detail
+  - `DELETE /api/playlists/{id}` — remove a playlist; its tracks stay in
+    the library, only the playlist and its ordering are gone
+  - `POST /api/playlists/{id}/tracks` `{"trackId"}` — append a track; no
+    dedup, the same rule `addToQueue`'s in-memory queue already uses, so
+    the same track can appear more than once
+  - `DELETE /api/playlists/{id}/tracks/{playlistTrackId}` — remove one
+    entry, addressed by its own `playlist_tracks` row ID rather than
+    `trackId` (the only way to distinguish which occurrence of a
+    duplicated track is meant), returning the fresh detail — a removed
+    track can shift `coverUrls` if it was among the first four, the same
+    reasoning `PATCH .../reorder` below already returns detail for
+  - `PATCH /api/playlists/{id}/tracks/reorder`
+    `{"playlistTrackId", "toIndex"}` — move one entry to a new position,
+    returning the fresh detail; persisted server-side, unlike the
+    playback queue's in-memory reorder
   - `GET /api/metadata/artists?q=` — search MusicBrainz artists by name,
     every match (not just the top-ranked one); `503` if the interactive
     search client isn't wired up (it always is, see `MusicBrainz` above)
@@ -364,10 +391,27 @@ for self-hosting without a Go/Node toolchain on the target machine — see
   drag-and-drop reorder) are rendered by `AppLayout.tsx` alongside
   `<Outlet />`; `src/components/PlayButton.tsx` is the shared per-row
   control on `SongsPage.tsx`/`AlbumDetailPage.tsx`, disabled for a
-  `format === "wv"` track. `src/api/library.ts` is the typed fetch
-  client.
+  `format === "wv"` track. `src/pages/PlaylistsPage.tsx` (TDR 028) is a
+  card grid of `src/components/PlaylistCoverTile.tsx` collages (`ArtTile`'s
+  sibling, not a variant — a playlist's cover is derived per-request, not
+  a fetchable/retriable image); `PlaylistDetailPage.tsx` is the same
+  `track-table` shape as `AlbumDetailPage.tsx` plus a drag handle (native
+  HTML5 DnD, same as `QueueDrawer`) and a remove-from-playlist column,
+  in-place rename, and a delete confirm. `src/components/
+  AddToPlaylistMenu.tsx` is the "⋯" button every track row gets
+  (`SongsPage`/`AlbumDetailPage`/`PlaylistDetailPage` itself) — rendered
+  via a `createPortal` into `document.body` rather than inline, since
+  `SongsPage`'s row is itself a `react-router` `<Link>` and React bubbles
+  synthetic events through the component tree regardless of portals, so
+  the modal still needs its own `stopPropagation` to keep a click inside
+  it from reaching the row's navigation. `src/api/library.ts` is the
+  typed fetch client.
 - **`mobile/`** — untouched Expo starter. No navigation or API client added
-  yet.
+  yet. *(Stale as of TDR 028 — mobile has since gained real navigation,
+  an API client, offline storage, playback queue, and a playlists hub
+  segment across several TDRs not yet reflected here; left as-is rather
+  than backfilled in this same change, see the note this TDR's PR calls
+  out.)*
 
 ## 4. Data model
 
@@ -433,6 +477,20 @@ Postgres, migrated via `backend/internal/db` (see §3):
   (`front`/`back`/`booklet`/... from Cover Art Archive or an embedded
   tag's own picture-type byte; blank for a plain upload or a format with
   no such concept, like M4A).
+- **`playlists`** / **`playlist_tracks`** — added by
+  [TDR 028](tdr/028_playlists_design.md): `playlists` is `id`/`name`/
+  `created_at`, household-shared like every other collection (no
+  per-user identity exists anywhere in this app). `playlist_tracks` is
+  the ordered join table — `playlist_id`/`track_id`
+  (`FOREIGN KEY ... ON DELETE CASCADE`, so deleting a playlist or a
+  track cleans up its entries) and `position` (kept contiguous from 0 by
+  every write — add/remove/reorder all renumber). A playlist entry is
+  addressed by its own `id`, not `track_id`, since duplicates are
+  allowed (AC-6, matching the in-memory queue's own no-dedup rule) — two
+  entries pointing at the same track need distinguishable IDs to be
+  independently removed/reordered. A playlist's cover (AC-7) is never
+  stored — it's derived per-request from its first up to 4 tracks'
+  album art.
 
 ## 5. Feature-by-feature decision log
 
@@ -441,6 +499,7 @@ an index with the one-line "why" for each, newest first.
 
 | Feature | TDR | Chosen approach | Why (one line) |
 |---|---|---|---|
+| Playlists | [028](tdr/028_playlists_design.md) | New `playlists`/`playlist_tracks` tables, household-shared like every other collection; a playlist entry addressed by its own row ID rather than `track_id`, since duplicates are allowed; "Add to playlist" reached via long-press (mobile) or an overflow button/right-click (web) on any track row rather than a 4th per-row icon; a playlist's cover is a derived 2x2 collage of its first up to 4 tracks' album art, never stored | Grilling converged on the queue's own no-dedup rule and the icon-crowding concern already established for `AddToQueueButton` (backlog/025) — playlists are the same kind of per-track action, so they got the same answer |
 | Drop the web auth gate *(reverses [022](tdr/022_token_backed_api_auth_design.md)'s app-wide enforcement)* | [024](tdr/024_drop_web_auth_gate_design.md) | No `/api/*` route is gated anymore — web and mobile share the same routes, so gating one meant gating both, and this install is LAN-only in practice. `POST/GET/DELETE /api/tokens` stay as pairing/bookkeeping only (drives the Paired Devices "last used" column via best-effort `ValidateAndTouch`, never blocks); the whole bootstrap mechanism (file + `auth_bootstrap` marker) is removed since there's nothing left to bootstrap into | GitHub issue #60: pasting a token into every fresh browser/device had become pure friction for a LAN-only install with no internet-exposure threat live; see the README's Security section for the operator's responsibility if that changes |
 | In-browser audio player | [015](tdr/015_audio_player_design.md) | New `GET /api/library/songs/{id}/stream` (`http.ServeContent`, range requests handled by the stdlib); a persistent mini-player bar + queue drawer rooted in `AppLayout.tsx` (the one component that survives every route change), holding playback state in a `PlayerProvider`/`usePlayer()` React Context — this app's first global client state, no new dependency; clicking a track queues the rest of the list it came from and auto-advances; drag-and-drop queue reorder via native HTML5 DnD; `Song`/`AlbumTrack` gain a server-derived `format` field (the raw path itself never exposed) so a WavPack track's play button can be disabled, since no browser can decode that format | GitHub issue/request: play the library directly in the web app rather than it being catalog-only; grilling scoped this to local (this browser tab) playback only — no persistence across reload, no mobile, no WavPack transcoding |
 | Multiple artworks per artist/album | [014](tdr/014_multiple_artworks_design.md) | Real gallery, not a single-image slot: new `artist_photos`/`album_covers` tables (one row per image, content-hash deduped, exactly one `is_primary`); manual upload always adds rather than replaces; Cover Art Archive's full typed image set fetched via `FetchAll` (front/back/booklet/...), not just the front cover; every embedded picture extracted across all five supported formats (MP3 APIC frames, FLAC PICTURE blocks, WavPack's APEv2 `Cover Art (*)` items, plus hand-rolled OGG Vorbis-comment and M4A `covr`-atom parsing, neither of which any existing dependency supports); new `ArtworkGallery` web component, mocked up and signed off before implementation | GitHub issue #14; grilling converged on full parity across every available source rather than a smaller first cut, given how much artwork this app was already silently discarding down to one image per entity |

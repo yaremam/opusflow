@@ -1,5 +1,20 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fetchAlbumTracks, fetchAlbumsPage, fetchArtistDetail, fetchArtistsPage, fetchSongsPage } from '../api';
+import {
+  addTrackToPlaylist,
+  createPlaylist,
+  deletePlaylist,
+  fetchAlbumTracks,
+  fetchAlbumsPage,
+  fetchArtistDetail,
+  fetchArtistsPage,
+  fetchPlaylistDetail,
+  fetchPlaylistsContainingTrack,
+  fetchPlaylistsPage,
+  fetchSongsPage,
+  removePlaylistTrack,
+  renamePlaylist,
+  reorderPlaylistTracks,
+} from '../api';
 import * as connection from '../connection';
 
 vi.mock('../connection', () => ({
@@ -267,6 +282,183 @@ describe('Catalog API Client (AC-2, backlog/026)', () => {
       },
     ]);
     expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/library/albums/1', {
+      headers: { Authorization: 'Bearer secret_token' },
+    });
+  });
+});
+
+describe('Playlists API Client (TDR 028)', () => {
+  const creds = { serverUrl: 'http://localhost:8080', pairingToken: 'secret_token' };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(connection.getServerCredentials).mockResolvedValue(creds);
+  });
+
+  it('fetches a page of playlists and resolves cover URLs against the server origin', async () => {
+    const mockPage = {
+      items: [{ id: 1, name: 'Late Night Drive', trackCount: 2, coverUrls: ['/artwork/a/thumb.jpg', ''] }],
+      page: 1,
+      pageSize: 30,
+      totalCount: 1,
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => mockPage } as Response));
+
+    const page = await fetchPlaylistsPage({ sort: 'name' });
+    expect(page.items).toEqual([
+      { id: 1, name: 'Late Night Drive', trackCount: 2, coverUrls: ['http://localhost:8080/artwork/a/thumb.jpg', ''] },
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/playlists?page=1&pageSize=30&sort=name',
+      { headers: { Authorization: 'Bearer secret_token' } },
+    );
+  });
+
+  it('creates a playlist by POSTing its name', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 3, name: 'Study Session', trackCount: 0, coverUrls: [] }),
+      } as Response),
+    );
+
+    const playlist = await createPlaylist('Study Session');
+    expect(playlist).toEqual({ id: 3, name: 'Study Session', trackCount: 0, coverUrls: [] });
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer secret_token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Study Session' }),
+    });
+  });
+
+  it('fetches a playlist detail and maps its tracks, addressed by playlistTrackId not trackId', async () => {
+    const mockDetail = {
+      id: 1,
+      name: 'Late Night Drive',
+      trackCount: 1,
+      coverUrls: [],
+      tracks: [
+        {
+          playlistTrackId: 55,
+          trackId: 101,
+          title: 'Cosmic Voyager',
+          artistName: 'Solaris',
+          albumTitle: 'Midnight Sun',
+          albumCoverThumbUrl: '/artwork/abc/thumb.jpg',
+          durationSeconds: 255,
+          format: 'flac',
+          bitrateKbps: 940,
+        },
+      ],
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => mockDetail } as Response));
+
+    const detail = await fetchPlaylistDetail(1);
+    expect(detail.tracks).toEqual([
+      {
+        id: 101,
+        playlistTrackId: 55,
+        title: 'Cosmic Voyager',
+        artistName: 'Solaris',
+        albumTitle: 'Midnight Sun',
+        durationSeconds: 255,
+        streamUrl: 'http://localhost:8080/api/library/songs/101/stream',
+        coverUrl: 'http://localhost:8080/artwork/abc/thumb.jpg',
+        format: 'flac',
+        bitrateKbps: 940,
+      },
+    ]);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1', {
+      headers: { Authorization: 'Bearer secret_token' },
+    });
+  });
+
+  it('renames a playlist via PATCH', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 1, name: 'Sunday Coffee', trackCount: 0, coverUrls: [], tracks: [] }),
+      } as Response),
+    );
+
+    const detail = await renamePlaylist(1, 'Sunday Coffee');
+    expect(detail.name).toBe('Sunday Coffee');
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1', {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer secret_token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Sunday Coffee' }),
+    });
+  });
+
+  it('deletes a playlist and throws if the request fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true } as Response));
+    await deletePlaylist(1);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer secret_token' },
+    });
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, statusText: 'Not Found' } as Response));
+    await expect(deletePlaylist(999)).rejects.toThrow('Request to /api/playlists/999 failed: Not Found');
+  });
+
+  it('adds a track to a playlist via POST .../tracks', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true } as Response));
+    await addTrackToPlaylist(1, 101);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1/tracks', {
+      method: 'POST',
+      headers: { Authorization: 'Bearer secret_token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trackId: 101 }),
+    });
+  });
+
+  it('removes one playlist entry by its playlistTrackId, not trackId, and returns the fresh detail', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 1, name: 'Late Night Drive', trackCount: 0, coverUrls: [], tracks: [] }),
+      } as Response),
+    );
+    const detail = await removePlaylistTrack(1, 55);
+    expect(detail.trackCount).toBe(0);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1/tracks/55', {
+      method: 'DELETE',
+      headers: { Authorization: 'Bearer secret_token' },
+    });
+  });
+
+  it('reorders a playlist track and returns the fresh detail', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: 1, name: 'Late Night Drive', trackCount: 0, coverUrls: [], tracks: [] }),
+      } as Response),
+    );
+
+    await reorderPlaylistTracks(1, 55, 2);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/playlists/1/tracks/reorder', {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer secret_token', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlistTrackId: 55, toIndex: 2 }),
+    });
+  });
+
+  it("fetches the playlists containing a track, for the add-to-playlist sheet's pre-checked state", async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => [{ id: 1, name: 'Late Night Drive', trackCount: 1, coverUrls: [] }],
+      } as Response),
+    );
+
+    const playlists = await fetchPlaylistsContainingTrack(101);
+    expect(playlists).toEqual([{ id: 1, name: 'Late Night Drive', trackCount: 1, coverUrls: [] }]);
+    expect(fetch).toHaveBeenCalledWith('http://localhost:8080/api/library/songs/101/playlists', {
       headers: { Authorization: 'Bearer secret_token' },
     });
   });

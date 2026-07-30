@@ -1,0 +1,131 @@
+/* Playlists index card grid — same .card-grid shell as AlbumsPage, with a
+   square collage cover instead of a single album image. */
+.playlist-card {
+  text-decoration: none;
+  color: inherit;
+  background: none;
+  border: none;
+  font: inherit;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+.playlist-card .cover {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  margin-bottom: 0.55rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+.playlist-card .title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.playlist-card .sub-line {
+  font-size: 0.78rem;
+  color: var(--mist-400);
+  margin-top: 0.15rem;
+}
+
+.new-playlist-card {
+  display: flex;
+  flex-direction: column;
+}
+.new-playlist-glyph {
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1.5px dashed var(--border);
+  margin-bottom: 0.55rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+  color: var(--mist-400);
+}
+.new-playlist-card:hover .new-playlist-glyph {
+  border-color: var(--accent);
+  color: var(--accent-strong);
+}
+
+.playlist-name-input {
+  font: inherit;
+  font-size: 0.9rem;
+  width: 100%;
+  background: var(--ink-800);
+  color: var(--paper-50);
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 1rem;
+}
+
+/* Playlist detail hero — a simpler cousin of .detail-banner-wrap/.detail-header-body
+   (no banner/avatar gallery, no merge — a playlist's cover is derived, not owned). */
+.playlist-hero {
+  display: flex;
+  gap: 1.3rem;
+  align-items: flex-end;
+  margin: 1.5rem 0 1rem;
+  flex-wrap: wrap;
+}
+.playlist-hero-cover {
+  width: 7.4rem;
+  height: 7.4rem;
+  flex-shrink: 0;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+}
+.playlist-hero-meta {
+  padding-bottom: 0.2rem;
+}
+.playlist-title-editable {
+  cursor: text;
+  border-radius: 6px;
+  margin: -0.2rem -0.4rem 0.3rem;
+  padding: 0.2rem 0.4rem;
+}
+.playlist-title-editable:hover {
+  background: var(--ink-900);
+}
+.playlist-rename-input {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0.01em;
+  font-family: inherit;
+  background: var(--ink-900);
+  color: var(--paper-50);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 0.1rem 0.4rem;
+  margin: -0.2rem -0.4rem 0.3rem;
+  width: 100%;
+  max-width: 28ch;
+}
+
+/* Playlist detail track table — extends .track-table with a drag handle
+   and remove-from-playlist column (native HTML5 drag-and-drop, same
+   convention as QueueDrawer's reorder). */
+.playlist-track-table tr[draggable='true'] {
+  cursor: grab;
+}
+.playlist-track-table tr.dragging {
+  opacity: 0.4;
+}
+.playlist-track-table tr.drag-over td {
+  border-top: 2px solid var(--accent);
+}
+.playlist-track-table td.drag {
+  width: 1.6rem;
+  color: var(--mist-400);
+  text-align: center;
+  font-size: 0.9rem;
+}
+.playlist-track-table td.play,
+.playlist-track-table td.queue,
+.playlist-track-table td.menu,
+.playlist-track-table td.remove {
+  width: 2.5rem;
+}

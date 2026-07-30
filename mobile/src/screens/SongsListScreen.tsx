@@ -6,6 +6,7 @@ import { audioPlayer } from '../services/audioPlayer';
 import { offlineStorage } from '../services/offlineStorage';
 import { useInfiniteList } from '../hooks/useInfiniteList';
 import { LibraryFilterBar } from '../components/LibraryFilterBar';
+import { AddToPlaylistSheet } from '../components/AddToPlaylistSheet';
 
 interface SongsListScreenProps {
   onOpenPlayer?: () => void;
@@ -21,6 +22,7 @@ export function SongsListScreen({ onOpenPlayer }: SongsListScreenProps) {
   const { items, loading, loadingMore, error, hasMore, loadMore } = useInfiniteList(fetchSongsPage, filters);
   const [offlineMap, setOfflineMap] = useState<Record<number, boolean>>({});
   const [justQueued, setJustQueued] = useState<Record<number, boolean>>({});
+  const [addSheet, setAddSheet] = useState<{ trackId: number; trackTitle: string } | null>(null);
 
   useEffect(() => {
     const map: Record<number, boolean> = {};
@@ -74,7 +76,11 @@ export function SongsListScreen({ onOpenPlayer }: SongsListScreenProps) {
           onEndReachedThreshold={0.4}
           ListFooterComponent={loadingMore ? <Text style={styles.footerText}>Loading more…</Text> : null}
           renderItem={({ item, index }) => (
-            <TouchableOpacity style={styles.trackItem} onPress={() => handlePlayTrack(item, index)}>
+            <TouchableOpacity
+              style={styles.trackItem}
+              onPress={() => handlePlayTrack(item, index)}
+              onLongPress={() => setAddSheet({ trackId: item.id, trackTitle: item.title })}
+            >
               <View style={styles.trackInfo}>
                 {item.coverUrl ? (
                   <Image source={{ uri: item.coverUrl }} style={styles.trackArt} />
@@ -111,6 +117,13 @@ export function SongsListScreen({ onOpenPlayer }: SongsListScreenProps) {
           )}
         />
       )}
+
+      <AddToPlaylistSheet
+        visible={addSheet !== null}
+        trackId={addSheet?.trackId ?? null}
+        trackTitle={addSheet?.trackTitle ?? ''}
+        onClose={() => setAddSheet(null)}
+      />
     </View>
   );
 }

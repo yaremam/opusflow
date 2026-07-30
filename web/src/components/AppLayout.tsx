@@ -10,6 +10,7 @@ const NAV_LINKS = [
   { to: '/artists', label: 'Artists' },
   { to: '/albums', label: 'Albums' },
   { to: '/songs', label: 'Songs' },
+  { to: '/playlists', label: 'Playlists' },
   { to: '/import', label: 'Import' },
   { to: '/libraries', label: 'Libraries' },
   { to: '/settings', label: 'Settings' },

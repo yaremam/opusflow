@@ -207,6 +207,20 @@ const albumPrimaryCoverJoin = `
 		LIMIT 1
 	) ac ON true`
 
+// trackAlbumPrimaryCoverJoin is albumPrimaryCoverJoin's sibling for a
+// query that starts from a tracks row instead of an albums row (TDR
+// 028's playlist queries — a playlist's track listing and its derived
+// cover collage both need a track's own album's primary cover, with no
+// reason to also join albums itself). Every query using this must alias
+// the tracks row "t".
+const trackAlbumPrimaryCoverJoin = `
+	LEFT JOIN LATERAL (
+		SELECT thumb_path FROM album_covers
+		WHERE album_id = t.album_id
+		ORDER BY is_primary DESC, created_at ASC, id ASC
+		LIMIT 1
+	) ac ON true`
+
 // artistBannerJoin/albumCoverBannerJoin derive the detail page header's
 // banner image (TDR 016): the gallery image flagged is_banner if any,
 // else falling back to the primary image, else the oldest — all in one

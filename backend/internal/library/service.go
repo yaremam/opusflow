@@ -85,6 +85,22 @@ type CatalogReader interface {
 	GetSongPath(ctx context.Context, id int64) (string, error)
 }
 
+// PlaylistStore is playlist persistence (TDR 028) — its own named
+// interface rather than folded into CatalogReader, since playlists are a
+// distinct concern (a user-created collection, not catalog metadata
+// derived from imported files).
+type PlaylistStore interface {
+	CreatePlaylist(ctx context.Context, name string) (Playlist, error)
+	ListPlaylists(ctx context.Context, opts ListOptions) (Page[Playlist], error)
+	GetPlaylist(ctx context.Context, id int64) (PlaylistDetail, error)
+	RenamePlaylist(ctx context.Context, id int64, name string) error
+	DeletePlaylist(ctx context.Context, id int64) error
+	AddTrackToPlaylist(ctx context.Context, playlistID, trackID int64) (PlaylistTrack, error)
+	RemovePlaylistTrack(ctx context.Context, playlistID, playlistTrackID int64) error
+	ReorderPlaylistTracks(ctx context.Context, playlistID, playlistTrackID int64, toIndex int) error
+	ListPlaylistsContainingTrack(ctx context.Context, trackID int64) ([]Playlist, error)
+}
+
 // ImportRecorder is library and import bookkeeping persistence (TDR 005/006),
 // plus organize.Store's methods so it can be handed straight to a Copier.
 type ImportRecorder interface {
@@ -103,20 +119,21 @@ type ImportRecorder interface {
 }
 
 // ImportStore is the persistence Service actually depends on — the union
-// of the four cohesion-scoped interfaces above. *Store satisfies it as its
+// of the five cohesion-scoped interfaces above. *Store satisfies it as its
 // one production adapter; tests substitute an in-memory fake so
 // orchestration logic (validation, copy-goroutine timing, list-options
-// normalization) can be tested without a database. Splitting it into four
+// normalization) can be tested without a database. Splitting it into
 // named pieces doesn't change what a whole-Service test's fake has to
 // implement (it still needs all of them), but it does mean each concern's
 // method list is declared, and can be depended on, on its own, instead of
-// one 32-method interface with a single production adapter — a seam that
+// one large interface with a single production adapter — a seam that
 // wasn't earning its width.
 type ImportStore interface {
 	GalleryStore
 	EnrichmentStore
 	CatalogReader
 	ImportRecorder
+	PlaylistStore
 }
 
 // defaultPageSize/maxPageSize bound ListOptions.PageSize once normalized by
@@ -648,4 +665,52 @@ func (s *Service) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], 
 // streaming handler — never itself part of a List/Get JSON response.
 func (s *Service) GetSongPath(ctx context.Context, id int64) (string, error) {
 	return s.store.GetSongPath(ctx, id)
+}
+
+// CreatePlaylist records a new, empty playlist (TDR 028).
+func (s *Service) CreatePlaylist(ctx context.Context, name string) (Playlist, error) {
+	return s.store.CreatePlaylist(ctx, name)
+}
+
+// ListPlaylists returns a page of playlists matching opts.
+func (s *Service) ListPlaylists(ctx context.Context, opts ListOptions) (Page[Playlist], error) {
+	return s.store.ListPlaylists(ctx, normalizeListOptions(opts))
+}
+
+// GetPlaylist fetches a single playlist by ID, with its ordered track
+// listing.
+func (s *Service) GetPlaylist(ctx context.Context, id int64) (PlaylistDetail, error) {
+	return s.store.GetPlaylist(ctx, id)
+}
+
+// RenamePlaylist updates a playlist's name.
+func (s *Service) RenamePlaylist(ctx context.Context, id int64, name string) error {
+	return s.store.RenamePlaylist(ctx, id, name)
+}
+
+// DeletePlaylist removes a playlist.
+func (s *Service) DeletePlaylist(ctx context.Context, id int64) error {
+	return s.store.DeletePlaylist(ctx, id)
+}
+
+// AddTrackToPlaylist appends a track to the end of a playlist.
+func (s *Service) AddTrackToPlaylist(ctx context.Context, playlistID, trackID int64) (PlaylistTrack, error) {
+	return s.store.AddTrackToPlaylist(ctx, playlistID, trackID)
+}
+
+// RemovePlaylistTrack removes one entry from a playlist.
+func (s *Service) RemovePlaylistTrack(ctx context.Context, playlistID, playlistTrackID int64) error {
+	return s.store.RemovePlaylistTrack(ctx, playlistID, playlistTrackID)
+}
+
+// ReorderPlaylistTracks moves an entry to a new position within its
+// playlist.
+func (s *Service) ReorderPlaylistTracks(ctx context.Context, playlistID, playlistTrackID int64, toIndex int) error {
+	return s.store.ReorderPlaylistTracks(ctx, playlistID, playlistTrackID, toIndex)
+}
+
+// ListPlaylistsContainingTrack backs the "Add to playlist" picker's
+// pre-checked state.
+func (s *Service) ListPlaylistsContainingTrack(ctx context.Context, trackID int64) ([]Playlist, error) {
+	return s.store.ListPlaylistsContainingTrack(ctx, trackID)
 }

@@ -520,6 +520,87 @@ export function mergeAlbum(id: number, intoId: number): Promise<AlbumDetail> {
   return postJSON(`/api/library/albums/${id}/merge`, { intoId })
 }
 
+// Playlist/PlaylistDetail/PlaylistTrack mirror the backend's
+// library.Playlist/PlaylistDetail/PlaylistTrack (TDR 028) — household-shared,
+// ordered by a stable playlistTrackId rather than the track's own ID, since
+// AC-6 allows the same track to appear more than once.
+export interface Playlist {
+  id: number
+  name: string
+  trackCount: number
+  createdAt: string
+  coverUrls: string[]
+}
+
+export interface PlaylistTrack {
+  playlistTrackId: number
+  trackId: number
+  title: string
+  artistName: string
+  albumTitle: string
+  albumCoverThumbUrl: string
+  durationSeconds: number
+  format: string
+}
+
+export interface PlaylistDetail extends Playlist {
+  tracks: PlaylistTrack[]
+}
+
+// listPlaylists reuses ListParams/listParams even though playlists have
+// no genre/year to filter by — both are optional and PlaylistsPage never
+// sets them, so this is exactly the "recent"/"name" sort plus free-text
+// q every other list endpoint already shares.
+export function listPlaylists(params: ListParams = {}): Promise<Page<Playlist>> {
+  return request(`/api/playlists${listParams(params)}`)
+}
+
+export function createPlaylist(name: string): Promise<Playlist> {
+  return postJSON('/api/playlists', { name })
+}
+
+export function getPlaylist(id: number): Promise<PlaylistDetail> {
+  return request(`/api/playlists/${id}`)
+}
+
+function patchJSON<T>(path: string, body: unknown): Promise<T> {
+  return request(path, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export function renamePlaylist(id: number, name: string): Promise<PlaylistDetail> {
+  return patchJSON(`/api/playlists/${id}`, { name })
+}
+
+export function deletePlaylist(id: number): Promise<void> {
+  return request(`/api/playlists/${id}`, { method: 'DELETE' })
+}
+
+export function addTrackToPlaylist(playlistId: number, trackId: number): Promise<PlaylistTrack> {
+  return postJSON(`/api/playlists/${playlistId}/tracks`, { trackId })
+}
+
+// removePlaylistTrack returns the fresh detail, same as renamePlaylist/
+// reorderPlaylistTracks — a removed track can shift coverUrls if it was
+// among the first four, so the caller needs the recomputed detail back
+// either way.
+export function removePlaylistTrack(playlistId: number, playlistTrackId: number): Promise<PlaylistDetail> {
+  return request(`/api/playlists/${playlistId}/tracks/${playlistTrackId}`, { method: 'DELETE' })
+}
+
+export function reorderPlaylistTracks(playlistId: number, playlistTrackId: number, toIndex: number): Promise<PlaylistDetail> {
+  return patchJSON(`/api/playlists/${playlistId}/tracks/reorder`, { playlistTrackId, toIndex })
+}
+
+// listPlaylistsContainingTrack backs the "Add to playlist" picker's
+// pre-checked state (AC-5).
+export function listPlaylistsContainingTrack(trackId: number): Promise<Playlist[]> {
+  return request(`/api/library/songs/${trackId}/playlists`)
+}
+
 function listParams(params: ListParams): string {
   const q = new URLSearchParams()
   if (params.page) q.set('page', String(params.page))

@@ -5,6 +5,7 @@ import Pager from '../components/Pager'
 import ArtTile from '../components/ArtTile'
 import PlayButton from '../components/PlayButton'
 import AddToQueueButton from '../components/AddToQueueButton'
+import AddToPlaylistMenu from '../components/AddToPlaylistMenu'
 import type { PlayableTrack } from '../player/context'
 import { usePlayer } from '../player/usePlayer'
 import '../styles/catalog.css'
@@ -75,6 +76,7 @@ export default function SongsPage() {
           <Link key={song.id} className="song-row" to={`/albums/${song.albumId}`}>
             <PlayButton track={toPlayableTrack(song)} onPlay={() => handlePlay(index)} />
             <AddToQueueButton track={toPlayableTrack(song)} />
+            <AddToPlaylistMenu trackId={song.id} trackTitle={song.title} />
             <ArtTile src={song.albumCoverThumbUrl} alt="" className="thumb" kind="album" artStatus={song.albumArtStatus} />
             <div>
               <div className="t">{song.title}</div>
