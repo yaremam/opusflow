@@ -296,6 +296,41 @@ func TestListSongsFormatForWavPackTrack(t *testing.T) {
 	}
 }
 
+func TestListSongsDerivesBitrateFromFileSizeAndDuration(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	// 5,000,000 bytes over 100 seconds = 40,000,000 bits / 100s = 400,000 bps = 400 kbps.
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID: importID, Path: "/music/Bitrate Artist/Bitrate Album/Bitrate Song.mp3",
+		Title: "Bitrate Song", Artist: "Bitrate Artist", Album: "Bitrate Album", TrackNumber: 1, Year: 2020,
+		DurationSeconds: 100, FileSizeBytes: 5_000_000,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	page, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Bitrate Song"})
+	if err != nil {
+		t.Fatalf("ListSongs: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].BitrateKbps != 400 {
+		t.Fatalf("songs = %+v, want bitrateKbps=400", page.Items)
+	}
+}
+
+func TestListSongsBitrateIsZeroWhenFileSizeUnknown(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	insertTrack(t, s, importID, "No Size Artist", "No Size Album", "No Size Song", 1, 2020, "Pop")
+
+	page, err := s.ListSongs(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "No Size Song"})
+	if err != nil {
+		t.Fatalf("ListSongs: %v", err)
+	}
+	if len(page.Items) != 1 || page.Items[0].BitrateKbps != 0 {
+		t.Fatalf("songs = %+v, want bitrateKbps=0 for a track with no recorded file size", page.Items)
+	}
+}
+
 func TestGetSongPathReturnsPath(t *testing.T) {
 	s := testStore(t)
 	importID := mustCreateImport(t, s)
@@ -340,6 +375,32 @@ func TestGetAlbumTracksIncludeFormat(t *testing.T) {
 	}
 	if len(detail.Tracks) != 1 || detail.Tracks[0].Format != "mp3" {
 		t.Fatalf("tracks = %+v, want format=mp3", detail.Tracks)
+	}
+}
+
+func TestGetAlbumTracksDeriveBitrate(t *testing.T) {
+	s := testStore(t)
+	importID := mustCreateImport(t, s)
+	if err := s.InsertTrack(ctx(), organize.CopiedTrack{
+		ImportID: importID, Path: "/music/Bitrate Artist/Bitrate Album Two/Only Song.flac",
+		Title: "Only Song", Artist: "Bitrate Artist", Album: "Bitrate Album Two", TrackNumber: 1, Year: 2020,
+		DurationSeconds: 200, FileSizeBytes: 20_000_000,
+	}); err != nil {
+		t.Fatalf("InsertTrack: %v", err)
+	}
+
+	albums, err := s.ListAlbums(ctx(), ListOptions{Page: 1, PageSize: 10, Query: "Bitrate Album Two"})
+	if err != nil || len(albums.Items) != 1 {
+		t.Fatalf("ListAlbums: items=%+v err=%v", albums.Items, err)
+	}
+
+	detail, err := s.GetAlbum(ctx(), albums.Items[0].ID)
+	if err != nil {
+		t.Fatalf("GetAlbum: %v", err)
+	}
+	// 20,000,000 bytes * 8 / 200s / 1000 = 800 kbps.
+	if len(detail.Tracks) != 1 || detail.Tracks[0].BitrateKbps != 800 {
+		t.Fatalf("tracks = %+v, want bitrateKbps=800", detail.Tracks)
 	}
 }
 

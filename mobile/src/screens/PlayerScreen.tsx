@@ -6,9 +6,10 @@ import { ACCENT, ACCENT_TINT_20 } from '../theme';
 
 interface PlayerScreenProps {
   onMinimize?: () => void;
+  onShowQueue?: () => void;
 }
 
-export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
+export function PlayerScreen({ onMinimize, onShowQueue }: PlayerScreenProps) {
   const [playerState, setPlayerState] = useState<AudioPlayerState>(
     audioPlayer.getState()
   );
@@ -57,7 +58,7 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
           <Ionicons name="chevron-down" size={18} color="#f3f4f6" />
         </TouchableOpacity>
         <Text style={styles.topTitle}>NOW PLAYING</Text>
-        <TouchableOpacity style={styles.iconBtn}>
+        <TouchableOpacity style={styles.iconBtn} onPress={onShowQueue}>
           <Ionicons name="list-outline" size={18} color="#f3f4f6" />
         </TouchableOpacity>
       </View>
@@ -81,16 +82,15 @@ export function PlayerScreen({ onMinimize }: PlayerScreenProps) {
         <Text style={styles.trackSubtitle}>
           {track.artistName} — {track.albumTitle}
         </Text>
-        <View style={styles.qualityBadge}>
-          <Ionicons
-            name={track.localCoverUrl ? 'download-outline' : 'wifi-outline'}
-            size={12}
-            color={ACCENT}
-          />
-          <Text style={styles.qualityText}>
-            {track.localCoverUrl ? 'Offline' : 'Streaming'}
-          </Text>
-        </View>
+        {track.format && (
+          <View style={styles.qualityBadge}>
+            <View style={styles.qualityDot} />
+            <Text style={styles.qualityText}>
+              {track.format.toUpperCase()}
+              {track.bitrateKbps > 0 ? ` · ${track.bitrateKbps} kbps` : ''}
+            </Text>
+          </View>
+        )}
       </View>
 
       <View style={styles.progressContainer}>
@@ -186,6 +186,7 @@ const styles = StyleSheet.create({
     backgroundColor: ACCENT_TINT_20,
   },
   qualityText: { fontSize: 11, fontWeight: '600', color: ACCENT },
+  qualityDot: { width: 5, height: 5, borderRadius: 3, backgroundColor: ACCENT },
   progressContainer: { marginVertical: 20 },
   progressBar: {
     height: 6,

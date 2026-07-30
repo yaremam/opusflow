@@ -91,6 +91,7 @@ type Song struct {
 	DurationSeconds    int           `json:"durationSeconds"`
 	CreatedAt          time.Time     `json:"createdAt"`
 	Format             string        `json:"format"`
+	BitrateKbps        int           `json:"bitrateKbps"`
 }
 
 // AlbumTrack is one track within an AlbumDetail's listing — narrower than
@@ -101,6 +102,21 @@ type AlbumTrack struct {
 	TrackNumber     int    `json:"trackNumber"`
 	DurationSeconds int    `json:"durationSeconds"`
 	Format          string `json:"format"`
+	BitrateKbps     int    `json:"bitrateKbps"`
+}
+
+// bitrateKbps derives average bitrate (TDR 027) — file size in bits divided
+// by duration — the one formula this app uses across every supported
+// format, rather than parsing each format's own bitrate representation
+// (several of which, like FLAC, don't have a single header field for it
+// the way MP3 does). 0 means unknown: either an old track scanned before
+// file_size_bytes existed, or a duration of 0 that would make the division
+// meaningless.
+func bitrateKbps(fileSizeBytes sql.NullInt64, durationSeconds int) int {
+	if !fileSizeBytes.Valid || durationSeconds <= 0 {
+		return 0
+	}
+	return int(fileSizeBytes.Int64 * 8 / int64(durationSeconds) / 1000)
 }
 
 // TrackFormat derives a track's format (TDR 015) from its on-disk path's
@@ -450,7 +466,7 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	}
 
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, title, track_number, duration_seconds, path
+		SELECT id, title, track_number, duration_seconds, path, file_size_bytes
 		FROM tracks
 		WHERE album_id = $1
 		ORDER BY track_number ASC, title ASC
@@ -464,10 +480,12 @@ func (s *Store) GetAlbum(ctx context.Context, id int64) (AlbumDetail, error) {
 	for rows.Next() {
 		var t AlbumTrack
 		var path string
-		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNumber, &t.DurationSeconds, &path); err != nil {
+		var fileSizeBytes sql.NullInt64
+		if err := rows.Scan(&t.ID, &t.Title, &t.TrackNumber, &t.DurationSeconds, &path, &fileSizeBytes); err != nil {
 			return AlbumDetail{}, fmt.Errorf("scanning track: %w", err)
 		}
 		t.Format = TrackFormat(path)
+		t.BitrateKbps = bitrateKbps(fileSizeBytes, t.DurationSeconds)
 		d.Tracks = append(d.Tracks, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -488,7 +506,7 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT t.id, t.title, t.artist_id, ar.name, t.album_id, al.title,
 		       COALESCE(ac.thumb_path, ''), al.art_status,
-		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at, t.path,
+		       t.track_number, t.year, t.genre, t.duration_seconds, t.created_at, t.path, t.file_size_bytes,
 		       COUNT(*) OVER()
 		FROM tracks t
 		JOIN artists ar ON ar.id = t.artist_id
@@ -508,13 +526,15 @@ func (s *Store) ListSongs(ctx context.Context, opts ListOptions) (Page[Song], er
 	for rows.Next() {
 		var sg Song
 		var path string
+		var fileSizeBytes sql.NullInt64
 		if err := rows.Scan(
 			&sg.ID, &sg.Title, &sg.ArtistID, &sg.ArtistName, &sg.AlbumID, &sg.AlbumTitle, &sg.AlbumCoverThumbURL, &sg.AlbumArtStatus,
-			&sg.TrackNumber, &sg.Year, &sg.Genre, &sg.DurationSeconds, &sg.CreatedAt, &path, &page.TotalCount,
+			&sg.TrackNumber, &sg.Year, &sg.Genre, &sg.DurationSeconds, &sg.CreatedAt, &path, &fileSizeBytes, &page.TotalCount,
 		); err != nil {
 			return Page[Song]{}, fmt.Errorf("scanning song: %w", err)
 		}
 		sg.Format = TrackFormat(path)
+		sg.BitrateKbps = bitrateKbps(fileSizeBytes, sg.DurationSeconds)
 		page.Items = append(page.Items, sg)
 	}
 	if err := rows.Err(); err != nil {
